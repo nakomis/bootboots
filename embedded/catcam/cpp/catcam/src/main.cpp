@@ -2,6 +2,7 @@
 #include <esp_camera.h>
 #include <driver/rtc_io.h>
 #include <Preferences.h>
+#include <Wire.h>
 
 #include "secrets.h"
 #include "WifiConnect.h"
@@ -29,10 +30,12 @@ Preferences preferences;
 #define HREF_GPIO_NUM 23
 #define PCLK_GPIO_NUM 22
 
+int failureCount = 0;
+
 void setup() {
     Serial.begin(115200);
     // Wait for the serial port to become available
-    delay(5000);
+    // delay(5000);
 
     Serial.println(BANNER);
     Serial.println("About to do pinMode stuff:");
@@ -40,10 +43,8 @@ void setup() {
     pinMode(4, INPUT);
     digitalWrite(4, LOW);
     rtc_gpio_hold_dis(GPIO_NUM_4);
-}
 
-void loop() {
-    wifiConnect.connect();
+    WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // disable brownout detector
 
     camera_config_t config;
     config.ledc_channel = LEDC_CHANNEL_0;
@@ -87,15 +88,35 @@ void loop() {
 
     // Init Camera
     Serial.println("Initializing camera...");
-    esp_camera_deinit();
     esp_err_t err = esp_camera_init(&config);
     if (err != ESP_OK)
     {
-        Serial.printf("Camera init failed with error 0x%x", err);
+        Serial.printf("Camera init failed with error 0x%x\n", err);
+        failureCount++;
+        if (failureCount > 5)
+        {
+            Serial.println("Too many failures, resetting...");
+            ESP.restart();
+        }
+        esp_sleep_enable_ext0_wakeup(GPIO_NUM_13, 1);
+        rtc_gpio_pullup_dis(GPIO_NUM_13);
+        rtc_gpio_pulldown_en(GPIO_NUM_13);
+
+        Serial.println("Going to sleep now");
+        delay(1000);
+        esp_deep_sleep_start();
+
         return;
     }
 
-    Serial.println("Camera initialized successfully");
+    Serial.println("Camera initialized successfully, setting settings...");
+    sensor_t* s = esp_camera_sensor_get();
+    s->set_brightness(s, 0);     // -2 to 2
+    s->set_whitebal(s, 1);      // 0 = disable, 1 = enable
+    s->set_awb_gain(s, 1);       // 0 = disable , 1 = enable
+    s->set_wb_mode(s, 4);        // 0 to 4 - if awb_gain enabled (0 - Auto, 1 - Sunny, 2 - Cloudy, 3 - Office, 4 - Home)
+    s->set_exposure_ctrl(s, 1);
+
     camera_fb_t* fb = NULL;
 
     // Take Picture with Camera
@@ -123,8 +144,25 @@ void loop() {
 
     // Post Image to Message Queue
     Serial.println("Posting image to message queue...");
+    wifiConnect.connect();
     messageQueue.postImage(String(pictureNum) + ".jpeg", fb->buf, fb->len);
     Serial.println("Image posted successfully");
+    esp_camera_return_all();
+    pinMode(4, OUTPUT);
+    digitalWrite(4, LOW);
+    rtc_gpio_hold_en(GPIO_NUM_4);
+    Serial.println("Camera resources returned successfully");
 
-    esp_camera_fb_return(fb);
+    esp_sleep_enable_ext0_wakeup(GPIO_NUM_13, 1);
+    rtc_gpio_pullup_dis(GPIO_NUM_13);
+    rtc_gpio_pulldown_en(GPIO_NUM_13);
+
+    Serial.println("Going to sleep now");
+    delay(1000);
+    esp_deep_sleep_start();
+    Serial.println("This will never be printed");
+}
+
+void loop() {
+
 }
