@@ -16,11 +16,8 @@ client.on("connect", () => {
 });
 
 client.on('message', function (topic, message) {
-    console.log('Message received on topic:', topic);
-
     (async (innerTopic, innerMessage) => {
         var fileName: String = '';
-        console.log('Received message on topic:', innerTopic);
 
         for (var i: number = 0; i < 20; i++) {
             var nameByte: number = innerMessage[i];
@@ -31,14 +28,13 @@ client.on('message', function (topic, message) {
             }
         }
 
-
         var image = Buffer.from(innerMessage.subarray(20, innerMessage.length - 20));
 
         fs.writeFile(`receivedimages/${fileName}`, image, function (err) {
             if (err) {
                 console.error('Error writing file:', err)
             } else {
-                console.log('Image saved as image.jpg')
+                console.log(`Image saved as ${fileName}`);
             }
         });
     })(topic, message);
