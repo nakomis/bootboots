@@ -34,7 +34,7 @@ client.on('message', function (topic, message) {
             if (err) {
                 console.error('Error writing file:', err)
             } else {
-                console.log(`Image saved as ${fileName}`);
+                console.log(`Image saved as ${fileName} at ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`);
             }
         });
     })(topic, message);
