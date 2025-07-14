@@ -10,7 +10,7 @@ MqttClient client(espClient);
 
 MessageQueue::MessageQueue() {}
 
-int MessageQueue::postImage(const String& filename, const uint8_t* message, size_t size) {
+int MessageQueue::postImage(NamedImage* namedImage) {
     if (!client.connected())
     {
         Serial.println("Connecting to MQTT server...");
@@ -25,18 +25,18 @@ int MessageQueue::postImage(const String& filename, const uint8_t* message, size
     if (client.connected())
     {
         Serial.println("Posting image to topic: " + String(TOPIC));
-        Serial.printf("Filename: %s, Size: %zu bytes\n", filename.c_str(), size);
+        Serial.printf("Filename: %s, Size: %zu bytes\n", namedImage->filename.c_str(), namedImage->size);
         uint8_t filenameArray [20];
         
-        Serial.println("Preparing message with filename: " + filename);
-        snprintf(reinterpret_cast<char*>(filenameArray), 20, "%s", filename.c_str());
-        Serial.printf("Message size: %zu bytes\n", size);
-        Serial.printf("Total message size: %zu bytes\n", size + 20);
+        Serial.println("Preparing message with filename: " + namedImage->filename);
+        snprintf(reinterpret_cast<char*>(filenameArray), 20, "%s", namedImage->filename.c_str());
+        Serial.printf("Message size: %zu bytes\n", namedImage->size);
+        Serial.printf("Total message size: %zu bytes\n", namedImage->size + 20);
         Serial.println("Beginning MQTT message...");
         Serial.printf("Filename array size: %zu bytes\n", sizeof(filenameArray));
         const char *topic = TOPIC.c_str();
-        client.beginMessage(topic, sizeof(filenameArray) + size, false);
-        Serial.printf("Writing message of size %zu bytes...\n", size + 20);
+        client.beginMessage(topic, sizeof(filenameArray) + namedImage->size, false);
+        Serial.printf("Writing message of size %zu bytes...\n", namedImage->size + 20);
         Serial.printf("Filename array size: %zu bytes\n", sizeof(filenameArray));
         for (int i = 0; i < sizeof(filenameArray); i++) {
             Serial.printf("filenameArray[%d]: %d\n", i, filenameArray[i]);
@@ -46,7 +46,7 @@ int MessageQueue::postImage(const String& filename, const uint8_t* message, size
         const uint8_t *buf = filenameArray;
         size_t bytesSent = client.write(buf, messageSize);
         Serial.printf("Bytes sent for filename array: %zu\n", bytesSent);
-        bytesSent = client.write(message, size);
+        bytesSent = client.write(namedImage->image, namedImage->size);
         Serial.printf("Bytes sent for image message: %zu\n", bytesSent);
         Serial.println("Ending MQTT message...");
         int result = client.endMessage();
