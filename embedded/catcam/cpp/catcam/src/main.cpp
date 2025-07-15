@@ -19,6 +19,9 @@ void setup() {
     digitalWrite(4, LOW);
     rtc_gpio_hold_dis(GPIO_NUM_4);
 
+    pinMode(GPIO_NUM_15, OUTPUT);
+    digitalWrite(GPIO_NUM_15, HIGH);
+
     WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // disable brownout detector
 
     // Wait three seconds for the kitty to get in range
@@ -29,11 +32,15 @@ void setup() {
     camera.init();
 
     // Take Picture with Camera
+    digitalWrite(GPIO_NUM_15, LOW);
+    delay(10);
     NamedImage* namedImage = camera.getImage();
     if (!namedImage)
     {
+        digitalWrite(GPIO_NUM_15, LOW);
         ESP.restart(); // Restart if no image is captured
     }
+    digitalWrite(GPIO_NUM_15, HIGH);
 
     // Post Image to Message Queue
     Serial.println("Posting image to message queue...");
