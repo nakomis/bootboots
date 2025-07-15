@@ -69,8 +69,9 @@ void deepsleep() {
     rtc_gpio_pullup_dis(GPIO_NUM_13);
     rtc_gpio_pulldown_en(GPIO_NUM_13);
 
-    Serial.println("Going to sleep now");
+    Serial.println("Taking a 3 minute nap before deep sleep...");
     delay(3 * 60 * 1000); // Sleep for 3 minutes before going to deep sleep
+    Serial.println("Going to deep sleep now");
     esp_deep_sleep_start();
     Serial.println("This will never be printed");
 }
