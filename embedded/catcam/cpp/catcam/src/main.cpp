@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include <esp_camera.h>
 
+#include "main.h"
 #include "secrets.h"
 #include "WifiConnect.h"
 #include "MessageQueue.h"
@@ -50,6 +51,16 @@ void setup() {
     camera.deInit();
     Serial.println("Camera resources returned successfully");
 
+    deepsleep();
+}
+
+void loop() {
+  // Should never reach here, but if it does, go to deep sleep
+  Serial.println("Loop reached, going to deep sleep...");
+  deepsleep();
+}
+
+void deepsleep() {
     // Prepare for deep sleep
     pinMode(4, OUTPUT);
     digitalWrite(4, LOW);
@@ -59,11 +70,7 @@ void setup() {
     rtc_gpio_pulldown_en(GPIO_NUM_13);
 
     Serial.println("Going to sleep now");
-    delay(1000);
+    delay(3 * 60 * 1000); // Sleep for 3 minutes before going to deep sleep
     esp_deep_sleep_start();
     Serial.println("This will never be printed");
-}
-
-void loop() {
-
 }
