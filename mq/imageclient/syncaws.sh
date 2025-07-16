@@ -17,5 +17,4 @@ done;
 # release any claimed items that have not been processed
 for ff in $(jq '. | .Items.[] | select((.user != null) and (.cat == null)) | .imageName.S + ":" + .uuid.S' catadata.json | tr -d '"'); do
     IFS=: read -r FILENAME UUID <<< "$ff"; aws dynamodb update-item --table-name catadata --key "{\"imageName\":{\"S\":\"$FILENAME\"}, \"uuid\":{\"S\": \"$UUID\"}}" --update-expression "REMOVE cat, claimedAt, #user, reviewedAt" --expression-attribute-names "{\"#user\":\"user\"}"
-    # aws dynamodb update-item --table-name catadata --key "{\"imageName\":{\"S\":\""$FILENAME"\"}, \"uuid\":{\"S\": \"$UUID\"}}";
 done;
