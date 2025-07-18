@@ -31,5 +31,13 @@ int WifiConnect::connect()
         delay(100);
     }
     Serial.println("\nWi-Fi Connected.\n");
+    Serial.print("IP Address: ");
+    Serial.println(WiFi.localIP());
+    Serial.print("MAC Address: ");
+    Serial.println(WiFi.macAddress());
+    Serial.print("SSID: ");
+    Serial.println(WiFi.SSID());
+    Serial.print("Signal Strength: ");
+    Serial.println(WiFi.RSSI()); 
     return 0;
 }

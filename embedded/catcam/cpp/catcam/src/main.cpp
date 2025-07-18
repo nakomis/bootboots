@@ -35,7 +35,7 @@ void setup() {
     // Take Picture with Camera
     digitalWrite(GPIO_NUM_15, LOW);
     delay(10);
-    NamedImage* namedImage = camera.getImage();
+    NamedImage *namedImage = camera.getImage();
     if (!namedImage)
     {
         digitalWrite(GPIO_NUM_15, LOW);

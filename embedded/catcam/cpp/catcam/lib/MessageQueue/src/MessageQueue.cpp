@@ -51,6 +51,7 @@ int MessageQueue::postImage(NamedImage* namedImage) {
         Serial.println("Ending MQTT message...");
         int result = client.endMessage();
         Serial.printf("Message posted with result: %d\n", result);
+        client.stop(); // Ensure the client is stopped after posting
         return result;
     }
     else
