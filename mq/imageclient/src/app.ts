@@ -17,25 +17,31 @@ client.on("connect", () => {
 
 client.on('message', function (topic, message) {
     (async (innerTopic, innerMessage) => {
-        var fileName: String = '';
 
-        for (var i: number = 0; i < 20; i++) {
-            var nameByte: number = innerMessage[i];
-            if (nameByte !== 0) {
-                fileName += String.fromCharCode(innerMessage[i]);
-            } else {
-                break
+        try {
+            var fileName: String = '';
+            console.log(`Image redeived on topic: ${innerTopic}`);
+            for (var i: number = 0; i < 20; i++) {
+                var nameByte: number = innerMessage[i];
+                if (nameByte !== 0) {
+                    fileName += String.fromCharCode(innerMessage[i]);
+                } else {
+                    break
+                }
             }
+
+            var image = Buffer.from(innerMessage.subarray(20, innerMessage.length - 20));
+
+            fs.writeFile(`receivedimages/${fileName}`, image, function (err) {
+                if (err) {
+                    console.error('Error writing file:', err)
+                } else {
+                    console.log(`Image saved as ${fileName} at ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`);
+                }
+            });
+        } catch (error) {
+            console.error('Error processing message:', error);
         }
 
-        var image = Buffer.from(innerMessage.subarray(20, innerMessage.length - 20));
-
-        fs.writeFile(`receivedimages/${fileName}`, image, function (err) {
-            if (err) {
-                console.error('Error writing file:', err)
-            } else {
-                console.log(`Image saved as ${fileName} at ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`);
-            }
-        });
     })(topic, message);
 });
