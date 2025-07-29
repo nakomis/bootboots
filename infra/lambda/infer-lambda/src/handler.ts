@@ -7,14 +7,35 @@ const logger = new Logger();
 const sagemakerClient = new SageMakerRuntimeClient({ region: process.env.AWS_REGION });
 const s3Client = new S3Client({ region: process.env.AWS_REGION });
 
+// Cat names in order corresponding to the probability array indices
+const CAT_NAMES = ['Boots', 'Chi', 'Kappa', 'Mu', 'Tau', 'Wolf'];
+
+// Function to get the most likely cat from probabilities
+function getMostLikelyCat(probabilities: number[]): { name: string; confidence: number; index: number } {
+    let maxIndex = 0;
+    let maxProbability = probabilities[0];
+    
+    for (let i = 1; i < probabilities.length; i++) {
+        if (probabilities[i] > maxProbability) {
+            maxProbability = probabilities[i];
+            maxIndex = i;
+        }
+    }
+    
+    return {
+        name: CAT_NAMES[maxIndex] || 'Unknown',
+        confidence: maxProbability,
+        index: maxIndex
+    };
+}
+
 // Function to save image to S3
-async function saveImageToS3(imageBuffer: Buffer): Promise<string> {
+async function saveImageToS3(imageBuffer: Buffer, timestamp: string): Promise<string> {
     const bucketName = process.env.IMAGES_BUCKET_NAME;
     if (!bucketName) {
         throw new Error('IMAGES_BUCKET_NAME environment variable is not set');
     }
 
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const key = `catcam-images/${timestamp}.jpg`;
 
     const putCommand = new PutObjectCommand({
@@ -34,6 +55,44 @@ async function saveImageToS3(imageBuffer: Buffer): Promise<string> {
         return key;
     } catch (error) {
         logger.error('Failed to save image to S3', { error, bucket: bucketName, key });
+        throw error;
+    }
+}
+
+// Function to save SageMaker response to S3 as JSON
+async function saveSageMakerResponseToS3(responseData: any, timestamp: string, mostLikelyCat: any): Promise<string> {
+    const bucketName = process.env.IMAGES_BUCKET_NAME;
+    if (!bucketName) {
+        throw new Error('IMAGES_BUCKET_NAME environment variable is not set');
+    }
+
+    const key = `catcam-images/${timestamp}.txt`;
+    
+    const responseWithCatInfo = {
+        ...responseData,
+        mostLikelyCat,
+        catNames: CAT_NAMES,
+        timestamp: new Date().toISOString()
+    };
+
+    const putCommand = new PutObjectCommand({
+        Bucket: bucketName,
+        Key: key,
+        Body: JSON.stringify(responseWithCatInfo, null, 2),
+        ContentType: 'application/json',
+        Metadata: {
+            'uploaded-by': 'bootboots-lambda',
+            'timestamp': new Date().toISOString(),
+            'most-likely-cat': mostLikelyCat.name
+        }
+    });
+
+    try {
+        await s3Client.send(putCommand);
+        logger.info('Successfully saved SageMaker response to S3', { bucket: bucketName, key, mostLikelyCat: mostLikelyCat.name });
+        return key;
+    } catch (error) {
+        logger.error('Failed to save SageMaker response to S3', { error, bucket: bucketName, key });
         throw error;
     }
 }
@@ -158,11 +217,14 @@ export async function handler(event: APIGatewayProxyEvent, _context: Context): P
                 });
             }
 
+            // Generate timestamp for consistent naming
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+
             // Save image to S3 bucket
-            let s3Key: string;
+            let s3ImageKey: string | null = null;
             try {
-                s3Key = await saveImageToS3(imageBuffer);
-                logger.info('Image saved to S3 successfully', { s3Key });
+                s3ImageKey = await saveImageToS3(imageBuffer, timestamp);
+                logger.info('Image saved to S3 successfully', { s3ImageKey });
             } catch (s3Error) {
                 logger.error('Failed to save image to S3, continuing with inference', { error: s3Error });
                 // Continue with SageMaker inference even if S3 upload fails
@@ -197,17 +259,35 @@ export async function handler(event: APIGatewayProxyEvent, _context: Context): P
                 resultPreview: JSON.stringify(sagemakerResult).substring(0, 200)
             });
 
-            // Return successful response
+            // Determine the most likely cat from probabilities
+            let mostLikelyCat = { name: 'Unknown', confidence: 0, index: -1 };
+            if (sagemakerResult && sagemakerResult.probabilities && Array.isArray(sagemakerResult.probabilities)) {
+                mostLikelyCat = getMostLikelyCat(sagemakerResult.probabilities);
+                logger.info('Most likely cat detected', { mostLikelyCat });
+            }
+
+            // Save SageMaker response to S3 as JSON file
+            try {
+                const s3ResponseKey = await saveSageMakerResponseToS3(sagemakerResult, timestamp, mostLikelyCat);
+                logger.info('SageMaker response saved to S3 successfully', { s3ResponseKey });
+            } catch (s3Error) {
+                logger.error('Failed to save SageMaker response to S3', { error: s3Error });
+                // Continue with response even if S3 save fails
+            }
+
+            // Return successful response with most likely cat information
             return {
                 statusCode: 200,
                 headers: corsHeaders,
                 body: JSON.stringify({
                     success: true,
                     data: sagemakerResult,
+                    mostLikelyCat,
                     metadata: {
                         endpointName,
                         contentType: sagemakerResponse.ContentType,
-                        timestamp: new Date().toISOString()
+                        timestamp: new Date().toISOString(),
+                        s3ImageKey: s3ImageKey || null
                     }
                 })
             };
