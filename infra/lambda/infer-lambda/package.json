@@ -1,0 +1,20 @@
+{
+  "name": "command-processor",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@aws-lambda-powertools/logger": "^2.22.0",
+    "@aws-lambda-powertools/metrics": "^2.22.0",
+    "@aws-lambda-powertools/tracer": "^2.22.0",
+    "@aws-sdk/client-dynamodb": "^3.835.0",
+    "@aws-sdk/client-iot-data-plane": "^3.835.0",
+    "typescript": "^5.8.3"
+  }
+}
