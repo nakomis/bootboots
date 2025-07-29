@@ -7,10 +7,12 @@
 #include "WifiConnect.h"
 #include "MessageQueue.h"
 #include "Camera.h"
+#include "../lib/HttpClient/src/HttpClient.h"
 
 WifiConnect wifiConnect;
 MessageQueue messageQueue;
 Camera camera;
+CatCam::HttpClient httpClient;
 
 void setup() {
     Serial.begin(115200);
@@ -43,10 +45,17 @@ void setup() {
     }
     digitalWrite(GPIO_NUM_15, HIGH);
 
-    // Post Image to Message Queue
-    Serial.println("Posting image to message queue...");
+    // Post Image to REST API
+    Serial.println("Posting image to REST API...");
     wifiConnect.connect();
-    messageQueue.postImage(namedImage);
+    
+    // Post image and get JSON response
+    String jsonResponse = httpClient.postImage(namedImage, API_URL, API_KEY);
+    
+    // Output JSON response via Serial
+    Serial.println("JSON Response from API:");
+    Serial.println(jsonResponse);
+    
     Serial.println("Image posted successfully");
     camera.deInit();
     Serial.println("Camera resources returned successfully");
