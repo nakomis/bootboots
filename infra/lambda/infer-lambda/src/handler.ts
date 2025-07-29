@@ -1,9 +1,42 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import { Logger } from '@aws-lambda-powertools/logger';
 import { SageMakerRuntimeClient, InvokeEndpointCommand } from '@aws-sdk/client-sagemaker-runtime';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 
 const logger = new Logger();
 const sagemakerClient = new SageMakerRuntimeClient({ region: process.env.AWS_REGION });
+const s3Client = new S3Client({ region: process.env.AWS_REGION });
+
+// Function to save image to S3
+async function saveImageToS3(imageBuffer: Buffer): Promise<string> {
+    const bucketName = process.env.IMAGES_BUCKET_NAME;
+    if (!bucketName) {
+        throw new Error('IMAGES_BUCKET_NAME environment variable is not set');
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const key = `catcam-images/${timestamp}.jpg`;
+
+    const putCommand = new PutObjectCommand({
+        Bucket: bucketName,
+        Key: key,
+        Body: imageBuffer,
+        ContentType: 'image/jpeg',
+        Metadata: {
+            'uploaded-by': 'bootboots-lambda',
+            'timestamp': new Date().toISOString()
+        }
+    });
+
+    try {
+        await s3Client.send(putCommand);
+        logger.info('Successfully saved image to S3', { bucket: bucketName, key });
+        return key;
+    } catch (error) {
+        logger.error('Failed to save image to S3', { error, bucket: bucketName, key });
+        throw error;
+    }
+}
 
 export async function handler(event: APIGatewayProxyEvent, _context: Context): Promise<APIGatewayProxyResult> {
         logger.info('BootBoots Infer Lambda function invoked', {
@@ -123,6 +156,16 @@ export async function handler(event: APIGatewayProxyEvent, _context: Context): P
                     headerHex: jpegHeader.toString('hex'),
                     expectedHex: 'ffd8'
                 });
+            }
+
+            // Save image to S3 bucket
+            let s3Key: string;
+            try {
+                s3Key = await saveImageToS3(imageBuffer);
+                logger.info('Image saved to S3 successfully', { s3Key });
+            } catch (s3Error) {
+                logger.error('Failed to save image to S3, continuing with inference', { error: s3Error });
+                // Continue with SageMaker inference even if S3 upload fails
             }
 
             // Prepare SageMaker endpoint invocation

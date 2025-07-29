@@ -7,10 +7,21 @@ import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as targets from 'aws-cdk-lib/aws-route53-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as s3 from 'aws-cdk-lib/aws-s3';
 
 export class ApiGatewayStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
+
+    // Create S3 bucket for storing JPEG images
+    const imagesBucket = new s3.Bucket(this, 'BootBootsImagesBucket', {
+        bucketName: `bootboots-images-${this.account}-${this.region}`,
+        versioned: false,
+        publicReadAccess: false,
+        blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+        autoDeleteObjects: true,
+    });
 
     const inferLambdaLogGroup = new logs.LogGroup(this, 'BootBootsInferLambdaLogGroup', {
         logGroupName: '/aws/lambda/BootBootsInferLambda',
@@ -25,6 +36,9 @@ export class ApiGatewayStack extends cdk.Stack {
         logGroup: inferLambdaLogGroup,
         timeout: cdk.Duration.seconds(30),
         memorySize: 512,
+        environment: {
+            IMAGES_BUCKET_NAME: imagesBucket.bucketName,
+        },
         bundling: {
             minify: true,
             sourceMap: false,
@@ -38,6 +52,9 @@ export class ApiGatewayStack extends cdk.Stack {
         actions: ['sagemaker:InvokeEndpoint'],
         resources: [`arn:aws:sagemaker:${this.region}:${this.account}:endpoint/bootboots`],
     }));
+
+    // Grant S3 write permissions to the Lambda function
+    imagesBucket.grantWrite(inferLambda);
 
 
     // Create the API Gateway
