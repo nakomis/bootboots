@@ -48,15 +48,24 @@ export class ApiGatewayStack extends cdk.Stack {
       defaultCorsPreflightOptions: {
         allowOrigins: apigateway.Cors.ALL_ORIGINS,
         allowMethods: ['POST', 'OPTIONS'],
-        allowHeaders: ['Content-Type', 'Authorization'],
+        allowHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
       },
+      // Disable the default endpoint to force usage of custom domain
+      disableExecuteApiEndpoint: true,
     });
 
     // Create the /infer resource
     const inferResource = api.root.addResource('infer');
 
-    // Add POST method to /infer
+    // Create API key
+    const apiKey = new apigateway.ApiKey(this, 'BootBootsApiKey', {
+      apiKeyName: 'BootBootsInferenceKey',
+      description: 'API key for BootBoots inference endpoint',
+    });
+
+    // Add POST method to /infer with API key requirement
     inferResource.addMethod('POST', new apigateway.LambdaIntegration(inferLambda), {
+      apiKeyRequired: true,
       methodResponses: [
         {
           statusCode: '200',
@@ -65,9 +74,35 @@ export class ApiGatewayStack extends cdk.Stack {
           statusCode: '400',
         },
         {
+          statusCode: '403',
+        },
+        {
           statusCode: '500',
         },
       ],
+    });
+
+    // Create usage plan with 500 requests per day quota
+    const usagePlan = new apigateway.UsagePlan(this, 'BootBootsUsagePlan', {
+      name: 'BootBootsInferenceUsagePlan',
+      description: 'Usage plan for BootBoots inference API - 500 requests per day',
+      quota: {
+        limit: 500,
+        period: apigateway.Period.DAY,
+      },
+      throttle: {
+        rateLimit: 10, // 10 requests per second
+        burstLimit: 20, // Allow bursts up to 20 requests
+      },
+    });
+
+    // Associate the API key with the usage plan
+    usagePlan.addApiKey(apiKey);
+
+    // Associate the usage plan with the API stage
+    usagePlan.addApiStage({
+      api: api,
+      stage: api.deploymentStage,
     });
 
     // Look up the existing hosted zone for sandbox.nakomis.com
@@ -122,6 +157,18 @@ export class ApiGatewayStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'CustomDomainInferEndpointUrl', {
       value: `https://api.bootboots.sandbox.nakomis.com/infer`,
       description: 'Custom domain URL for the /infer POST endpoint',
+    });
+
+    // Output the API key value
+    new cdk.CfnOutput(this, 'BootBootsApiKeyValue', {
+      value: apiKey.keyId,
+      description: 'API Key ID for BootBoots inference endpoint',
+    });
+
+    // Output usage instructions
+    new cdk.CfnOutput(this, 'ApiUsageInstructions', {
+      value: 'Use: curl -X POST -H "X-API-Key: <API_KEY>" -H "Content-Type: image/jpeg" --data-binary "@image.jpg" https://api.bootboots.sandbox.nakomis.com/infer',
+      description: 'How to use the API with authentication',
     });
   }
 
