@@ -32,13 +32,8 @@ client.on('message', function (topic, message) {
 
             var image = Buffer.from(innerMessage.subarray(20, innerMessage.length - 20));
 
-            fs.writeFile(`receivedimages/${fileName}`, image, function (err) {
-                if (err) {
-                    console.error('Error writing file:', err)
-                } else {
-                    console.log(`Image saved as ${fileName} at ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`);
-                }
-            });
+            fs.writeFileSync(`receivedimages/${fileName}`, image);
+            console.log(`Image saved as ${fileName} at ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`);
         } catch (error) {
             console.error('Error processing message:', error);
         }
