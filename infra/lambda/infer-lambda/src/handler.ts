@@ -41,29 +41,42 @@ export async function handler(event: APIGatewayProxyEvent, _context: Context): P
                 };
             }
 
-            // Parse request body
-            let requestBody;
-            try {
-                requestBody = event.body ? JSON.parse(event.body) : {};
-            } catch (parseError) {
-                logger.error('Failed to parse request body', { error: parseError });
+            // Validate request body exists
+            if (!event.body) {
                 return {
                     statusCode: 400,
                     headers: corsHeaders,
                     body: JSON.stringify({
-                        error: 'Invalid JSON in request body'
+                        error: 'Request body is required'
                     })
                 };
             }
 
-            logger.info('Parsed request body', { requestBody });
+            // Base64 decode the request body and convert to buffer
+            let imageBuffer: Buffer;
+            try {
+                imageBuffer = Buffer.from(event.body, 'base64');
+                logger.info('Successfully decoded base64 image', { 
+                    originalSize: event.body.length,
+                    decodedSize: imageBuffer.length 
+                });
+            } catch (decodeError) {
+                logger.error('Failed to decode base64 request body', { error: decodeError });
+                return {
+                    statusCode: 400,
+                    headers: corsHeaders,
+                    body: JSON.stringify({
+                        error: 'Invalid base64 encoded request body'
+                    })
+                };
+            }
 
             // Prepare SageMaker endpoint invocation
             const endpointName = 'bootboots';
             const invokeCommand = new InvokeEndpointCommand({
                 EndpointName: endpointName,
-                ContentType: 'application/json',
-                Body: JSON.stringify(requestBody)
+                ContentType: 'application/x-image',
+                Body: imageBuffer
             });
 
             logger.info('Invoking SageMaker endpoint', { endpointName });
