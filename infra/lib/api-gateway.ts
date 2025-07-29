@@ -44,6 +44,7 @@ export class ApiGatewayStack extends cdk.Stack {
     const api = new apigateway.RestApi(this, 'BootBootsInferApi', {
       restApiName: 'BootBootsInference API',
       description: 'BootBoots Inference API Gateway with POST /infer endpoint',
+      binaryMediaTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/octet-stream'],
       defaultCorsPreflightOptions: {
         allowOrigins: apigateway.Cors.ALL_ORIGINS,
         allowMethods: ['POST', 'OPTIONS'],

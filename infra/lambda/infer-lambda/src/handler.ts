@@ -52,23 +52,77 @@ export async function handler(event: APIGatewayProxyEvent, _context: Context): P
                 };
             }
 
-            // Base64 decode the request body and convert to buffer
+            // Handle both raw binary data and base64-encoded data
             let imageBuffer: Buffer;
-            try {
-                imageBuffer = Buffer.from(event.body, 'base64');
-                logger.info('Successfully decoded base64 image', { 
-                    originalSize: event.body.length,
-                    decodedSize: imageBuffer.length 
+            
+            // Handle the data based on its actual format, not just the isBase64Encoded flag
+            let bodyData = event.body;
+            
+            // Check if the body looks like base64-encoded JPEG data
+            // Base64-encoded JPEG typically starts with '/9j/' or similar
+            if (bodyData.startsWith('/9j/') || bodyData.startsWith('iVBOR') || 
+                (bodyData.length > 100 && /^[A-Za-z0-9+/]+=*$/.test(bodyData.substring(0, 100)))) {
+                // This looks like base64 data, decode it
+                try {
+                    imageBuffer = Buffer.from(bodyData, 'base64');
+                    logger.info('Decoded base64 image data', { 
+                        originalSize: bodyData.length,
+                        decodedSize: imageBuffer.length,
+                        isBase64Encoded: event.isBase64Encoded,
+                        firstBytes: imageBuffer.subarray(0, 10).toString('hex'),
+                        bodyStart: bodyData.substring(0, 20)
+                    });
+                } catch (decodeError) {
+                    logger.error('Failed to decode what appeared to be base64 data', { error: decodeError });
+                    imageBuffer = Buffer.from(bodyData, 'binary');
+                }
+            } else if (event.isBase64Encoded) {
+                // API Gateway says it's base64 encoded, but doesn't look like typical base64
+                // Check if data appears to be URL-encoded
+                if (bodyData.startsWith('%2F') || bodyData.includes('%')) {
+                    try {
+                        bodyData = decodeURIComponent(bodyData);
+                        logger.info('URL decoded the request body');
+                    } catch (decodeError) {
+                        logger.warn('Failed to URL decode, using original data', { error: decodeError });
+                    }
+                }
+                
+                imageBuffer = Buffer.from(bodyData, 'binary');
+                logger.info('Using API Gateway decoded binary data', { 
+                    dataSize: imageBuffer.length,
+                    isBase64Encoded: event.isBase64Encoded,
+                    firstBytes: imageBuffer.subarray(0, 10).toString('hex'),
+                    bodyStart: event.body.substring(0, 20)
                 });
-            } catch (decodeError) {
-                logger.error('Failed to decode base64 request body', { error: decodeError });
-                return {
-                    statusCode: 400,
-                    headers: corsHeaders,
-                    body: JSON.stringify({
-                        error: 'Invalid base64 encoded request body'
-                    })
-                };
+            } else {
+                // Data might be base64-encoded string, try to decode it
+                try {
+                    imageBuffer = Buffer.from(event.body, 'base64');
+                    logger.info('Successfully decoded base64 image', { 
+                        originalSize: event.body.length,
+                        decodedSize: imageBuffer.length,
+                        isBase64Encoded: event.isBase64Encoded,
+                        firstBytes: imageBuffer.subarray(0, 10).toString('hex')
+                    });
+                } catch (decodeError) {
+                    // If base64 decode fails, treat as raw binary string
+                    imageBuffer = Buffer.from(event.body, 'binary');
+                    logger.info('Using raw binary data (base64 decode failed)', { 
+                        dataSize: imageBuffer.length,
+                        isBase64Encoded: event.isBase64Encoded,
+                        firstBytes: imageBuffer.subarray(0, 10).toString('hex')
+                    });
+                }
+            }
+            
+            // Validate JPEG header (should start with FFD8)
+            const jpegHeader = imageBuffer.subarray(0, 2);
+            if (jpegHeader[0] !== 0xFF || jpegHeader[1] !== 0xD8) {
+                logger.warn('Image does not appear to be a valid JPEG', {
+                    headerHex: jpegHeader.toString('hex'),
+                    expectedHex: 'ffd8'
+                });
             }
 
             // Prepare SageMaker endpoint invocation
