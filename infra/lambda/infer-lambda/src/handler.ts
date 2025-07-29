@@ -1,82 +1,141 @@
-import type { LambdaInterface } from '@aws-lambda-powertools/commons/types';
-import { Context } from 'aws-lambda';
+import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
 import { Logger } from '@aws-lambda-powertools/logger';
-import { DynamoDBClient, PutItemCommand } from '@aws-sdk/client-dynamodb';
-import { IoTDataPlaneClient, PublishCommand } from "@aws-sdk/client-iot-data-plane";
+import { SageMakerRuntimeClient, InvokeEndpointCommand } from '@aws-sdk/client-sagemaker-runtime';
 
 const logger = new Logger();
+const sagemakerClient = new SageMakerRuntimeClient({ region: process.env.AWS_REGION });
 
-type MushroomCommand = {
-    deviceId: string;
-    commandType: string;
-    action: string;
-};
-
-class Lambda implements LambdaInterface {
-    @logger.injectLambdaContext()
-    async handler(_event: any, _context: Context) {
-        logger.info('Command Processor Lambda function invoked', {
-            event: _event,
-            context: _context,
+export async function handler(event: APIGatewayProxyEvent, _context: Context): Promise<APIGatewayProxyResult> {
+        logger.info('BootBoots Infer Lambda function invoked', {
+            httpMethod: event.httpMethod,
+            path: event.path,
+            headers: event.headers
         });
-        const body: MushroomCommand = JSON.parse(_event?.body || '{}');
-        const ddbClient = new DynamoDBClient({});
-        const tableName = 'MushroomCommands';
 
-        // Calculate TTL as 30 days from now (in seconds since epoch)
-        const ttlSeconds = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
-
-        await ddbClient.send(
-            new PutItemCommand({
-                TableName: tableName,
-                Item: {
-                    deviceId: { S: body.deviceId },
-                    timestamp: { S: new Date().toISOString() },
-                    commandType: { S: body.commandType },
-                    action: { S: body.action },
-                    ttl: { N: ttlSeconds.toString() } // 30 days TTL
-                },
-            })
-        );
-
-        const iotClient = new IoTDataPlaneClient();
-        const topic = "MushroomThing/commands";
-        const message = {
-            deviceId: body.deviceId,
-            timestamp: new Date().toISOString(),
-            commandType: body.commandType,
-            action: body.action,
+        // CORS headers for all responses
+        const corsHeaders = {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+            'Content-Type': 'application/json'
         };
 
         try {
-            logger.info('Publishing command to IoT topic', {
-                topic: topic,
-                message: message,
-            });
-            await iotClient.send(
-                new PublishCommand({
-                    topic,
-                    payload: Buffer.from(JSON.stringify(message)),
-                    qos: 0
-                })
-            );
-        } catch (error) {
-            logger.error('Failed to publish command to IoT topic', {
-                error: error instanceof Error ? error.message : String(error),
-                topic: topic,
-                message: message,
-            });
-        }
+            // Handle preflight OPTIONS request
+            if (event.httpMethod === 'OPTIONS') {
+                return {
+                    statusCode: 200,
+                    headers: corsHeaders,
+                    body: ''
+                };
+            }
 
-        return {
-            statusCode: 200,
-            body: JSON.stringify({
-                message: 'Hello from the command processor Lambda function!',
-                commandType: body.commandType,
-                action: body.action,
-            }),
-        };
-    }
+            // Validate HTTP method
+            if (event.httpMethod !== 'POST') {
+                return {
+                    statusCode: 405,
+                    headers: corsHeaders,
+                    body: JSON.stringify({
+                        error: 'Method not allowed. Only POST requests are supported.'
+                    })
+                };
+            }
+
+            // Parse request body
+            let requestBody;
+            try {
+                requestBody = event.body ? JSON.parse(event.body) : {};
+            } catch (parseError) {
+                logger.error('Failed to parse request body', { error: parseError });
+                return {
+                    statusCode: 400,
+                    headers: corsHeaders,
+                    body: JSON.stringify({
+                        error: 'Invalid JSON in request body'
+                    })
+                };
+            }
+
+            logger.info('Parsed request body', { requestBody });
+
+            // Prepare SageMaker endpoint invocation
+            const endpointName = 'bootboots';
+            const invokeCommand = new InvokeEndpointCommand({
+                EndpointName: endpointName,
+                ContentType: 'application/json',
+                Body: JSON.stringify(requestBody)
+            });
+
+            logger.info('Invoking SageMaker endpoint', { endpointName });
+
+            // Invoke SageMaker endpoint
+            const sagemakerResponse = await sagemakerClient.send(invokeCommand);
+            
+            // Parse SageMaker response
+            const responseBody = new TextDecoder().decode(sagemakerResponse.Body);
+            let sagemakerResult;
+            
+            try {
+                sagemakerResult = JSON.parse(responseBody);
+            } catch (parseError) {
+                logger.warn('SageMaker response is not JSON, returning as text', { responseBody });
+                sagemakerResult = { result: responseBody };
+            }
+
+            logger.info('SageMaker endpoint response received', { 
+                contentType: sagemakerResponse.ContentType,
+                resultPreview: JSON.stringify(sagemakerResult).substring(0, 200)
+            });
+
+            // Return successful response
+            return {
+                statusCode: 200,
+                headers: corsHeaders,
+                body: JSON.stringify({
+                    success: true,
+                    data: sagemakerResult,
+                    metadata: {
+                        endpointName,
+                        contentType: sagemakerResponse.ContentType,
+                        timestamp: new Date().toISOString()
+                    }
+                })
+            };
+
+        } catch (error: any) {
+            logger.error('Error processing request', { error });
+            
+            // Handle specific SageMaker errors
+            if (error?.name === 'ValidationException') {
+                return {
+                    statusCode: 400,
+                    headers: corsHeaders,
+                    body: JSON.stringify({
+                        error: 'Invalid request to SageMaker endpoint',
+                        details: error.message
+                    })
+                };
+            }
+            
+            if (error?.name === 'ModelError') {
+                return {
+                    statusCode: 422,
+                    headers: corsHeaders,
+                    body: JSON.stringify({
+                        error: 'Model processing error',
+                        details: error.message
+                    })
+                };
+            }
+
+            // Generic error response
+            return {
+                statusCode: 500,
+                headers: corsHeaders,
+                body: JSON.stringify({
+                    error: 'Internal server error',
+                    message: 'Failed to process inference request'
+                })
+            };
+        }
 }
-const lambda = new Lambda();
-export const handler = lambda.handler.bind(lambda);

@@ -1,5 +1,5 @@
 {
-  "name": "command-processor",
+  "name": "bootboots-infer-lambda",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
@@ -8,13 +8,14 @@
   },
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "BootBoots inference Lambda function",
   "dependencies": {
     "@aws-lambda-powertools/logger": "^2.22.0",
     "@aws-lambda-powertools/metrics": "^2.22.0",
     "@aws-lambda-powertools/tracer": "^2.22.0",
     "@aws-sdk/client-dynamodb": "^3.835.0",
     "@aws-sdk/client-iot-data-plane": "^3.835.0",
+    "@aws-sdk/client-sagemaker-runtime": "^3.835.0",
     "typescript": "^5.8.3"
   }
 }

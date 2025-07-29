@@ -6,6 +6,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as targets from 'aws-cdk-lib/aws-route53-targets';
+import * as iam from 'aws-cdk-lib/aws-iam';
 
 export class ApiGatewayStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -22,7 +23,21 @@ export class ApiGatewayStack extends cdk.Stack {
         runtime: cdk.aws_lambda.Runtime.NODEJS_22_X,
         entry: `${__dirname}/../lambda/infer-lambda/src/handler.ts`,
         logGroup: inferLambdaLogGroup,
+        timeout: cdk.Duration.seconds(30),
+        memorySize: 512,
+        bundling: {
+            minify: true,
+            sourceMap: false,
+            target: 'node22',
+        },
     });
+
+    // Grant SageMaker invoke permissions to the Lambda function
+    inferLambda.addToRolePolicy(new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['sagemaker:InvokeEndpoint'],
+        resources: [`arn:aws:sagemaker:${this.region}:${this.account}:endpoint/bootboots`],
+    }));
 
 
     // Create the API Gateway
@@ -52,12 +67,6 @@ export class ApiGatewayStack extends cdk.Stack {
           statusCode: '500',
         },
       ],
-    });
-
-    // Output the API Gateway URL
-    new cdk.CfnOutput(this, 'BootBootsInferApiGatewayUrl', {
-      value: api.url,
-      description: 'URL of the API Gateway',
     });
 
     // Look up the existing hosted zone for sandbox.nakomis.com
