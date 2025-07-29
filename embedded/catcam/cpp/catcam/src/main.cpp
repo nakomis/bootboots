@@ -18,6 +18,9 @@ void setup() {
     Serial.begin(115200);
     Serial.println(BANNER);
 
+    // Initialize HTTP client (must be done before any HTTP requests)
+    CatCam::HttpClient::init();
+
     pinMode(4, INPUT);
     digitalWrite(4, LOW);
     rtc_gpio_hold_dis(GPIO_NUM_4);
@@ -29,7 +32,7 @@ void setup() {
 
     // Wait three seconds for the kitty to get in range
     Serial.println("Waiting for 3 seconds before taking picture...");
-    delay(3000);
+    delay(500);
 
     // Initialize Camera
     camera.init();

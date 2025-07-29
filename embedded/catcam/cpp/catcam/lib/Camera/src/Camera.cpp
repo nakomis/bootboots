@@ -65,20 +65,20 @@ void Camera::init()
     config.jpeg_quality = 0;
     config.fb_location = CAMERA_FB_IN_DRAM;
 
-    if (psramFound())
-    {
-        Serial.println("PSRAM found, using UXGA resolution");
-        config.frame_size = FRAMESIZE_UXGA; // FRAMESIZE_ + QVGA|CIF|VGA|SVGA|XGA|SXGA|UXGA
-        config.jpeg_quality = 10;
-        config.fb_count = 2;
-    }
-    else
-    {
+    // if (psramFound())
+    // {
+    //     Serial.println("PSRAM found, using UXGA resolution");
+    //     config.frame_size = FRAMESIZE_UXGA; // FRAMESIZE_ + QVGA|CIF|VGA|SVGA|XGA|SXGA|UXGA
+    //     config.jpeg_quality = 10;
+    //     config.fb_count = 2;
+    // }
+    // else
+    // {
         Serial.println("No PSRAM found, using SVGA resolution");
         config.frame_size = FRAMESIZE_SVGA;
         config.jpeg_quality = 12;
         config.fb_count = 1;
-    }
+    // }
 
     // Init Camera
     Serial.println("Initializing camera...");
