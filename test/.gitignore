@@ -1,0 +1,4 @@
+cat-detection-results*
+secrets.ts
+node_modules
+*.js
