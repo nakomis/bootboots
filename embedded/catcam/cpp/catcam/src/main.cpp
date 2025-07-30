@@ -26,7 +26,7 @@ void deepsleep();
 
 void setup() {
     Serial.begin(115200);
-    Serial.println(BANNER);
+    Serial.println(BANNER); // Keep banner on Serial for immediate startup visibility
 
     // Initialize HTTP client (must be done before any HTTP requests)
     CatCam::HttpClient::init();
@@ -34,6 +34,8 @@ void setup() {
     // Initialize SD card logger for persistent logging
     if (!SDLogger::getInstance().init(5, "/logs")) {
         Serial.println("Warning: SD logger initialization failed - continuing without SD logging");
+    } else {
+        LOG_I("SD card logger initialized successfully");
     }
     
     // Initialize atomizer deterrent system (SAFETY MODE: Kappa protection priority)
@@ -49,7 +51,7 @@ void setup() {
     WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // disable brownout detector
 
     // Wait three seconds for the kitty to get in range
-    Serial.println("Waiting for 3 seconds before taking picture...");
+    LOG_I("Waiting for 3 seconds before taking picture...");
     delay(500);
 
     // Initialize Camera
@@ -66,22 +68,22 @@ void setup() {
     }
     digitalWrite(GPIO_NUM_15, HIGH);
 
-    Serial.println("Picture taken successfully, now saving to preferences...");
+    LOG_I("Picture taken successfully, now saving to preferences...");
 
     // Save picture number to preferences
     preferences.begin("catcam", false);
     int pictureNumber = preferences.getInt("pictureNumber", 0);
-    Serial.printf("Current picture number: %d\n", pictureNumber);
+    LOG_IF("Current picture number: %d", pictureNumber);
     pictureNumber++;
     preferences.putInt("pictureNumber", pictureNumber);
-    Serial.printf("Incremented picture number to: %d\n", pictureNumber);
+    LOG_IF("Incremented picture number to: %d", pictureNumber);
     preferences.end();
 
     // Copy image to PSRAM before network operations
     camera.copyImageToPSRAM(namedImage);
 
     // Post Image to REST API
-    Serial.println("Posting image to REST API...");
+    LOG_I("Posting image to REST API...");
     wifiConnect.connect();
     
     // Post image and get JSON response
@@ -90,35 +92,35 @@ void setup() {
     // Release the image buffer after posting
     camera.releaseImageBuffer(namedImage);
 
-    // Output JSON response via Serial
-    Serial.println("JSON Response from API:");
-    Serial.println(jsonResponse);
+    // Output JSON response via Serial and SD card
+    LOG_I("JSON Response from API:");
+    LOG_I(jsonResponse.c_str());
     
     // Parse API response and evaluate deterrent activation (KAPPA PROTECTION PRIORITY)
     processDetectionResponse(jsonResponse);
     
-    Serial.println("Image posted successfully");
+    LOG_I("Image posted successfully");
     camera.deInit();
-    Serial.println("Camera resources returned successfully");
+    LOG_I("Camera resources returned successfully");
 
     deepsleep();
 }
 
 void processDetectionResponse(const String& jsonResponse) {
-    Serial.println("=== DETERRENT EVALUATION (KAPPA PROTECTION PRIORITY) ===");
+    LOG_I("=== DETERRENT EVALUATION (KAPPA PROTECTION PRIORITY) ===");
     
     // Parse JSON response
     JsonDocument doc;
     DeserializationError error = deserializeJson(doc, jsonResponse);
     
     if (error) {
-        Serial.printf("JSON parsing failed: %s\n", error.c_str());
+        LOG_EF("JSON parsing failed: %s", error.c_str());
         return;
     }
     
     // Check if response has the expected structure
     if (!doc["success"] || !doc["mostLikelyCat"] || !doc["data"]["probabilities"]) {
-        Serial.println("Invalid API response structure - deterrent evaluation skipped");
+        LOG_E("Invalid API response structure - deterrent evaluation skipped");
         return;
     }
     
@@ -130,7 +132,7 @@ void processDetectionResponse(const String& jsonResponse) {
     // Extract all probabilities for validation
     JsonArray probArray = doc["data"]["probabilities"];
     if (probArray.size() != 6) {
-        Serial.println("Invalid probabilities array - deterrent evaluation skipped");
+        LOG_E("Invalid probabilities array - deterrent evaluation skipped");
         return;
     }
     
@@ -148,12 +150,12 @@ void processDetectionResponse(const String& jsonResponse) {
         .allProbabilities = allProbabilities
     };
     
-    // Log detection details to both Serial and SD card
-    Serial.printf("Detection: %s (%.1f%% confidence, index %d)\n", catName, confidence * 100, index);
-    Serial.printf("All probabilities: [%.1f%%, %.1f%%, %.1f%%, %.1f%%, %.1f%%, %.1f%%]\n",
-                  allProbabilities[0] * 100, allProbabilities[1] * 100,
-                  allProbabilities[2] * 100, allProbabilities[3] * 100,
-                  allProbabilities[4] * 100, allProbabilities[5] * 100);
+    // Log detection details
+    LOG_IF("Detection: %s (%.1f%% confidence, index %d)", catName, confidence * 100, index);
+    LOG_IF("All probabilities: [%.1f%%, %.1f%%, %.1f%%, %.1f%%, %.1f%%, %.1f%%]",
+           allProbabilities[0] * 100, allProbabilities[1] * 100,
+           allProbabilities[2] * 100, allProbabilities[3] * 100,
+           allProbabilities[4] * 100, allProbabilities[5] * 100);
     
     // Get picture number for logging
     preferences.begin("catcam", true);
@@ -169,17 +171,15 @@ void processDetectionResponse(const String& jsonResponse) {
     
     // CRITICAL: Special protection for Kappa (index 2)
     if (index == 2) {
-        Serial.println("*** KAPPA DETECTED - DETERRENT PERMANENTLY BLOCKED ***");
-        Serial.println("Protecting timid cat from any accidental activation");
-        
-        // Log Kappa protection to SD card
-        SDLogger::getInstance().criticalf("KAPPA PROTECTION: Deterrent permanently blocked for timid cat (%.1f%% confidence)", confidence * 100);
+        LOG_C("*** KAPPA DETECTED - DETERRENT PERMANENTLY BLOCKED ***");
+        LOG_C("Protecting timid cat from any accidental activation");
+        LOG_CF("KAPPA PROTECTION: Deterrent permanently blocked for timid cat (%.1f%% confidence)", confidence * 100);
         return;
     }
     
     // Evaluate deterrent activation with ultra-safe validation
     if (atomizer.shouldActivate(result)) {
-        Serial.println("*** DETERRENT CRITERIA MET - ACTIVATING ATOMIZER ***");
+        LOG_C("*** DETERRENT CRITERIA MET - ACTIVATING ATOMIZER ***");
         atomizer.logActivation(result);
         atomizer.activate(2000); // 2 second activation
         
@@ -187,17 +187,17 @@ void processDetectionResponse(const String& jsonResponse) {
         while (atomizer.isActive()) {
             delay(100);
         }
-        Serial.println("*** DETERRENT CYCLE COMPLETE ***");
+        LOG_C("*** DETERRENT CYCLE COMPLETE ***");
     } else {
-        Serial.println("Deterrent activation criteria not met - system safe");
+        LOG_I("Deterrent activation criteria not met - system safe");
     }
     
-    Serial.println("=== DETERRENT EVALUATION COMPLETE ===");
+    LOG_I("=== DETERRENT EVALUATION COMPLETE ===");
 }
 
 void loop() {
   // Should never reach here, but if it does, go to deep sleep
-  Serial.println("Loop reached, going to deep sleep...");
+  LOG_W("Loop reached, going to deep sleep...");
   deepsleep();
 }
 
@@ -210,9 +210,9 @@ void deepsleep() {
     rtc_gpio_pullup_dis(GPIO_NUM_13);
     rtc_gpio_pulldown_en(GPIO_NUM_13);
 
-    Serial.println("Taking a 3 minute nap before deep sleep...");
-    delay(3 * 60 * 1000); // Sleep for 3 minutes before going to deep sleep
-    Serial.println("Going to deep sleep now");
+    LOG_I("Taking a 3 minute nap before deep sleep...");
+    delay(3000);
+    LOG_I("Going to deep sleep now");
     esp_deep_sleep_start();
-    Serial.println("This will never be printed");
+    // This will never be reached
 }

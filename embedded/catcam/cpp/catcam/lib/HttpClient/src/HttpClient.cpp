@@ -1,6 +1,7 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
-#include <HTTPClient.h>
+#include "HttpClient.h"
+#include "../../SDLogger/src/SDLogger.h"
 #include <ArduinoJson.h>
 #include <esp_http_client.h>
 #include <esp32-hal-psram.h>
@@ -41,12 +42,12 @@ void HttpClient::init() {
                 "-----END CERTIFICATE-----"
             );
             AMAZON_ROOT_CA = cert;
-            Serial.println("Amazon Root CA certificate stored in PSRAM");
+            SDLogger::getInstance().info("Amazon Root CA certificate stored in PSRAM");
         } else {
-            Serial.println("Failed to allocate PSRAM for certificate");
+            SDLogger::getInstance().error("Failed to allocate PSRAM for certificate");
         }
     } else if (!psramFound()) {
-        Serial.println("PSRAM not available, using regular memory for certificate");
+        SDLogger::getInstance().warn("PSRAM not available, using regular memory for certificate");
     }
 }
 
@@ -98,7 +99,7 @@ String HttpClient::postImage(NamedImage* namedImage, const char* url, const char
             port = 443; // Default HTTPS port
         }
         
-        Serial.printf("Connecting to %s:%d%s\n", host.c_str(), port, path.c_str());
+        SDLogger::getInstance().infof("Connecting to %s:%d%s", host.c_str(), port, path.c_str());
         
         // Configure client with timeout
         client.setTimeout(20000);
@@ -110,10 +111,10 @@ String HttpClient::postImage(NamedImage* namedImage, const char* url, const char
         int maxRetries = 3;
         for(int i = 0; i < maxRetries; i++) {
             if (client.connect(host.c_str(), port)) {
-                Serial.println("Connected to server");
+                SDLogger::getInstance().info("Connected to server");
                 break;
             }
-            Serial.printf("Connection attempt %d/%d failed, retrying...\n", i+1, maxRetries);
+            SDLogger::getInstance().warnf("Connection attempt %d/%d failed, retrying...", i+1, maxRetries);
             delay(1000);
             
             if (i == maxRetries - 1) {
@@ -163,8 +164,7 @@ String HttpClient::postImage(NamedImage* namedImage, const char* url, const char
         
         // Read HTTP status line
         String status = client.readStringUntil('\n');
-        Serial.print("Status: ");
-        Serial.println(status);
+        SDLogger::getInstance().infof("Status: %d", status);
         
         // Skip headers
         while (client.available()) {
@@ -183,11 +183,10 @@ String HttpClient::postImage(NamedImage* namedImage, const char* url, const char
         success = true;
         
     } catch (const std::exception& e) {
-        Serial.print("Error in postImage: ");
-        Serial.println(e.what());
+        SDLogger::getInstance().errorf("Error in postImage: %s", e.what());
         response = "{\"error\": \"" + String(e.what()) + "\"}";
     } catch (...) {
-        Serial.println("Unknown error in postImage");
+        SDLogger::getInstance().error("Unknown error in postImage");
         response = "{\"error\": \"Unknown error\"}";
     }
 

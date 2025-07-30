@@ -1,4 +1,5 @@
 #include "Camera.h"
+#include "../../SDLogger/src/SDLogger.h"
 
 Camera::Camera()
 {
@@ -9,22 +10,22 @@ NamedImage* Camera::getImage()
     camera_fb_t* fb = esp_camera_fb_get();
     if (!fb)
     {
-        Serial.println("Camera capture failed");
+        SDLogger::getInstance().error("Camera capture failed");
         return nullptr;
     }
     else
     {
-        Serial.println("Camera capture succeeded");
-        Serial.printf("Captured frame size: %zu bytes\n", fb->len);
-        Serial.printf("Frame size: %dx%d, format: %d\n", fb->width, fb->height, fb->format);
+        SDLogger::getInstance().info("Camera capture succeeded");
+        SDLogger::getInstance().infof("Captured frame size: %zu bytes", fb->len);
+        SDLogger::getInstance().infof("Frame size: %dx%d, format: %d", fb->width, fb->height, fb->format);
     }
-    Serial.println("Picture taken successfully, now saving to preferences...");
+    SDLogger::getInstance().info("Picture taken successfully, now saving to preferences...");
     preferences.begin("catcam", false);
     int pictureNum = preferences.getInt("pictureNum", 0);
-    Serial.println("Current picture number: " + String(pictureNum));
+    SDLogger::getInstance().infof("Current picture number: %d", pictureNum);
     pictureNum++;
-    preferences.putInt("pictureNum", pictureNum);
-    Serial.println("Incremented picture number to: " + String(pictureNum));
+    preferences.putInt("pictureNumber", pictureNum);
+    SDLogger::getInstance().infof("Incremented picture number to: %d", pictureNum);
     preferences.end();
     NamedImage* namedImage = new NamedImage();
     namedImage->filename = String(pictureNum) + ".jpeg";
@@ -74,36 +75,36 @@ void Camera::init()
     // }
     // else
     // {
-        Serial.println("No PSRAM found, using SVGA resolution");
+        SDLogger::getInstance().warn("No PSRAM found, using SVGA resolution");
         config.frame_size = FRAMESIZE_SVGA;
         config.jpeg_quality = 12;
         config.fb_count = 1;
     // }
 
     // Init Camera
-    Serial.println("Initializing camera...");
+    SDLogger::getInstance().info("Initializing camera...");
     esp_err_t err = esp_camera_init(&config);
     if (err != ESP_OK)
     {
-        Serial.printf("Camera init failed with error 0x%x\n", err);
+        SDLogger::getInstance().errorf("Camera init failed with error 0x%x", err);
         failureCount++;
         if (failureCount > 5)
         {
-            Serial.println("Too many failures, resetting...");
+            SDLogger::getInstance().error("Too many failures, resetting...");
             ESP.restart();
         }
         esp_sleep_enable_ext0_wakeup(GPIO_NUM_13, 1);
         rtc_gpio_pullup_dis(GPIO_NUM_13);
         rtc_gpio_pulldown_en(GPIO_NUM_13);
 
-        Serial.println("Going to sleep now");
+        SDLogger::getInstance().info("Going to sleep now");
         delay(1000);
         esp_deep_sleep_start();
 
         return;
     }
 
-    Serial.println("Camera initialized successfully, setting settings...");
+    SDLogger::getInstance().info("Camera initialized successfully, setting settings...");
     sensor_t* s = esp_camera_sensor_get();
     s->set_brightness(s, -2);     // -2 to 2
     s->set_whitebal(s, 1);      // 0 = disable, 1 = enable

@@ -7,11 +7,7 @@ void Atomizer::init() {
     pinMode(_controlPin, OUTPUT);
     digitalWrite(_controlPin, LOW);
     
-    // Log to both Serial and SD card
-    Serial.printf("Atomizer initialized on pin %d (SAFETY MODE: False positive avoidance priority)\n", _controlPin);
-    Serial.printf("Safety thresholds: Boots >%.0f%%, Others <%.0f%%, Consecutive: %d\n", 
-                  MIN_BOOTS_CONFIDENCE * 100, MAX_OTHER_CAT_CONFIDENCE * 100, REQUIRED_CONSECUTIVE_DETECTIONS);
-    
+    // Log initialization (SDLogger handles both Serial and SD output)
     SDLogger::getInstance().infof("Atomizer initialized on pin %d (SAFETY MODE: Kappa protection priority)", _controlPin);
     SDLogger::getInstance().infof("Safety thresholds: Boots >%.0f%%, Others <%.0f%%, Consecutive: %d", 
                                   MIN_BOOTS_CONFIDENCE * 100, MAX_OTHER_CAT_CONFIDENCE * 100, REQUIRED_CONSECUTIVE_DETECTIONS);
@@ -53,7 +49,7 @@ void Atomizer::activate(int durationMs) {
     // Limit duration to maximum safe value
     if (durationMs > MAX_ACTIVATION_DURATION_MS) {
         durationMs = MAX_ACTIVATION_DURATION_MS;
-        Serial.printf("Atomizer duration limited to %d ms for safety\n", MAX_ACTIVATION_DURATION_MS);
+        SDLogger::getInstance().warnf("Atomizer duration limited to %d ms for safety", MAX_ACTIVATION_DURATION_MS);
     }
     
     _activationDuration = durationMs;
@@ -63,7 +59,7 @@ void Atomizer::activate(int durationMs) {
     _consecutiveBootsDetections = 0; // Reset after activation
     
     digitalWrite(_controlPin, HIGH);
-    Serial.printf("*** DETERRENT ACTIVATED *** Duration: %d ms\n", durationMs);
+    SDLogger::getInstance().criticalf("*** DETERRENT ACTIVATED *** Duration: %d ms", durationMs);
 }
 
 void Atomizer::deactivate() {
@@ -71,7 +67,7 @@ void Atomizer::deactivate() {
         digitalWrite(_controlPin, LOW);
         _isActive = false;
         unsigned long actualDuration = millis() - _activationStart;
-        Serial.printf("Atomizer deactivated after %lu ms\n", actualDuration);
+        SDLogger::getInstance().infof("Atomizer deactivated after %lu ms", actualDuration);
     }
 }
 
@@ -89,27 +85,21 @@ bool Atomizer::canActivate() {
 }
 
 void Atomizer::logActivation(const DetectionResult& result) {
-    // Log to Serial for immediate feedback
-    Serial.printf("*** DETERRENT ACTIVATED ***\n");
-    Serial.printf("Target: %s (%.1f%% confidence)\n", result.catName, result.confidence * 100);
-    Serial.printf("All probabilities: [%.1f%%, %.1f%%, %.1f%%, %.1f%%, %.1f%%, %.1f%%]\n",
-                  result.allProbabilities[0] * 100, result.allProbabilities[1] * 100,
-                  result.allProbabilities[2] * 100, result.allProbabilities[3] * 100,
-                  result.allProbabilities[4] * 100, result.allProbabilities[5] * 100);
-    Serial.printf("Consecutive detections: %d\n", _consecutiveBootsDetections);
-    Serial.printf("Activation time: %lu ms since boot\n", millis());
-    
-    // Log to SD card for persistent record
-    SDLogger::getInstance().logDeterrentActivation(result.catName, result.confidence, result.allProbabilities);
+    // Log activation details (SDLogger handles both Serial and SD output)
+    SDLogger::getInstance().criticalf("*** DETERRENT ACTIVATED ***");
+    SDLogger::getInstance().criticalf("Target: %s (%.1f%% confidence)", result.catName, result.confidence * 100);
+    SDLogger::getInstance().criticalf("All probabilities: [%.1f%%, %.1f%%, %.1f%%, %.1f%%, %.1f%%, %.1f%%]",
+                                      result.allProbabilities[0] * 100, result.allProbabilities[1] * 100,
+                                      result.allProbabilities[2] * 100, result.allProbabilities[3] * 100,
+                                      result.allProbabilities[4] * 100, result.allProbabilities[5] * 100);
     SDLogger::getInstance().criticalf("Consecutive detections: %d, Activation time: %lu ms", _consecutiveBootsDetections, millis());
+    
+    // Also use the specialized deterrent activation logging
+    SDLogger::getInstance().logDeterrentActivation(result.catName, result.confidence, result.allProbabilities);
 }
 
 void Atomizer::logRejection(const DetectionResult& result, const char* reason) {
-    // Log to Serial for immediate feedback
-    Serial.printf("Deterrent REJECTED: %s (%.1f%% conf) - %s\n", 
-                  result.catName, result.confidence * 100, reason);
-    
-    // Log to SD card for persistent record
+    // Log rejection (SDLogger handles both Serial and SD output)
     SDLogger::getInstance().logDeterrentRejection(result.catName, result.confidence, reason);
 }
 
@@ -120,8 +110,7 @@ void Atomizer::setEnabled(bool enabled) {
         _consecutiveBootsDetections = 0;
     }
     
-    // Log to both Serial and SD card
-    Serial.printf("Atomizer deterrent system: %s\n", enabled ? "ENABLED" : "DISABLED");
+    // Log system state change
     SDLogger::getInstance().warnf("Atomizer deterrent system: %s", enabled ? "ENABLED" : "DISABLED");
 }
 
