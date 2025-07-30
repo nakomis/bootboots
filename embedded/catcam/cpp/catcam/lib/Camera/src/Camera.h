@@ -5,6 +5,7 @@
 #include <esp_camera.h>
 #include <driver/rtc_io.h>
 #include <Preferences.h>
+#include <esp32-hal-psram.h>
 
 #include "secrets.h"
 #include "NamedImage.h"
@@ -34,10 +35,18 @@ public:
     void init();
     NamedImage* getImage();
     void deInit();
+    
+    // PSRAM buffer management
+    void copyImageToPSRAM(NamedImage* namedImage);
+    void releaseImageBuffer(NamedImage* namedImage);
 
 private:
     int failureCount = 0;
     Preferences preferences;
+    
+    // PSRAM helper methods
+    uint8_t* copyToPSRAM(const uint8_t* src, size_t size);
+    void freePSRAM(uint8_t* ptr);
 };
 
 

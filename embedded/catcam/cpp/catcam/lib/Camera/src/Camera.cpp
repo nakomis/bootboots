@@ -115,3 +115,69 @@ void Camera::init()
     s->set_hmirror(s, 1);
     Serial.println("Settings applied successfully");
 }
+
+// PSRAM helper methods
+uint8_t* Camera::copyToPSRAM(const uint8_t* src, size_t size) {
+    if (!src || size == 0) {
+        Serial.println("Invalid source or size for PSRAM copy");
+        return nullptr;
+    }
+
+    uint8_t* buffer = (psramFound()) ? 
+        (uint8_t*)ps_malloc(size) : 
+        new (std::nothrow) uint8_t[size];
+    
+    if (buffer) {
+        memcpy(buffer, src, size);
+        Serial.printf("Copied %d bytes to %s at %p\n", 
+            size, psramFound() ? "PSRAM" : "heap", buffer);
+    } else {
+        Serial.println("Failed to allocate memory for image copy");
+    }
+    return buffer;
+}
+
+void Camera::freePSRAM(uint8_t* ptr) {
+    if (!ptr) return;
+    
+    if (psramFound()) {
+        free(ptr);
+    } else {
+        delete[] ptr;
+    }
+}
+
+// Public PSRAM buffer management methods
+void Camera::copyImageToPSRAM(NamedImage* namedImage) {
+    if (!namedImage || !namedImage->image || namedImage->size == 0) {
+        Serial.println("Invalid image data for PSRAM copy");
+        return;
+    }
+
+    // Copy image to PSRAM/heap
+    uint8_t* imageCopy = copyToPSRAM((const uint8_t*)namedImage->image, namedImage->size);
+    if (!imageCopy) {
+        Serial.println("Failed to allocate memory for image copy");
+        return;
+    }
+
+    // Free the original camera buffer
+    free(namedImage->image);
+    
+    // Update the NamedImage to point to the PSRAM copy
+    namedImage->image = imageCopy;
+    
+    Serial.println("Image buffer moved to PSRAM/heap successfully");
+}
+
+void Camera::releaseImageBuffer(NamedImage* namedImage) {
+    if (!namedImage || !namedImage->image) {
+        return;
+    }
+    
+    freePSRAM((uint8_t*)namedImage->image);
+    namedImage->image = nullptr;
+    namedImage->size = 0;
+    
+    Serial.println("Image buffer released");
+}

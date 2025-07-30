@@ -12,37 +12,6 @@ namespace CatCam {
 
 WiFiClientSecure client;
 
-// PSRAM helper methods
-uint8_t* HttpClient::copyToPSRAM(const uint8_t* src, size_t size) {
-    if (!src || size == 0) {
-        Serial.println("Invalid source or size for PSRAM copy");
-        return nullptr;
-    }
-
-    uint8_t* buffer = (psramFound()) ? 
-        (uint8_t*)ps_malloc(size) : 
-        new (std::nothrow) uint8_t[size];
-    
-    if (buffer) {
-        memcpy(buffer, src, size);
-        Serial.printf("Copied %d bytes to %s at %p\n", 
-            size, psramFound() ? "PSRAM" : "heap", buffer);
-    } else {
-        Serial.println("Failed to allocate memory for image copy");
-    }
-    return buffer;
-}
-
-void HttpClient::freePSRAM(uint8_t* ptr) {
-    if (!ptr) return;
-    
-    if (psramFound()) {
-        free(ptr);
-    } else {
-        delete[] ptr;
-    }
-}
-
 // Initialize PSRAM storage for the certificate
 void HttpClient::init() {
     if (psramFound() && AMAZON_ROOT_CA == nullptr) {
@@ -90,19 +59,8 @@ String HttpClient::postImage(NamedImage* namedImage, const char* url, const char
         return "{\"error\": \"Invalid image data\"}";
     }
 
-    // Store original size before we modify the NamedImage structure
+    // Store original size (image should already be in PSRAM from Camera)
     size_t originalImageSize = namedImage->size;
-
-    // Copy image to PSRAM first
-    uint8_t* imageCopy = copyToPSRAM((const uint8_t*)namedImage->image, originalImageSize);
-    if (!imageCopy) {
-        return "{\"error\": \"Failed to allocate PSRAM for image\"}";
-    }
-
-    // Free the camera buffer immediately to save memory
-    free(namedImage->image);
-    namedImage->image = nullptr;
-    namedImage->size = 0;
 
     String response = "";
     bool success = false;
@@ -174,12 +132,12 @@ String HttpClient::postImage(NamedImage* namedImage, const char* url, const char
         client.println(apiKey);
         client.println("Content-Type: image/jpeg");
         client.print("Content-Length: ");
-        client.println(originalImageSize);  // Use the stored original size
+        client.println(originalImageSize);
         client.println();
         
-        // Send image data in chunks from PSRAM
-        size_t bytesRemaining = originalImageSize;  // Use the stored original size
-        uint8_t* dataPtr = imageCopy;
+        // Send image data in chunks (image is already in PSRAM from Camera)
+        size_t bytesRemaining = originalImageSize;
+        uint8_t* dataPtr = (uint8_t*)namedImage->image;
         
         while (bytesRemaining > 0) {
             size_t chunk = (bytesRemaining < 512) ? bytesRemaining : 512;
@@ -237,9 +195,6 @@ String HttpClient::postImage(NamedImage* namedImage, const char* url, const char
     if (client.connected()) {
         client.stop();
     }
-    
-    // Free the PSRAM copy
-    freePSRAM(imageCopy);
     
     return success ? response : "{\"error\": \"Request failed\"}";
 }
