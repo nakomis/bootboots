@@ -25,6 +25,7 @@
 #include "SDLogger.h"
 #include "MessageQueue.h"
 #include "NamedImage.h"
+#include "BluetoothService.h"
 #include "secrets.h"
 
 // System configuration
@@ -53,6 +54,7 @@ WifiConnect* wifiConnect = nullptr;
 CatCam::HttpClient* httpClient = nullptr;
 SDLogger* sdLogger = nullptr;
 MessageQueue* messageQueue = nullptr;
+BootBootsBluetoothService* bluetoothService = nullptr;
 
 // System state
 struct SystemState {
@@ -163,6 +165,11 @@ void loop() {
     if (millis() - systemState.lastStatusReport > STATUS_REPORT_INTERVAL_MS) {
         reportSystemStatus();
         systemState.lastStatusReport = millis();
+        
+        // Update Bluetooth status if connected
+        if (bluetoothService && bluetoothService->isConnected()) {
+            bluetoothService->updateSystemStatus(systemState);
+        }
     }
     
     // Reset watchdog timer
@@ -259,6 +266,14 @@ void initializeComponents() {
     // Initialize Message Queue
     messageQueue = new MessageQueue();
     SDLogger::getInstance().infof("Message Queue initialized");
+    
+    // Initialize Bluetooth Service
+    bluetoothService = new BootBootsBluetoothService();
+    bluetoothService->init("BootBoots-CatCam");
+    SDLogger::getInstance().infof("Bluetooth Service initialized");
+    if (sdLogger && systemState.sdCardReady) {
+        sdLogger->logEvent("BLUETOOTH", "Bluetooth service initialized");
+    }
     
     SDLogger::getInstance().infof("All components initialized");
 }
@@ -524,41 +539,22 @@ void updateSystemStatus() {
 void reportSystemStatus() {
     unsigned long uptime = millis() - systemState.systemStartTime;
     
-    Serial.println("\n=== SYSTEM STATUS REPORT ===");
-    Serial.print("Uptime: ");
-    Serial.print(uptime / 1000);
-    Serial.println(" seconds");
-    
-    Serial.print("Total Detections: ");
-    Serial.println(systemState.totalDetections);
-    
-    Serial.print("Boots Detections: ");
-    Serial.println(systemState.bootsDetections);
-    
-    Serial.print("Atomizer Activations: ");
-    Serial.println(systemState.atomizerActivations);
-    
-    Serial.print("False Positives Avoided: ");
-    Serial.println(systemState.falsePositivesAvoided);
-    
-    Serial.print("Camera Ready: ");
-    Serial.println(systemState.cameraReady ? "YES" : "NO");
-    
-    Serial.print("WiFi Connected: ");
-    Serial.println(systemState.wifiConnected ? "YES" : "NO");
-    
-    Serial.print("SD Card Ready: ");
-    Serial.println(systemState.sdCardReady ? "YES" : "NO");
-    
-    Serial.print("Atomizer Enabled: ");
-    Serial.println(systemState.atomizerEnabled ? "YES" : "NO");
+    SDLogger::getInstance().infof("\n=== SYSTEM STATUS REPORT ===");
+    SDLogger::getInstance().infof("Uptime: %lu seconds", uptime / 1000);
+    SDLogger::getInstance().infof("Total Detections: %d", systemState.totalDetections);
+    SDLogger::getInstance().infof("Boots Detections: %d", systemState.bootsDetections);
+    SDLogger::getInstance().infof("Atomizer Activations: %d", systemState.atomizerActivations);
+    SDLogger::getInstance().infof("False Positives Avoided: %d", systemState.falsePositivesAvoided);
+    SDLogger::getInstance().infof("Camera Ready: %s", systemState.cameraReady ? "YES" : "NO");
+    SDLogger::getInstance().infof("WiFi Connected: %s", systemState.wifiConnected ? "YES" : "NO");
+    SDLogger::getInstance().infof("SD Card Ready: %s", systemState.sdCardReady ? "YES" : "NO");
+    SDLogger::getInstance().infof("Atomizer Enabled: %s", systemState.atomizerEnabled ? "YES" : "NO");
     
     if (atomizer) {
-        Serial.print("Atomizer Can Activate: ");
-        Serial.println(atomizer->canActivate() ? "YES" : "NO");
+        SDLogger::getInstance().infof("Atomizer Can Activate: %s", atomizer->canActivate() ? "YES" : "NO");
     }
     
-    Serial.println("==============================\n");
+    SDLogger::getInstance().infof("==============================\n");
     
     // Log status to SD card
     if (sdLogger && systemState.sdCardReady) {
