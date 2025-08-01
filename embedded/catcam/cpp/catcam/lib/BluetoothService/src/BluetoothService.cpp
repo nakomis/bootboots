@@ -1,21 +1,7 @@
 #include "BluetoothService.h"
 
-// Include the SystemState struct from main.cpp
-extern struct SystemState {
-    bool initialized = false;
-    bool cameraReady = false;
-    bool wifiConnected = false;
-    bool sdCardReady = false;
-    bool i2cReady = false;
-    bool atomizerEnabled = true;
-    unsigned long lastDetection = 0;
-    unsigned long lastStatusReport = 0;
-    unsigned long systemStartTime = 0;
-    int totalDetections = 0;
-    int bootsDetections = 0;
-    int falsePositivesAvoided = 0;
-    int atomizerActivations = 0;
-} systemState;
+// External reference to systemState defined in main.cpp
+extern SystemState systemState;
 
 BootBootsBluetoothService::BootBootsBluetoothService() 
     : pServer(nullptr), pService(nullptr), pStatusCharacteristic(nullptr), 

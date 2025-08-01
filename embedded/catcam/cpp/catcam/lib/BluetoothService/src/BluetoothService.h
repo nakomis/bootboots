@@ -8,15 +8,13 @@
 #include <BLE2902.h>
 #include <ArduinoJson.h>
 #include "../../SDLogger/src/SDLogger.h"
+#include "../../../include/SystemState.h"
 
 // BootBoots BLE Service UUID (lowercase for Web Bluetooth API compatibility)
 #define BOOTBOOTS_SERVICE_UUID        "bb00b007-5af3-41c3-9689-2fc7175c1ba8"
 #define STATUS_CHARACTERISTIC_UUID    "bb00b007-e90f-49fa-89c5-31e705b74d85"
 #define LOGS_CHARACTERISTIC_UUID      "bb00b007-f1a2-49fa-89c5-31e705b74d86"
 #define COMMAND_CHARACTERISTIC_UUID   "bb00b007-c0de-49fa-89c5-31e705b74d87"
-
-// Forward declarations
-struct SystemState;
 
 class BootBootsBluetoothService : public BLEServerCallbacks, public BLECharacteristicCallbacks {
 public:

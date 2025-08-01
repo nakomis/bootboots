@@ -15,6 +15,7 @@
 #include <Wire.h>
 #include <WiFi.h>
 #include <ArduinoJson.h>
+#include <esp_task_wdt.h>
 
 // Include all BootBoots libraries
 #include "Camera.h"
@@ -26,7 +27,20 @@
 #include "MessageQueue.h"
 #include "NamedImage.h"
 #include "BluetoothService.h"
+#include "SystemState.h"
+#include "OTAUpdate.h"
 #include "secrets.h"
+
+// Fallback definitions if not defined in secrets.h
+#ifndef API_URL
+#define API_URL "https://your-sagemaker-endpoint.amazonaws.com/invocations"
+#endif
+#ifndef API_KEY
+#define API_KEY "your-api-key-here"
+#endif
+#ifndef OTA_PASSWORD
+#define OTA_PASSWORD "bootboots-ota-2025"
+#endif
 
 // System configuration
 #define LED_PIN 33              // Built-in red LED for status
@@ -55,23 +69,10 @@ CatCam::HttpClient* httpClient = nullptr;
 SDLogger* sdLogger = nullptr;
 MessageQueue* messageQueue = nullptr;
 BootBootsBluetoothService* bluetoothService = nullptr;
+OTAUpdate* otaUpdate = nullptr;
 
-// System state
-struct SystemState {
-    bool initialized = false;
-    bool cameraReady = false;
-    bool wifiConnected = false;
-    bool sdCardReady = false;
-    bool i2cReady = false;
-    bool atomizerEnabled = true;
-    unsigned long lastDetection = 0;
-    unsigned long lastStatusReport = 0;
-    unsigned long systemStartTime = 0;
-    int totalDetections = 0;
-    int bootsDetections = 0;
-    int falsePositivesAvoided = 0;
-    int atomizerActivations = 0;
-} systemState;
+// System state instance
+SystemState systemState;
 
 // Cat names for logging (index matches AI model output)
 const char* CAT_NAMES[6] = {
@@ -133,10 +134,13 @@ void setup() {
     delay(1000);
     
     // Log system startup
-    if (sdLogger && systemState.sdCardReady) {
-        sdLogger->logEvent("SYSTEM", "BootBoots system initialized successfully");
-        sdLogger->logSystemStatus(systemState.cameraReady, systemState.wifiConnected, 
-                                systemState.i2cReady, systemState.atomizerEnabled);
+    if (systemState.sdCardReady) {
+        SDLogger::getInstance().infof("BootBoots system initialized successfully");
+        SDLogger::getInstance().infof("System Status - Camera: %s, WiFi: %s, I2C: %s, Atomizer: %s",
+                                systemState.cameraReady ? "OK" : "FAIL",
+                                systemState.wifiConnected ? "OK" : "FAIL", 
+                                systemState.i2cReady ? "OK" : "FAIL",
+                                systemState.atomizerEnabled ? "ON" : "OFF");
     }
 }
 
@@ -146,6 +150,22 @@ void loop() {
         SDLogger::getInstance().errorf("ERROR: System not initialized, restarting...");
         ESP.restart();
         return;
+    }
+    
+    // Handle OTA updates (highest priority)
+    if (otaUpdate) {
+        otaUpdate->handle();
+        
+        // Disable all operations during OTA update for safety
+        if (otaUpdate->isUpdating()) {
+            systemState.atomizerEnabled = false;
+            if (atomizer) {
+                atomizer->setEnabled(false);
+                atomizer->deactivate(); // Ensure atomizer is off
+            }
+            delay(100); // Reduce CPU load during update
+            return; // Skip all other operations
+        }
     }
     
     // Perform system health check
@@ -205,33 +225,31 @@ void initializeComponents() {
     SDLogger::getInstance().infof("Initializing system components...");
     
     // Initialize SD Logger first for early logging capability
-    sdLogger = new SDLogger();
-    if (sdLogger->init()) {
+    if (SDLogger::getInstance().init()) {
         systemState.sdCardReady = true;
-        SDLogger::getInstance().infof("SD Logger initialized");
-        sdLogger->logEvent("SYSTEM", "SD Logger initialized successfully");
+        SDLogger::getInstance().infof("SD Logger initialized successfully");
     } else {
-        SDLogger::getInstance().warnf("WARNING: SD Logger initialization failed");
         systemState.sdCardReady = false;
+        handleSystemError("SD_INIT", "Failed to initialize SD Logger");
     }
     
     // Initialize Camera
     camera = new Camera();
     camera->init();
     systemState.cameraReady = true;
-    SDLogger::getInstance().infof("Camera initialized");
-    if (sdLogger && systemState.sdCardReady) {
-        sdLogger->logEvent("CAMERA", "Camera module initialized");
+    
+    if (systemState.sdCardReady) {
+        SDLogger::getInstance().infof("Camera module initialized");
     }
     
     // Initialize WiFi
     wifiConnect = new WifiConnect();
-    if (wifiConnect->connect(WIFI_SSID, WIFI_PASSWORD)) {
+    if (wifiConnect->connect()) {
         systemState.wifiConnected = true;
         SDLogger::getInstance().infof("WiFi connected successfully");
         SDLogger::getInstance().infof("IP Address: %s", WiFi.localIP().toString().c_str());
-        if (sdLogger && systemState.sdCardReady) {
-            sdLogger->logEvent("WIFI", "WiFi connected successfully");
+        if (systemState.sdCardReady) {
+            SDLogger::getInstance().infof("WiFi connected successfully");
         }
     } else {
         SDLogger::getInstance().warnf("WARNING: WiFi connection failed");
@@ -245,10 +263,10 @@ void initializeComponents() {
     
     // Initialize PCF8574 Manager
     pcfManager = new PCF8574Manager(PCF8574_ADDRESS);
-    if (pcfManager->init()) {
+    if (pcfManager->init(21, 22)) {  // SDA=21, SCL=22 for ESP32
         SDLogger::getInstance().infof("PCF8574 Manager initialized");
-        if (sdLogger && systemState.sdCardReady) {
-            sdLogger->logEvent("I2C", "PCF8574 Manager initialized");
+        if (systemState.sdCardReady) {
+            SDLogger::getInstance().infof("PCF8574 Manager initialized");
         }
     } else {
         SDLogger::getInstance().warnf("WARNING: PCF8574 Manager initialization failed");
@@ -259,8 +277,8 @@ void initializeComponents() {
     atomizer->init();
     atomizer->setEnabled(systemState.atomizerEnabled);
     SDLogger::getInstance().infof("Atomizer initialized");
-    if (sdLogger && systemState.sdCardReady) {
-        sdLogger->logEvent("ATOMIZER", "Deterrent system initialized");
+    if (systemState.sdCardReady) {
+        SDLogger::getInstance().infof("Deterrent system initialized");
     }
     
     // Initialize Message Queue
@@ -271,8 +289,23 @@ void initializeComponents() {
     bluetoothService = new BootBootsBluetoothService();
     bluetoothService->init("BootBoots-CatCam");
     SDLogger::getInstance().infof("Bluetooth Service initialized");
-    if (sdLogger && systemState.sdCardReady) {
-        sdLogger->logEvent("BLUETOOTH", "Bluetooth service initialized");
+    if (systemState.sdCardReady) {
+        SDLogger::getInstance().infof("Bluetooth service initialized");
+    }
+    
+    // Initialize OTA Update Service
+    otaUpdate = new OTAUpdate();
+    otaUpdate->init("BootBoots-CatCam", OTA_PASSWORD);
+    otaUpdate->setUpdateCallback([](bool success, const char* error) {
+        if (success) {
+            SDLogger::getInstance().infof("OTA Update: %s", error);
+        } else {
+            SDLogger::getInstance().errorf("OTA Update failed: %s", error);
+        }
+    });
+    SDLogger::getInstance().infof("OTA Update service initialized");
+    if (systemState.sdCardReady) {
+        SDLogger::getInstance().infof("OTA service initialized - updates available via WiFi");
     }
     
     SDLogger::getInstance().infof("All components initialized");
@@ -365,8 +398,8 @@ DetectionResult analyzeImage(NamedImage* image) {
     // Check if we have network connectivity for AI inference
     if (!systemState.wifiConnected || !httpClient) {
         SDLogger::getInstance().warnf("WARNING: No network connectivity - skipping AI analysis");
-        if (sdLogger && systemState.sdCardReady) {
-            sdLogger->logEvent("AI", "Skipped analysis - no network");
+        if (systemState.sdCardReady) {
+            SDLogger::getInstance().warnf("Skipped analysis - no network");
         }
         return result;
     }
@@ -378,8 +411,8 @@ DetectionResult analyzeImage(NamedImage* image) {
     
     if (response.length() == 0) {
         SDLogger::getInstance().errorf("ERROR: Empty response from AI service");
-        if (sdLogger && systemState.sdCardReady) {
-            sdLogger->logEvent("AI", "Empty response from AI service");
+        if (systemState.sdCardReady) {
+            SDLogger::getInstance().errorf("Empty response from AI service");
         }
         return result;
     }
@@ -401,8 +434,8 @@ DetectionResult parseAIResponse(const String& response) {
     
     if (error) {
         SDLogger::getInstance().errorf("JSON parsing error: %s", error.c_str());
-        if (sdLogger && systemState.sdCardReady) {
-            sdLogger->logEvent("AI", "JSON parsing error");
+        if (systemState.sdCardReady) {
+            SDLogger::getInstance().errorf("JSON parsing error");
         }
         return result;
     }
@@ -447,11 +480,11 @@ void handleDetectionResult(const DetectionResult& result) {
     SDLogger::getInstance().infof("Detection Result: %s (confidence: %.1f%%)", 
                                  result.catName, result.confidence * 100);
     
-    if (sdLogger && systemState.sdCardReady) {
+    if (systemState.sdCardReady) {
         char logMessage[128];
         snprintf(logMessage, sizeof(logMessage), "Detected: %s (%.1f%% confidence)", 
                 result.catName, result.confidence * 100);
-        sdLogger->logEvent("DETECTION", logMessage);
+        SDLogger::getInstance().infof("%s", logMessage);
     }
     
     // Check if this is a valid detection
@@ -471,7 +504,7 @@ void handleDetectionResult(const DetectionResult& result) {
             atomizer->activate();
             systemState.atomizerActivations++;
             
-            if (sdLogger && systemState.sdCardReady) {
+            if (systemState.sdCardReady) {
                 atomizer->logActivation(result);
             }
             
@@ -481,7 +514,7 @@ void handleDetectionResult(const DetectionResult& result) {
             SDLogger::getInstance().warnf("Deterrent activation rejected - safety thresholds not met");
             systemState.falsePositivesAvoided++;
             
-            if (sdLogger && systemState.sdCardReady) {
+            if (systemState.sdCardReady) {
                 atomizer->logRejection(result, "Safety thresholds not met");
             }
         }
@@ -501,6 +534,20 @@ void handleDetectionResult(const DetectionResult& result) {
     }
 }
 
+void handleSystemError(const char* component, const char* error) {
+    SDLogger::getInstance().errorf("SYSTEM ERROR in %s: %s", component, error);
+    
+    // Log error to SD card if available
+    if (systemState.sdCardReady) {
+        char errorMessage[128];
+        snprintf(errorMessage, sizeof(errorMessage), "ERROR in %s: %s", component, error);
+        SDLogger::getInstance().errorf("%s", errorMessage);
+    }
+    
+    // Visual error indication
+    blinkStatusLED(5, 200); // 5 fast blinks for error
+}
+
 // ============================================================================
 // SYSTEM STATUS AND MONITORING FUNCTIONS
 // ============================================================================
@@ -510,14 +557,14 @@ void updateSystemStatus() {
     if (systemState.wifiConnected && WiFi.status() != WL_CONNECTED) {
         systemState.wifiConnected = false;
         SDLogger::getInstance().warnf("WARNING: WiFi connection lost");
-        if (sdLogger && systemState.sdCardReady) {
-            sdLogger->logEvent("WIFI", "Connection lost");
+        if (systemState.sdCardReady) {
+            SDLogger::getInstance().warnf("WiFi connection lost");
         }
     } else if (!systemState.wifiConnected && WiFi.status() == WL_CONNECTED) {
         systemState.wifiConnected = true;
         SDLogger::getInstance().infof("WiFi connection restored");
-        if (sdLogger && systemState.sdCardReady) {
-            sdLogger->logEvent("WIFI", "Connection restored");
+        if (systemState.sdCardReady) {
+            SDLogger::getInstance().infof("WiFi connection restored");
         }
     }
     
@@ -557,13 +604,13 @@ void reportSystemStatus() {
     SDLogger::getInstance().infof("==============================\n");
     
     // Log status to SD card
-    if (sdLogger && systemState.sdCardReady) {
+    if (systemState.sdCardReady) {
         char statusMessage[256];
         snprintf(statusMessage, sizeof(statusMessage), 
                 "Uptime: %lus, Detections: %d, Boots: %d, Activations: %d, False+ Avoided: %d",
                 uptime / 1000, systemState.totalDetections, systemState.bootsDetections,
                 systemState.atomizerActivations, systemState.falsePositivesAvoided);
-        sdLogger->logEvent("STATUS", statusMessage);
+        SDLogger::getInstance().infof("%s", statusMessage);
     }
 }
 
@@ -596,20 +643,6 @@ bool checkSystemHealth() {
     }
     
     return true;
-}
-
-void handleSystemError(const char* component, const char* error) {
-    SDLogger::getInstance().errorf("SYSTEM ERROR in %s: %s", component, error);
-    
-    // Log error to SD card if available
-    if (sdLogger && systemState.sdCardReady) {
-        char errorMessage[128];
-        snprintf(errorMessage, sizeof(errorMessage), "ERROR in %s: %s", component, error);
-        sdLogger->logEvent("ERROR", errorMessage);
-    }
-    
-    // Visual error indication
-    blinkStatusLED(10, 100); // Rapid error blinks
 }
 
 // ============================================================================
