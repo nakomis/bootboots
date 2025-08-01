@@ -42,8 +42,8 @@
 
 // Cat recognition thresholds (ultra-safe)
 #define MIN_DETECTION_CONFIDENCE 0.85f  // Minimum confidence for any detection
-#define BOOTS_CONFIDENCE_THRESHOLD 0.90f // 90% minimum for Boots activation
-#define KAPPA_PROTECTION_THRESHOLD 0.15f // Max 15% Kappa confidence allowed
+#define BOOTS_CONFIDENCE_THRESHOLD 0.90f // 90% minimum for Boots activation (index 0)
+#define KAPPA_PROTECTION_THRESHOLD 0.15f // Max 15% Kappa confidence allowed (index 2)
 
 // Global system components
 Camera* camera = nullptr;
@@ -73,12 +73,12 @@ struct SystemState {
 
 // Cat names for logging (index matches AI model output)
 const char* CAT_NAMES[6] = {
-    "Unknown",    // Index 0
-    "Whiskers",   // Index 1  
+    "Boots",      // Index 0 - Target for deterrent
+    "Chi",        // Index 1
     "Kappa",      // Index 2 - Special protection (misidentified as Boots 67% of time)
-    "Shadow",     // Index 3
-    "Mittens",    // Index 4
-    "Boots"       // Index 5 - Target for deterrent
+    "Mu",         // Index 3
+    "Tau",        // Index 4
+    "Wolf"        // Index 5
 };
 
 // Function declarations
@@ -451,7 +451,7 @@ void handleDetectionResult(const DetectionResult& result) {
     }
     
     // Special handling for Boots detection (target for deterrent)
-    if (result.index == 5) { // Boots is index 5
+    if (result.index == 0) { // Boots is index 0
         systemState.bootsDetections++;
         Serial.println("BOOTS DETECTED - Evaluating deterrent activation");
         
@@ -480,7 +480,7 @@ void handleDetectionResult(const DetectionResult& result) {
         Serial.print("Detected friendly cat: ");
         Serial.println(result.catName);
         
-        // Special protection for Kappa (index 2)
+        // Special protection for Kappa (index 2) - misidentified as Boots 67% of time
         if (result.index == 2) {
             Serial.println("KAPPA DETECTED - Protected cat, no deterrent");
         }
