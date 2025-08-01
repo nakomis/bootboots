@@ -102,7 +102,7 @@ void performWatchdogReset();
 void setup() {
     // Initialize serial for debugging
     Serial.begin(115200);
-    Serial.println("\n=== BootBoots System Starting ===");
+    SDLogger::getInstance().infof("\n=== BootBoots System Starting ===");
     
     // Record system start time
     systemState.systemStartTime = millis();
@@ -123,8 +123,8 @@ void setup() {
     // Mark system as initialized
     systemState.initialized = true;
     
-    Serial.println("=== BootBoots System Ready ===");
-    Serial.println(BANNER);
+    SDLogger::getInstance().infof("=== BootBoots System Ready ===");
+    SDLogger::getInstance().infof("%s", BANNER);
     
     // Signal successful initialization
     blinkStatusLED(5, 100); // 5 quick blinks
@@ -141,7 +141,7 @@ void setup() {
 void loop() {
     // Check if system is properly initialized
     if (!systemState.initialized) {
-        Serial.println("ERROR: System not initialized, restarting...");
+        SDLogger::getInstance().errorf("ERROR: System not initialized, restarting...");
         ESP.restart();
         return;
     }
@@ -177,7 +177,7 @@ void loop() {
 // ============================================================================
 
 void initializeHardware() {
-    Serial.println("Initializing hardware...");
+    SDLogger::getInstance().infof("Initializing hardware...");
     
     // Initialize LED pin
     pinMode(LED_PIN, OUTPUT);
@@ -191,20 +191,20 @@ void initializeHardware() {
     Wire.setClock(100000); // 100kHz I2C clock
     systemState.i2cReady = true;
     
-    Serial.println("Hardware initialization complete");
+    SDLogger::getInstance().infof("Hardware initialization complete");
 }
 
 void initializeComponents() {
-    Serial.println("Initializing system components...");
+    SDLogger::getInstance().infof("Initializing system components...");
     
     // Initialize SD Logger first for early logging capability
     sdLogger = new SDLogger();
     if (sdLogger->init()) {
         systemState.sdCardReady = true;
-        Serial.println("SD Logger initialized");
+        SDLogger::getInstance().infof("SD Logger initialized");
         sdLogger->logEvent("SYSTEM", "SD Logger initialized successfully");
     } else {
-        Serial.println("WARNING: SD Logger initialization failed");
+        SDLogger::getInstance().warnf("WARNING: SD Logger initialization failed");
         systemState.sdCardReady = false;
     }
     
@@ -212,7 +212,7 @@ void initializeComponents() {
     camera = new Camera();
     camera->init();
     systemState.cameraReady = true;
-    Serial.println("Camera initialized");
+    SDLogger::getInstance().infof("Camera initialized");
     if (sdLogger && systemState.sdCardReady) {
         sdLogger->logEvent("CAMERA", "Camera module initialized");
     }
@@ -221,81 +221,80 @@ void initializeComponents() {
     wifiConnect = new WifiConnect();
     if (wifiConnect->connect(WIFI_SSID, WIFI_PASSWORD)) {
         systemState.wifiConnected = true;
-        Serial.println("WiFi connected successfully");
-        Serial.print("IP Address: ");
-        Serial.println(WiFi.localIP());
+        SDLogger::getInstance().infof("WiFi connected successfully");
+        SDLogger::getInstance().infof("IP Address: %s", WiFi.localIP().toString().c_str());
         if (sdLogger && systemState.sdCardReady) {
             sdLogger->logEvent("WIFI", "WiFi connected successfully");
         }
     } else {
-        Serial.println("WARNING: WiFi connection failed");
+        SDLogger::getInstance().warnf("WARNING: WiFi connection failed");
         systemState.wifiConnected = false;
     }
     
     // Initialize HTTP Client
     httpClient = new CatCam::HttpClient();
     CatCam::HttpClient::init();
-    Serial.println("HTTP Client initialized");
+    SDLogger::getInstance().infof("HTTP Client initialized");
     
     // Initialize PCF8574 Manager
     pcfManager = new PCF8574Manager(PCF8574_ADDRESS);
     if (pcfManager->init()) {
-        Serial.println("PCF8574 Manager initialized");
+        SDLogger::getInstance().infof("PCF8574 Manager initialized");
         if (sdLogger && systemState.sdCardReady) {
             sdLogger->logEvent("I2C", "PCF8574 Manager initialized");
         }
     } else {
-        Serial.println("WARNING: PCF8574 Manager initialization failed");
+        SDLogger::getInstance().warnf("WARNING: PCF8574 Manager initialization failed");
     }
     
     // Initialize Atomizer (deterrent system)
     atomizer = new Atomizer(ATOMIZER_CONTROL_PIN);
     atomizer->init();
     atomizer->setEnabled(systemState.atomizerEnabled);
-    Serial.println("Atomizer initialized");
+    SDLogger::getInstance().infof("Atomizer initialized");
     if (sdLogger && systemState.sdCardReady) {
         sdLogger->logEvent("ATOMIZER", "Deterrent system initialized");
     }
     
     // Initialize Message Queue
     messageQueue = new MessageQueue();
-    Serial.println("Message Queue initialized");
+    SDLogger::getInstance().infof("Message Queue initialized");
     
-    Serial.println("All components initialized");
+    SDLogger::getInstance().infof("All components initialized");
 }
 
 void performSystemChecks() {
-    Serial.println("Performing system checks...");
+    SDLogger::getInstance().infof("Performing system checks...");
     
     // Check critical components
     bool criticalError = false;
     
     if (!systemState.cameraReady) {
-        Serial.println("CRITICAL: Camera not ready");
+        SDLogger::getInstance().errorf("CRITICAL: Camera not ready");
         criticalError = true;
     }
     
     if (!systemState.i2cReady) {
-        Serial.println("WARNING: I2C not ready");
+        SDLogger::getInstance().warnf("WARNING: I2C not ready");
     }
     
     if (!systemState.wifiConnected) {
-        Serial.println("WARNING: WiFi not connected - operating in offline mode");
+        SDLogger::getInstance().warnf("WARNING: WiFi not connected - operating in offline mode");
     }
     
     if (!systemState.sdCardReady) {
-        Serial.println("WARNING: SD Card not ready - logging disabled");
+        SDLogger::getInstance().warnf("WARNING: SD Card not ready - logging disabled");
     }
     
     if (criticalError) {
-        Serial.println("CRITICAL ERRORS DETECTED - System cannot start");
+        SDLogger::getInstance().errorf("CRITICAL ERRORS DETECTED - System cannot start");
         while (true) {
             blinkStatusLED(10, 100); // Rapid error blinks
             delay(2000);
         }
     }
     
-    Serial.println("System checks complete - All critical systems operational");
+    SDLogger::getInstance().infof("System checks complete - All critical systems operational");
 }
 
 // ============================================================================
@@ -322,7 +321,7 @@ void mainControlLoop() {
 }
 
 void processDetection() {
-    Serial.println("\n--- Starting Detection Cycle ---");
+    SDLogger::getInstance().infof("\n--- Starting Detection Cycle ---");
     
     // Capture image from camera
     NamedImage* image = camera->getImage();
@@ -331,7 +330,7 @@ void processDetection() {
         return;
     }
     
-    Serial.println("Image captured successfully");
+    SDLogger::getInstance().infof("Image captured successfully");
     
     // Analyze image for cat detection
     DetectionResult result = analyzeImage(image);
@@ -342,7 +341,7 @@ void processDetection() {
     // Clean up image memory
     camera->releaseImageBuffer(image);
     
-    Serial.println("--- Detection Cycle Complete ---\n");
+    SDLogger::getInstance().infof("--- Detection Cycle Complete ---\n");
 }
 
 DetectionResult analyzeImage(NamedImage* image) {
@@ -350,27 +349,27 @@ DetectionResult analyzeImage(NamedImage* image) {
     
     // Check if we have network connectivity for AI inference
     if (!systemState.wifiConnected || !httpClient) {
-        Serial.println("WARNING: No network connectivity - skipping AI analysis");
+        SDLogger::getInstance().warnf("WARNING: No network connectivity - skipping AI analysis");
         if (sdLogger && systemState.sdCardReady) {
             sdLogger->logEvent("AI", "Skipped analysis - no network");
         }
         return result;
     }
     
-    Serial.println("Sending image to AI service...");
+    SDLogger::getInstance().infof("Sending image to AI service...");
     
     // Send image to AI service for analysis
     String response = httpClient->postImage(image, API_URL, API_KEY);
     
     if (response.length() == 0) {
-        Serial.println("ERROR: Empty response from AI service");
+        SDLogger::getInstance().errorf("ERROR: Empty response from AI service");
         if (sdLogger && systemState.sdCardReady) {
             sdLogger->logEvent("AI", "Empty response from AI service");
         }
         return result;
     }
     
-    Serial.println("AI response received, parsing...");
+    SDLogger::getInstance().infof("AI response received, parsing...");
     
     // Parse AI response
     result = parseAIResponse(response);
@@ -386,8 +385,7 @@ DetectionResult parseAIResponse(const String& response) {
     DeserializationError error = deserializeJson(doc, response);
     
     if (error) {
-        Serial.print("JSON parsing error: ");
-        Serial.println(error.c_str());
+        SDLogger::getInstance().errorf("JSON parsing error: %s", error.c_str());
         if (sdLogger && systemState.sdCardReady) {
             sdLogger->logEvent("AI", "JSON parsing error");
         }
@@ -431,11 +429,8 @@ void handleDetectionResult(const DetectionResult& result) {
     systemState.totalDetections++;
     
     // Log detection result
-    Serial.print("Detection Result: ");
-    Serial.print(result.catName);
-    Serial.print(" (confidence: ");
-    Serial.print(result.confidence * 100, 1);
-    Serial.println("%)");
+    SDLogger::getInstance().infof("Detection Result: %s (confidence: %.1f%%)", 
+                                 result.catName, result.confidence * 100);
     
     if (sdLogger && systemState.sdCardReady) {
         char logMessage[128];
@@ -446,18 +441,18 @@ void handleDetectionResult(const DetectionResult& result) {
     
     // Check if this is a valid detection
     if (result.confidence < MIN_DETECTION_CONFIDENCE) {
-        Serial.println("Detection below confidence threshold - ignoring");
+        SDLogger::getInstance().infof("Detection below confidence threshold - ignoring");
         return;
     }
     
     // Special handling for Boots detection (target for deterrent)
     if (result.index == 0) { // Boots is index 0
         systemState.bootsDetections++;
-        Serial.println("BOOTS DETECTED - Evaluating deterrent activation");
+        SDLogger::getInstance().criticalf("BOOTS DETECTED - Evaluating deterrent activation");
         
         // Check if atomizer should activate
         if (atomizer && atomizer->shouldActivate(result)) {
-            Serial.println("ACTIVATING DETERRENT SYSTEM");
+            SDLogger::getInstance().criticalf("ACTIVATING DETERRENT SYSTEM");
             atomizer->activate();
             systemState.atomizerActivations++;
             
@@ -468,7 +463,7 @@ void handleDetectionResult(const DetectionResult& result) {
             // Visual feedback
             blinkStatusLED(3, 500); // 3 long blinks for activation
         } else {
-            Serial.println("Deterrent activation rejected - safety thresholds not met");
+            SDLogger::getInstance().warnf("Deterrent activation rejected - safety thresholds not met");
             systemState.falsePositivesAvoided++;
             
             if (sdLogger && systemState.sdCardReady) {
@@ -477,12 +472,11 @@ void handleDetectionResult(const DetectionResult& result) {
         }
     } else {
         // Detection of other cats
-        Serial.print("Detected friendly cat: ");
-        Serial.println(result.catName);
+        SDLogger::getInstance().infof("Detected friendly cat: %s", result.catName);
         
         // Special protection for Kappa (index 2) - misidentified as Boots 67% of time
         if (result.index == 2) {
-            Serial.println("KAPPA DETECTED - Protected cat, no deterrent");
+            SDLogger::getInstance().infof("KAPPA DETECTED - Protected cat, no deterrent");
         }
     }
     
@@ -500,13 +494,13 @@ void updateSystemStatus() {
     // Update WiFi connection status
     if (systemState.wifiConnected && WiFi.status() != WL_CONNECTED) {
         systemState.wifiConnected = false;
-        Serial.println("WARNING: WiFi connection lost");
+        SDLogger::getInstance().warnf("WARNING: WiFi connection lost");
         if (sdLogger && systemState.sdCardReady) {
             sdLogger->logEvent("WIFI", "Connection lost");
         }
     } else if (!systemState.wifiConnected && WiFi.status() == WL_CONNECTED) {
         systemState.wifiConnected = true;
-        Serial.println("WiFi connection restored");
+        SDLogger::getInstance().infof("WiFi connection restored");
         if (sdLogger && systemState.sdCardReady) {
             sdLogger->logEvent("WIFI", "Connection restored");
         }
@@ -585,7 +579,7 @@ bool checkSystemHealth() {
     
     // Check memory usage
     if (ESP.getFreeHeap() < 10000) { // Less than 10KB free
-        Serial.println("WARNING: Low memory detected");
+        SDLogger::getInstance().warnf("WARNING: Low memory detected");
         return false;
     }
     
@@ -595,7 +589,7 @@ bool checkSystemHealth() {
         if (atomizer_check == 0) {
             atomizer_check = millis();
         } else if (millis() - atomizer_check > 10000) { // Active for more than 10 seconds
-            Serial.println("WARNING: Atomizer stuck active - forcing deactivation");
+            SDLogger::getInstance().warnf("WARNING: Atomizer stuck active - forcing deactivation");
             atomizer->deactivate();
             atomizer_check = 0;
         }
@@ -609,10 +603,7 @@ bool checkSystemHealth() {
 }
 
 void handleSystemError(const char* component, const char* error) {
-    Serial.print("SYSTEM ERROR in ");
-    Serial.print(component);
-    Serial.print(": ");
-    Serial.println(error);
+    SDLogger::getInstance().errorf("SYSTEM ERROR in %s: %s", component, error);
     
     // Log error to SD card if available
     if (sdLogger && systemState.sdCardReady) {
