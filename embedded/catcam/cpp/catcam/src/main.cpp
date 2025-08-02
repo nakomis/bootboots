@@ -29,7 +29,9 @@
 #include "BluetoothService.h"
 #include "SystemState.h"
 #include "OTAUpdate.h"
+#include "BluetoothOTA.h"
 #include "secrets.h"
+#include "../include/version.h"
 
 // Fallback definitions if not defined in secrets.h
 #ifndef API_URL
