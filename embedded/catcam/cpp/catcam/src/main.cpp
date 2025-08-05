@@ -67,7 +67,7 @@ Camera* camera = nullptr;
 Atomizer* atomizer = nullptr;
 PCF8574Manager* pcfManager = nullptr;
 WifiConnect* wifiConnect = nullptr;
-CatCam::HttpClient* httpClient = nullptr;
+CatCam::CatCamHttpClient* httpClient = nullptr;
 SDLogger* sdLogger = nullptr;
 MessageQueue* messageQueue = nullptr;
 BootBootsBluetoothService* bluetoothService = nullptr;
@@ -259,8 +259,8 @@ void initializeComponents() {
     }
     
     // Initialize HTTP Client
-    httpClient = new CatCam::HttpClient();
-    CatCam::HttpClient::init();
+    httpClient = new CatCam::CatCamHttpClient();
+    CatCam::CatCamHttpClient::init();
     SDLogger::getInstance().infof("HTTP Client initialized");
     
     // Initialize PCF8574 Manager

@@ -8,10 +8,10 @@
 
 namespace CatCam {
 
-class HttpClient
+class CatCamHttpClient
 {
 public:
-    HttpClient();
+    CatCamHttpClient();
     // Initialize the HTTP client (must be called before first use)
     static void init();
     // Post an image to the specified URL with the given API key

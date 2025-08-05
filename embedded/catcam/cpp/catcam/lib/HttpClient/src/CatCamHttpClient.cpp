@@ -7,14 +7,14 @@
 #include <esp32-hal-psram.h>
 
 // Initialize static member
-const char* CatCam::HttpClient::AMAZON_ROOT_CA = nullptr;
+const char* CatCam::CatCamHttpClient::AMAZON_ROOT_CA = nullptr;
 
 namespace CatCam {
 
 WiFiClientSecure client;
 
 // Initialize PSRAM storage for the certificate
-void HttpClient::init() {
+void CatCamHttpClient::init() {
     if (psramFound() && AMAZON_ROOT_CA == nullptr) {
         // Allocate space in PSRAM for the certificate
         char* cert = (char*)ps_malloc(2048);
@@ -51,11 +51,11 @@ void HttpClient::init() {
     }
 }
 
-HttpClient::HttpClient() {
+CatCamHttpClient::CatCamHttpClient() {
     // Constructor implementation
 }
 
-String HttpClient::postImage(NamedImage* namedImage, const char* url, const char* apiKey) {
+String CatCamHttpClient::postImage(NamedImage* namedImage, const char* url, const char* apiKey) {
     if (!namedImage || !namedImage->image || namedImage->size == 0) {
         return "{\"error\": \"Invalid image data\"}";
     }
