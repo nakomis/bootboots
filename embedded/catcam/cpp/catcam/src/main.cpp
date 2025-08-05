@@ -30,6 +30,7 @@
 #include "SystemState.h"
 #include "OTAUpdate.h"
 #include "BluetoothOTA.h"
+#include "CatCamHttpClient.h"
 #include "secrets.h"
 #include "../include/version.h"
 
@@ -67,7 +68,7 @@ Camera* camera = nullptr;
 Atomizer* atomizer = nullptr;
 PCF8574Manager* pcfManager = nullptr;
 WifiConnect* wifiConnect = nullptr;
-CatCam::CatCamHttpClient* httpClient = nullptr;
+CatCamHttpClient* httpClient = nullptr;
 SDLogger* sdLogger = nullptr;
 MessageQueue* messageQueue = nullptr;
 BootBootsBluetoothService* bluetoothService = nullptr;
@@ -259,8 +260,8 @@ void initializeComponents() {
     }
     
     // Initialize HTTP Client
-    httpClient = new CatCam::CatCamHttpClient();
-    CatCam::CatCamHttpClient::init();
+    httpClient = new CatCamHttpClient();
+    CatCamHttpClient::init();
     SDLogger::getInstance().infof("HTTP Client initialized");
     
     // Initialize PCF8574 Manager

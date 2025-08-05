@@ -26,6 +26,18 @@ AWSAuth awsAuth(AWS_REGION);
 unsigned long lastCredentialCheck = 0;
 const unsigned long CREDENTIAL_CHECK_INTERVAL = 300000; // Check every 5 minutes
 
+// Function declarations
+void connectToWiFi();
+void checkAndRefreshCredentials();
+int uploadImage(const String& filename, const uint8_t* imageData, size_t imageSize);
+bool uploadToAPIGateway(const String& filename, const uint8_t* imageData, size_t imageSize);
+bool uploadImageToPresignedUrl(const String& presignedUrl, const uint8_t* imageData, size_t imageSize);
+void takeAndUploadPhoto();
+bool sendSNSNotification(const String& message, const String& subject = "CatCam Alert");
+bool invokeLambdaFunction(const String& functionPayload, String& lambdaResponse);
+void handleCatDetection(const String& catName, float confidence, const String& imagePath);
+void testAWSServices();
+
 void setup() {
     Serial.begin(115200);
     delay(1000);
@@ -139,7 +151,6 @@ int uploadImage(const String& filename, const uint8_t* imageData, size_t imageSi
     SDLogger::getInstance().warnf("MQTT fallback not fully implemented in this example");
     return -1; // Indicate fallback needed
 }
-}
 
 bool uploadToAPIGateway(const String& filename, const uint8_t* imageData, size_t imageSize) {
     // Create JSON payload with image metadata and data
@@ -152,7 +163,7 @@ bool uploadToAPIGateway(const String& filename, const uint8_t* imageData, size_t
     
     // For large images, you might want to upload to S3 directly
     // and just send metadata to API Gateway. For this example,
-    // we'll send a base64 encoded thumbnail or metadata only
+    // we'll send metadata and request a presigned URL
     
     // Instead of full image, send metadata and request a presigned URL
     doc["imageData"] = ""; // Would contain base64 encoded image or presigned URL request
@@ -273,7 +284,7 @@ void takeAndUploadPhoto() {
 }
 
 // SNS notification function
-bool sendSNSNotification(const String& message, const String& subject = "CatCam Alert") {
+bool sendSNSNotification(const String& message, const String& subject) {
     SDLogger::getInstance().infof("Sending SNS notification: %s", subject.c_str());
     
     // Ensure credentials are valid
@@ -492,24 +503,4 @@ void testAWSServices() {
     } else {
         SDLogger::getInstance().errorf("Lambda test failed");
     }
-}
-
-// Status reporting function
-void printSystemStatus() {
-    Serial.println("\n=== CatCam System Status ===");
-    Serial.println("WiFi Status: " + String(WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected"));
-    Serial.println("IP Address: " + WiFi.localIP().toString());
-    Serial.println("Free Heap: " + String(ESP.getFreeHeap()) + " bytes");
-    
-    AWSCredentials creds = awsAuth.getCurrentCredentials();
-    if (creds.isValid) {
-        Serial.println("AWS Credentials: Valid");
-        Serial.println("Access Key: " + creds.accessKeyId.substring(0, 8) + "...");
-        Serial.println("Expires in: " + String((creds.expiration - millis()) / 1000) + " seconds");
-        Serial.println("Upload Method: API Gateway");
-    } else {
-        Serial.println("AWS Credentials: Invalid/Expired");
-        Serial.println("Upload Method: MQTT Fallback");
-    }
-    Serial.println("===========================\n");
 }

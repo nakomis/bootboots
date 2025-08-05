@@ -6,15 +6,15 @@ const char *MQTT_SERVER = "10.0.0.177";
 const String TOPIC = "images";
 
 WiFiClient espClient;
-MqttClient client(espClient);
+MqttClient mqttClient(espClient);
 
 MessageQueue::MessageQueue() {}
 
 int MessageQueue::postImage(NamedImage* namedImage) {
-    if (!client.connected())
+    if (!mqttClient.connected())
     {
         Serial.println("Connecting to MQTT server...");
-        if (!client.connect(MQTT_SERVER, 1883))
+        if (!mqttClient.connect(MQTT_SERVER, 1883))
         {
             Serial.println("Failed to connect to MQTT server");
             return -1;
@@ -22,7 +22,7 @@ int MessageQueue::postImage(NamedImage* namedImage) {
         Serial.println("Connected to MQTT server");
     }
 
-    if (client.connected())
+    if (mqttClient.connected())
     {
         Serial.println("Posting image to topic: " + String(TOPIC));
         Serial.printf("Filename: %s, Size: %zu bytes\n", namedImage->filename.c_str(), namedImage->size);
@@ -35,7 +35,7 @@ int MessageQueue::postImage(NamedImage* namedImage) {
         Serial.println("Beginning MQTT message...");
         Serial.printf("Filename array size: %zu bytes\n", sizeof(filenameArray));
         const char *topic = TOPIC.c_str();
-        client.beginMessage(topic, sizeof(filenameArray) + namedImage->size, false);
+        mqttClient.beginMessage(topic, sizeof(filenameArray) + namedImage->size, false);
         Serial.printf("Writing message of size %zu bytes...\n", namedImage->size + 20);
         Serial.printf("Filename array size: %zu bytes\n", sizeof(filenameArray));
         for (int i = 0; i < sizeof(filenameArray); i++) {
@@ -44,14 +44,14 @@ int MessageQueue::postImage(NamedImage* namedImage) {
         Serial.println("Writing filename array to MQTT message...");
         size_t messageSize = 20;
         const uint8_t *buf = filenameArray;
-        size_t bytesSent = client.write(buf, messageSize);
+        size_t bytesSent = mqttClient.write(buf, messageSize);
         Serial.printf("Bytes sent for filename array: %zu\n", bytesSent);
-        bytesSent = client.write(namedImage->image, namedImage->size);
+        bytesSent = mqttClient.write(namedImage->image, namedImage->size);
         Serial.printf("Bytes sent for image message: %zu\n", bytesSent);
         Serial.println("Ending MQTT message...");
-        int result = client.endMessage();
+        int result = mqttClient.endMessage();
         Serial.printf("Message posted with result: %d\n", result);
-        client.stop(); // Ensure the client is stopped after posting
+        mqttClient.stop(); // Ensure the client is stopped after posting
         return result;
     }
     else

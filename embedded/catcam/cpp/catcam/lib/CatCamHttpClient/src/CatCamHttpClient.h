@@ -4,9 +4,7 @@
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <NamedImage.h>
-#include <String.h>
-
-namespace CatCam {
+#include <Arduino.h>
 
 class CatCamHttpClient
 {
@@ -21,7 +19,5 @@ private:
     static const int TIMEOUT_MS = 30000; // 30 second timeout
     static const char* AMAZON_ROOT_CA;    // Certificate stored in PSRAM
 };
-
-} // namespace CatCam
 
 #endif

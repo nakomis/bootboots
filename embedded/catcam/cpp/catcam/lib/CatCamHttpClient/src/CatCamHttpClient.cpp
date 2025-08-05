@@ -1,17 +1,20 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
-#include "HttpClient.h"
-#include "../../SDLogger/src/SDLogger.h"
+#include <esp32-hal-psram.h>
 #include <ArduinoJson.h>
 #include <esp_http_client.h>
-#include <esp32-hal-psram.h>
+#include "../../SDLogger/src/SDLogger.h"
+#include "NamedImage.h"
+#include "CatCamHttpClient.h"
 
 // Initialize static member
-const char* CatCam::CatCamHttpClient::AMAZON_ROOT_CA = nullptr;
-
-namespace CatCam {
+const char* CatCamHttpClient::AMAZON_ROOT_CA = nullptr;
 
 WiFiClientSecure client;
+
+CatCamHttpClient::CatCamHttpClient()
+{
+}
 
 // Initialize PSRAM storage for the certificate
 void CatCamHttpClient::init() {
@@ -49,10 +52,6 @@ void CatCamHttpClient::init() {
     } else if (!psramFound()) {
         SDLogger::getInstance().warn("PSRAM not available, using regular memory for certificate");
     }
-}
-
-CatCamHttpClient::CatCamHttpClient() {
-    // Constructor implementation
 }
 
 String CatCamHttpClient::postImage(NamedImage* namedImage, const char* url, const char* apiKey) {
@@ -198,4 +197,3 @@ String CatCamHttpClient::postImage(NamedImage* namedImage, const char* url, cons
     return success ? response : "{\"error\": \"Request failed\"}";
 }
 
-} // namespace CatCam
