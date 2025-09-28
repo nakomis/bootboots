@@ -2,46 +2,49 @@
 #include <time.h>
 #include <sys/time.h>
 #include <functional>
-#include <SD_MMC.h>
-#include <FS.h>
 
 SDLogger& SDLogger::getInstance() {
     static SDLogger instance;
     return instance;
 }
 
-bool SDLogger::init(const char* logDir) {
+bool SDLogger::init(int csPin, const char* logDir) {
     if (_initialized) {
         return true;
     }
-
-    if (!SD_MMC.begin()) {
-        return false;
-    }
-
+    
+    _csPin = csPin;
     _logDir = String(logDir);
-
+    
     // Create mutex for thread safety
     _mutex = xSemaphoreCreateMutex();
     if (_mutex == nullptr) {
+        Serial.println("SDLogger: Failed to create mutex");
         return false;
     }
-
+    
+    // Initialize SD card
+    if (!SD.begin(_csPin)) {
+        Serial.println("SDLogger: SD card initialization failed");
+        return false;
+    }
+    
     // Create log directory
     if (!createLogDirectory()) {
+        Serial.println("SDLogger: Failed to create log directory");
         return false;
     }
-
+    
     // Generate initial log file name
     _currentLogFile = generateLogFileName();
-
+    
     _initialized = true;
-
+    
     // Log initialization
     info("SDLogger initialized successfully");
     infof("Log directory: %s", _logDir.c_str());
     infof("Current log file: %s", _currentLogFile.c_str());
-
+    
     return true;
 }
 
@@ -114,9 +117,12 @@ void SDLogger::log(LogLevel level, const char* message) {
     if (level < _minLogLevel) {
         return;
     }
-
+    
     String logEntry = formatLogEntry(level, message);
-
+    
+    // Always output to Serial for immediate visibility
+    Serial.print(logEntry);
+    
     // Write to SD card if initialized
     if (_initialized) {
         writeToFile(logEntry.c_str());
@@ -134,9 +140,9 @@ void SDLogger::logf(LogLevel level, const char* format, ...) {
 
 void SDLogger::logDeterrentActivation(const char* catName, float confidence, const float* allProbs) {
     criticalf("DETERRENT_ACTIVATED: %s (%.1f%%) - Probs:[%.1f,%.1f,%.1f,%.1f,%.1f,%.1f]",
-        catName, confidence * 100,
-        allProbs[0] * 100, allProbs[1] * 100, allProbs[2] * 100,
-        allProbs[3] * 100, allProbs[4] * 100, allProbs[5] * 100);
+              catName, confidence * 100,
+              allProbs[0] * 100, allProbs[1] * 100, allProbs[2] * 100,
+              allProbs[3] * 100, allProbs[4] * 100, allProbs[5] * 100);
 }
 
 void SDLogger::logDeterrentRejection(const char* catName, float confidence, const char* reason) {
@@ -149,18 +155,18 @@ void SDLogger::logDetection(const char* catName, float confidence, int pictureNu
 
 void SDLogger::flush() {
     if (!_initialized) return;
-
+    
     safeFileOperation([this]() {
-        // SD_MMC.flush() is not available, but we can close and reopen to ensure data is written
+        // SD.flush() is not available, but we can close and reopen to ensure data is written
         return true;
-        });
+    });
 }
 
 void SDLogger::rotateLogs() {
     if (!_initialized) return;
-
+    
     safeFileOperation([this]() {
-        File currentFile = SD_MMC.open(_currentLogFile, FILE_READ);
+        File currentFile = SD.open(_currentLogFile, FILE_READ);
         if (currentFile && currentFile.size() > _maxFileSize) {
             currentFile.close();
             _currentLogFile = generateLogFileName();
@@ -169,32 +175,30 @@ void SDLogger::rotateLogs() {
         }
         if (currentFile) currentFile.close();
         return true;
-        });
+    });
 }
 
 void SDLogger::writeToFile(const char* message) {
     if (!_initialized) return;
-
+    
     safeFileOperation([this, message]() {
-        fs::FS& fs = SD_MMC;
-        File file = fs.open(_currentLogFile.c_str(), FILE_APPEND);
-        if (file) {
-            file.print(message);
-            file.close();
-
+        File logFile = SD.open(_currentLogFile, FILE_APPEND);
+        if (logFile) {
+            logFile.print(message);
+            logFile.close();
+            
             // Check if rotation is needed
-            File sizeCheck = SD_MMC.open(_currentLogFile.c_str(), FILE_READ);
+            File sizeCheck = SD.open(_currentLogFile, FILE_READ);
             if (sizeCheck && sizeCheck.size() > _maxFileSize) {
                 sizeCheck.close();
                 rotateLogs();
-            }
-            else if (sizeCheck) {
+            } else if (sizeCheck) {
                 sizeCheck.close();
             }
             return true;
         }
         return false;
-        });
+    });
 }
 
 String SDLogger::formatLogEntry(LogLevel level, const char* message) {
@@ -205,40 +209,40 @@ String SDLogger::formatLogEntry(LogLevel level, const char* message) {
 
 String SDLogger::getLogLevelString(LogLevel level) {
     switch (level) {
-    case LOG_DEBUG: return "DEBUG";
-    case LOG_INFO: return "INFO";
-    case LOG_WARN: return "WARN";
-    case LOG_ERROR: return "ERROR";
-    case LOG_CRITICAL: return "CRIT";
-    default: return "UNKNOWN";
+        case LOG_DEBUG: return "DEBUG";
+        case LOG_INFO: return "INFO";
+        case LOG_WARN: return "WARN";
+        case LOG_ERROR: return "ERROR";
+        case LOG_CRITICAL: return "CRIT";
+        default: return "UNKNOWN";
     }
 }
 
 String SDLogger::getCurrentTimestamp() {
     struct timeval tv;
     gettimeofday(&tv, nullptr);
-
+    
     struct tm* timeinfo = localtime(&tv.tv_sec);
     char buffer[32];
     strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", timeinfo);
-
+    
     return String(buffer) + "." + String(tv.tv_usec / 1000, DEC);
 }
 
 String SDLogger::generateLogFileName() {
     struct timeval tv;
     gettimeofday(&tv, nullptr);
-
+    
     struct tm* timeinfo = localtime(&tv.tv_sec);
     char buffer[64];
     strftime(buffer, sizeof(buffer), "catcam_%Y%m%d_%H%M%S.log", timeinfo);
-
+    
     return _logDir + "/" + String(buffer);
 }
 
 bool SDLogger::createLogDirectory() {
-    if (!SD_MMC.exists(_logDir)) {
-        return SD_MMC.mkdir(_logDir);
+    if (!SD.exists(_logDir)) {
+        return SD.mkdir(_logDir);
     }
     return true;
 }
@@ -246,11 +250,11 @@ bool SDLogger::createLogDirectory() {
 void SDLogger::cleanupOldLogs() {
     // Simple cleanup - remove oldest files if we exceed max count
     // This is a basic implementation; could be enhanced with proper sorting
-    File root = SD_MMC.open(_logDir);
+    File root = SD.open(_logDir);
     if (!root || !root.isDirectory()) {
         return;
     }
-
+    
     int fileCount = 0;
     File file = root.openNextFile();
     while (file) {
@@ -261,7 +265,7 @@ void SDLogger::cleanupOldLogs() {
         file = root.openNextFile();
     }
     root.close();
-
+    
     // If we have too many files, this is where we'd implement cleanup
     // For now, just log the count
     if (fileCount > _maxFiles) {
@@ -273,12 +277,12 @@ bool SDLogger::safeFileOperation(std::function<bool()> operation) {
     if (!_initialized || _mutex == nullptr) {
         return false;
     }
-
+    
     if (xSemaphoreTake(_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
         bool result = operation();
         xSemaphoreGive(_mutex);
         return result;
     }
-
+    
     return false;
 }

@@ -20,7 +20,7 @@ public:
     static SDLogger& getInstance();
     
     // Initialize SD card and logger
-    bool init(const char* logDir = "/logs");
+    bool init(int csPin = 5, const char* logDir = "/logs");
     
     // Thread-safe logging methods
     void debug(const char* message);
@@ -62,6 +62,7 @@ private:
     SDLogger& operator=(const SDLogger&) = delete;
     
     bool _initialized = false;
+    int _csPin = 5;
     String _logDir = "/logs";
     String _currentLogFile;
     LogLevel _minLogLevel = LOG_INFO;
