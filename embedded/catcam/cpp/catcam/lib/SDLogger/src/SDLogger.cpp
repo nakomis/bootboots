@@ -15,7 +15,14 @@ bool SDLogger::init(const char* logDir) {
         return true;
     }
 
+    pinMode(14, PULLUP);
+    pinMode(15, PULLUP);
+    pinMode(2, PULLUP);
+    pinMode(4, PULLUP);
+    pinMode(12, PULLUP);
+    pinMode(13, PULLUP);
     if (!SD_MMC.begin()) {
+        Serial.println("SDLogger: Failed to initialize SD_MMC");
         return false;
     }
 
@@ -121,6 +128,7 @@ void SDLogger::log(LogLevel level, const char* message) {
     if (_initialized) {
         writeToFile(logEntry.c_str());
     }
+    Serial.print(logEntry); // Also print to Serial for immediate feedback
 }
 
 void SDLogger::logf(LogLevel level, const char* format, ...) {
