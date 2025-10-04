@@ -56,17 +56,17 @@ void BootBootsBluetoothService::init(const char* deviceName) {
     // Start the service
     pService->start();
     LOG_DF("BLE Service started");
-    
-    // Start advertising
+
+    // Add service UUID to advertising (but don't start advertising yet)
+    // Advertising will be started after all services are initialized
     BLEAdvertising* pAdvertising = BLEDevice::getAdvertising();
     LOG_DF("BLE Advertising instance obtained");
     pAdvertising->addServiceUUID(BOOTBOOTS_SERVICE_UUID);
     pAdvertising->setScanResponse(true);
     pAdvertising->setMinPreferred(0x06);  // functions that help with iPhone connections issue
     pAdvertising->setMinPreferred(0x12);
-    BLEDevice::startAdvertising();
-    LOG_DF("BLE Advertising started");
-    
+    LOG_DF("BLE Service UUID added to advertising");
+
     SDLogger::getInstance().infof("BootBoots Bluetooth Service initialized - Device: %s", deviceName);
     SDLogger::getInstance().infof("Service UUID: %s", BOOTBOOTS_SERVICE_UUID);
 }

@@ -116,12 +116,24 @@ bleOTA.sendStatusUpdate("downloading", "Firmware download at 50%", 50);
 ```
 Mobile App (BLE Client)
         ↓
-  BluetoothOTA ──→ OTAUpdate ──→ ESP32 Update Module
-        ↓                              ↓
-  Status Updates                  Firmware Flash
+  BluetoothOTA ──→ OTAUpdate.downloadToSD() ──→ SD Card
+        ↓                                            ↓
+  Status Updates                            Device Reboots
+                                                     ↓
+                                       OTAUpdate.flashFromSD()
+                                                     ↓
+                                              ESP32 Update Module
 ```
 
-**BluetoothOTA** acts as a bridge between BLE clients and the **OTAUpdate** service. It does not perform firmware updates directly; instead, it delegates to OTAUpdate and relays status information back to the client.
+**BluetoothOTA** acts as a bridge between BLE clients and the **OTAUpdate** service. It does not perform firmware updates directly; instead, it:
+
+1. Receives OTA commands via BLE from web interface
+2. Calls `OTAUpdate::downloadToSD()` to download firmware to SD card (Stage 1)
+3. Relays status updates back to client
+4. Device automatically reboots after download
+5. `OTAUpdate::flashFromSD()` runs on next boot (Stage 2)
+
+This two-stage approach allows OTA updates to work with BLE active and limited memory.
 
 ## Implementation Notes
 

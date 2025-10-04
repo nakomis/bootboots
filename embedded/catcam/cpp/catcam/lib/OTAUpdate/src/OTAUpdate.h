@@ -4,9 +4,11 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClient.h>
+#include <WiFiClientSecure.h>
 #include <ArduinoOTA.h>
 #include <ESPmDNS.h>
 #include <Update.h>
+#include <Preferences.h>
 #include "../../SDLogger/src/SDLogger.h"
 
 // Forward declaration
@@ -24,11 +26,16 @@ public:
     // HTTP OTA update from URL (e.g., S3 signed URL)
     bool updateFromURL(const char* firmwareURL);
     void cancelUpdate();
-    
+
+    // Two-stage OTA: Download to SD card, then flash on next boot
+    bool downloadToSD(const char* firmwareURL);
+    static bool flashFromSD();
+    static bool hasPendingUpdate();
+
     // Security features
     void setPassword(const char* password);
     void enableSecureMode(bool enable = true);
-    
+
     // Status reporting
     String getStatus();
     int getProgress();
@@ -45,6 +52,8 @@ private:
     
     // HTTP OTA members
     HTTPClient* _httpClient;
+    WiFiClient* _client;           // For HTTP connections
+    WiFiClientSecure* _secureClient; // For HTTPS connections
     bool _httpUpdateInProgress;
     size_t _totalSize;
     size_t _downloadedSize;

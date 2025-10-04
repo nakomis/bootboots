@@ -1,5 +1,7 @@
 #include "OTAUpdate.h"
 #include <HTTPClient.h>
+#include <SD_MMC.h>
+#include <Preferences.h>
 
 // Static instance for callbacks
 OTAUpdate* OTAUpdate::_instance = nullptr;
@@ -12,6 +14,9 @@ OTAUpdate::OTAUpdate() {
     _status = "Not initialized";
     _updateCallback = nullptr;
     _httpClient = new HTTPClient();
+    _client = nullptr;  // Will be allocated when needed for HTTP
+    _secureClient = new WiFiClientSecure();
+    _secureClient->setInsecure(); // Skip certificate validation for simplicity
     _httpUpdateInProgress = false;
     _totalSize = 0;
     _downloadedSize = 0;
@@ -22,6 +27,14 @@ OTAUpdate::~OTAUpdate() {
     if (_httpClient) {
         delete _httpClient;
         _httpClient = nullptr;
+    }
+    if (_client) {
+        delete _client;
+        _client = nullptr;
+    }
+    if (_secureClient) {
+        delete _secureClient;
+        _secureClient = nullptr;
     }
 }
 
@@ -227,14 +240,25 @@ bool OTAUpdate::updateFromURL(const char* firmwareURL) {
     }
     
     SDLogger::getInstance().infof("Starting HTTP OTA update from: %s", firmwareURL);
-    
+
+    // Disable SD file logging to free memory during OTA
+    SDLogger::getInstance().setFileLoggingEnabled(false);
+    Serial.println("SD file logging disabled for OTA - using serial only");
+
     _httpUpdateInProgress = true;
     _updating = true;
     _progress = 0;
     _status = "Connecting to firmware server...";
-    
-    // Configure HTTP client
-    _httpClient->begin(firmwareURL);
+
+    // Configure HTTP client - use secure client for HTTPS
+    String url = String(firmwareURL);
+    if (url.startsWith("https://")) {
+        SDLogger::getInstance().infof("Using HTTPS secure connection");
+        _httpClient->begin(*_secureClient, firmwareURL);
+    } else {
+        SDLogger::getInstance().infof("Using HTTP insecure connection");
+        _httpClient->begin(firmwareURL);
+    }
     _httpClient->setTimeout(30000); // 30 second timeout
     _httpClient->setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     
@@ -250,6 +274,11 @@ bool OTAUpdate::updateFromURL(const char* firmwareURL) {
             _updateCallback(false, "Failed to connect to firmware server");
         }
         _httpClient->end();
+        SDLogger::getInstance().setFileLoggingEnabled(true);
+        // BLE was deinitialized - must reboot to restore connectivity
+        Serial.println("OTA failed - rebooting to restore BLE connectivity...");
+        delay(2000);
+        ESP.restart();
         return false;
     }
     
@@ -265,6 +294,11 @@ bool OTAUpdate::updateFromURL(const char* firmwareURL) {
             _updateCallback(false, "Invalid firmware file");
         }
         _httpClient->end();
+        SDLogger::getInstance().setFileLoggingEnabled(true);
+        // BLE was deinitialized - must reboot to restore connectivity
+        Serial.println("OTA failed - rebooting to restore BLE connectivity...");
+        delay(2000);
+        ESP.restart();
         return false;
     }
     
@@ -281,6 +315,11 @@ bool OTAUpdate::updateFromURL(const char* firmwareURL) {
             _updateCallback(false, Update.errorString());
         }
         _httpClient->end();
+        SDLogger::getInstance().setFileLoggingEnabled(true);
+        // BLE was aialized - must reboot to restore connectivity
+        Serial.println("OTA failed - rebooting to restore BLE connectivity...");
+        delay(2000);
+        ESP.restart();
         return false;
     }
     
@@ -304,6 +343,11 @@ bool OTAUpdate::updateFromURL(const char* firmwareURL) {
                     _updateCallback(false, "Failed to write firmware data");
                 }
                 _httpClient->end();
+                SDLogger::getInstance().setFileLoggingEnabled(true);
+                // BLE was deinitialized - must reboot to restore connectivity
+                Serial.println("OTA failed - rebooting to restore BLE connectivity...");
+                delay(2000);
+                ESP.restart();
                 return false;
             }
             
@@ -345,10 +389,15 @@ bool OTAUpdate::updateFromURL(const char* firmwareURL) {
         Update.abort();
         _httpUpdateInProgress = false;
         _updating = false;
-        
+
         if (_updateCallback) {
             _updateCallback(false, Update.errorString());
         }
+        SDLogger::getInstance().setFileLoggingEnabled(true);
+        // BLE was deinitialized - must reboot to restore connectivity
+        Serial.println("OTA failed - rebooting to restore BLE connectivity...");
+        delay(2000);
+        ESP.restart();
         return false;
     }
 }
@@ -367,4 +416,306 @@ void OTAUpdate::cancelUpdate() {
             _updateCallback(false, "Update cancelled by user");
         }
     }
+}
+
+// ============================================================================
+// Two-Stage OTA: SD Card Download + Boot Flash
+// ============================================================================
+
+#define FIRMWARE_FILE "/firmware_update.bin"
+#define OTA_BUFFER_SIZE 512
+
+bool OTAUpdate::hasPendingUpdate() {
+    Preferences prefs;
+    prefs.begin("ota", true);  // read-only
+    bool pending = prefs.getBool("pending", false);
+    prefs.end();
+    return pending;
+}
+
+bool OTAUpdate::downloadToSD(const char* firmwareURL) {
+    if (_updating || _httpUpdateInProgress) {
+        SDLogger::getInstance().warnf("Update already in progress");
+        return false;
+    }
+
+    SDLogger::getInstance().infof("Starting two-stage OTA: downloading to SD card from %s", firmwareURL);
+    Serial.println("[OTA] Starting two-stage OTA");
+
+    // Disable SD file logging to free memory during download
+    Serial.println("[OTA] Disabling SD file logging...");
+    SDLogger::getInstance().setFileLoggingEnabled(false);
+    Serial.println("[OTA] SD file logging disabled");
+
+    Serial.println("[OTA] Setting state variables...");
+    _httpUpdateInProgress = true;
+    _updating = true;
+    _progress = 0;
+    _status = "Downloading to SD card...";
+    Serial.println("[OTA] State variables set");
+
+    // Configure HTTP client
+    Serial.println("[OTA] Configuring HTTP client...");
+    String url = String(firmwareURL);
+    Serial.println("[OTA] URL string created");
+
+    if (url.startsWith("https://")) {
+        Serial.println("[OTA] Using HTTPS");
+        SDLogger::getInstance().infof("Using HTTPS secure connection");
+        _httpClient->begin(*_secureClient, firmwareURL);
+    } else {
+        Serial.println("[OTA] Using HTTP");
+        SDLogger::getInstance().infof("Using HTTP connection");
+        // Allocate WiFiClient if not already allocated
+        if (!_client) {
+            Serial.println("[OTA] Allocating WiFiClient...");
+            _client = new WiFiClient();
+            Serial.println("[OTA] WiFiClient allocated");
+        }
+        Serial.println("[OTA] Calling HTTPClient.begin()...");
+        _httpClient->begin(*_client, firmwareURL);
+        Serial.println("[OTA] HTTPClient.begin() complete");
+    }
+
+    Serial.println("[OTA] Setting timeout...");
+    _httpClient->setTimeout(30000);  // 30 second timeout
+    Serial.println("[OTA] Timeout set");
+
+    // Make HTTP GET request
+    Serial.println("[OTA] Sending HTTP GET request...");
+    int httpCode = _httpClient->GET();
+    Serial.printf("[OTA] HTTP GET returned code: %d\n", httpCode);
+
+    if (httpCode != HTTP_CODE_OK) {
+        SDLogger::getInstance().errorf("HTTP GET failed: %d", httpCode);
+        _httpClient->end();
+        SDLogger::getInstance().setFileLoggingEnabled(true);
+        _httpUpdateInProgress = false;
+        _updating = false;
+        Serial.println("Download failed - rebooting to restore connectivity...");
+        delay(2000);
+        ESP.restart();
+        return false;
+    }
+
+    // Get firmware size
+    size_t firmwareSize = _httpClient->getSize();
+    if (firmwareSize == 0 || firmwareSize == (size_t)-1) {
+        SDLogger::getInstance().errorf("Invalid firmware size: %d", firmwareSize);
+        _httpClient->end();
+        SDLogger::getInstance().setFileLoggingEnabled(true);
+        _httpUpdateInProgress = false;
+        _updating = false;
+        Serial.println("Invalid firmware size - rebooting to restore connectivity...");
+        delay(2000);
+        ESP.restart();
+        return false;
+    }
+
+    Serial.printf("Firmware size: %d bytes\n", firmwareSize);
+    _totalSize = firmwareSize;
+
+    // Open SD card file for writing
+    File file = SD_MMC.open(FIRMWARE_FILE, FILE_WRITE);
+    if (!file) {
+        SDLogger::getInstance().errorf("Failed to open SD card file for writing");
+        _httpClient->end();
+        SDLogger::getInstance().setFileLoggingEnabled(true);
+        _httpUpdateInProgress = false;
+        _updating = false;
+        Serial.println("SD card error - rebooting to restore connectivity...");
+        delay(2000);
+        ESP.restart();
+        return false;
+    }
+
+    // Download firmware to SD card in chunks
+    WiFiClient* stream = _httpClient->getStreamPtr();
+    uint8_t buffer[OTA_BUFFER_SIZE];
+    size_t written = 0;
+    size_t lastProgress = 0;
+
+    Serial.println("Downloading firmware to SD card...");
+    while (_httpClient->connected() && written < firmwareSize) {
+        size_t available = stream->available();
+        if (available) {
+            size_t bytesToRead = min(available, sizeof(buffer));
+            size_t bytesRead = stream->readBytes(buffer, bytesToRead);
+
+            if (bytesRead > 0) {
+                size_t bytesWritten = file.write(buffer, bytesRead);
+                if (bytesWritten != bytesRead) {
+                    SDLogger::getInstance().errorf("SD write failed: wrote %d of %d bytes", bytesWritten, bytesRead);
+                    file.close();
+                    SD_MMC.remove(FIRMWARE_FILE);
+                    _httpClient->end();
+                    SDLogger::getInstance().setFileLoggingEnabled(true);
+                    _httpUpdateInProgress = false;
+                    _updating = false;
+                    Serial.println("SD write error - rebooting to restore connectivity...");
+                    delay(2000);
+                    ESP.restart();
+                    return false;
+                }
+
+                written += bytesRead;
+                _downloadedSize = written;
+                _progress = (written * 100) / firmwareSize;
+
+                // Log progress every 10%
+                if (_progress >= lastProgress + 10) {
+                    Serial.printf("Download progress: %d%% (%d/%d bytes)\n", _progress, written, firmwareSize);
+                    lastProgress = _progress;
+                }
+            }
+        }
+        delay(1);  // Yield to watchdog
+    }
+
+    Serial.println("[OTA] Closing file...");
+    file.close();
+    Serial.println("[OTA] File closed");
+
+    Serial.println("[OTA] Ending HTTP client...");
+    _httpClient->end();
+    Serial.println("[OTA] HTTP client ended");
+    Serial.flush();
+
+    if (written != firmwareSize) {
+        SDLogger::getInstance().errorf("Download incomplete: %d of %d bytes", written, firmwareSize);
+        SD_MMC.remove(FIRMWARE_FILE);
+        SDLogger::getInstance().setFileLoggingEnabled(true);
+        _httpUpdateInProgress = false;
+        _updating = false;
+        Serial.println("Download incomplete - rebooting to restore connectivity...");
+        delay(2000);
+        ESP.restart();
+        return false;
+    }
+
+    Serial.printf("[OTA] Download complete: %d bytes written to SD card\n", written);
+    Serial.flush();
+
+    // Set pending OTA flag in NVS
+    Serial.println("[OTA] Opening NVS preferences...");
+    Preferences prefs;
+    Serial.println("[OTA] Calling prefs.begin()...");
+    prefs.begin("ota", false);  // read-write
+    Serial.println("[OTA] NVS opened, setting pending flag...");
+    prefs.putBool("pending", true);
+    Serial.println("[OTA] Setting size...");
+    prefs.putUInt("size", firmwareSize);
+    Serial.println("[OTA] Closing prefs...");
+    prefs.end();
+    Serial.println("[OTA] NVS preferences closed");
+    Serial.flush();
+
+    Serial.println("[OTA] OTA download complete - rebooting to flash firmware...");
+    SDLogger::getInstance().infof("OTA download complete, rebooting to flash firmware");
+    Serial.flush();
+
+    delay(2000);
+    Serial.println("[OTA] Restarting...");
+    Serial.flush();
+    ESP.restart();
+
+    return true;
+}
+
+bool OTAUpdate::flashFromSD() {
+    SDLogger::getInstance().infof("Checking for pending OTA update...");
+
+    Preferences prefs;
+    prefs.begin("ota", true);  // read-only
+    bool pending = prefs.getBool("pending", false);
+    size_t expectedSize = prefs.getUInt("size", 0);
+    prefs.end();
+
+    if (!pending) {
+        SDLogger::getInstance().infof("No pending OTA update");
+        return true;  // Not an error, just nothing to do
+    }
+
+    SDLogger::getInstance().infof("Pending OTA update found, expected size: %d bytes", expectedSize);
+
+    // CRITICAL: Clear pending flag BEFORE attempting flash to prevent boot loops
+    prefs.begin("ota", false);
+    prefs.putBool("pending", false);
+    prefs.end();
+    SDLogger::getInstance().infof("Cleared pending OTA flag to prevent boot loop on failure");
+
+    // Open firmware file from SD card
+    File file = SD_MMC.open(FIRMWARE_FILE, FILE_READ);
+    if (!file) {
+        SDLogger::getInstance().errorf("Failed to open firmware file from SD card: %s", FIRMWARE_FILE);
+        return false;
+    }
+
+    size_t fileSize = file.size();
+    SDLogger::getInstance().infof("Firmware file size: %d bytes", fileSize);
+
+    if (fileSize != expectedSize) {
+        SDLogger::getInstance().errorf("File size mismatch! Expected %d, got %d", expectedSize, fileSize);
+        file.close();
+        SD_MMC.remove(FIRMWARE_FILE);
+        return false;
+    }
+
+    // Begin update
+    SDLogger::getInstance().infof("Starting firmware flash from SD card...");
+    if (!Update.begin(fileSize)) {
+        SDLogger::getInstance().errorf("Update.begin() failed: %s", Update.errorString());
+        file.close();
+        SD_MMC.remove(FIRMWARE_FILE);
+        return false;
+    }
+
+    // Write firmware to flash
+    uint8_t buffer[OTA_BUFFER_SIZE];
+    size_t written = 0;
+    size_t lastProgress = 0;
+
+    while (file.available()) {
+        size_t bytesRead = file.read(buffer, sizeof(buffer));
+        if (bytesRead > 0) {
+            size_t bytesWritten = Update.write(buffer, bytesRead);
+            if (bytesWritten != bytesRead) {
+                SDLogger::getInstance().errorf("Update.write() failed. Expected %d, wrote %d", bytesRead, bytesWritten);
+                file.close();
+                Update.abort();
+                SD_MMC.remove(FIRMWARE_FILE);
+                return false;
+            }
+
+            written += bytesWritten;
+            int progress = (written * 100) / fileSize;
+
+            // Log progress every 10%
+            if (progress >= lastProgress + 10) {
+                SDLogger::getInstance().infof("Flash progress: %d%% (%d/%d bytes)", progress, written, fileSize);
+                lastProgress = progress;
+            }
+        }
+    }
+
+    file.close();
+
+    // Finalize update
+    if (!Update.end(true)) {  // true = set new firmware size
+        SDLogger::getInstance().errorf("Update.end() failed: %s", Update.errorString());
+        SD_MMC.remove(FIRMWARE_FILE);
+        return false;
+    }
+
+    SDLogger::getInstance().infof("Firmware flash complete! Total written: %d bytes", written);
+
+    // Clean up: remove firmware file
+    SD_MMC.remove(FIRMWARE_FILE);
+    SDLogger::getInstance().infof("Deleted firmware file from SD card");
+
+    SDLogger::getInstance().infof("OTA update successful - rebooting with new firmware...");
+    delay(2000);
+    ESP.restart();
+
+    return true;
 }

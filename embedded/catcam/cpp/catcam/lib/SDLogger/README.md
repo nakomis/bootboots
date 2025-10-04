@@ -14,6 +14,8 @@ SDLogger provides a robust, thread-safe logging system that writes structured lo
 - **Log Rotation**: Automatic rotation when files exceed size limit
 - **Timestamp Precision**: Millisecond-precision timestamps
 - **Dual Output**: Writes to both SD card and Serial monitor
+- **Boot Counter**: NVS-based boot counter for reliable log file ordering
+- **File Logging Toggle**: Can disable SD file logging while keeping Serial output
 - **Convenience Macros**: Simple macros for quick logging
 - **Specialized Methods**: Domain-specific logging for deterrent events
 - **Configurable**: Adjustable log level, file size, and retention
@@ -130,6 +132,21 @@ SDLogger::getInstance().setMaxFileSize(2 * 1024 * 1024);  // 2MB
 SDLogger::getInstance().setMaxFiles(20);
 ```
 
+### Enable/Disable File Logging
+
+```cpp
+// Disable SD file logging (Serial output continues)
+SDLogger::getInstance().setFileLoggingEnabled(false);
+
+// Re-enable SD file logging
+SDLogger::getInstance().setFileLoggingEnabled(true);
+```
+
+**Use Cases**:
+- Temporarily disable during OTA updates to free memory
+- Reduce SD card wear during non-critical operations
+- Serial-only logging mode for debugging
+
 ### Manual Log Rotation
 
 ```cpp
@@ -153,24 +170,43 @@ YYYY-MM-DD HH:MM:SS.mmm [LEVEL] Message
 
 Example:
 ```
-2025-10-04 14:32:15.742 [INFO] SDLogger initialized successfully
-2025-10-04 14:32:15.758 [INFO] Log directory: /logs
-2025-10-04 14:32:15.763 [INFO] Current log file: /logs/catcam_20251004_143215.log
-2025-10-04 14:32:20.102 [WARN] WiFi connection unstable
-2025-10-04 14:32:25.431 [ERROR] Camera initialization failed
-2025-10-04 14:33:10.892 [CRIT] DETERRENT_ACTIVATED: Boots (95.0%)
+1970-01-01 00:00:05.742 [INFO] SDLogger initialized successfully
+1970-01-01 00:00:05.758 [INFO] Boot count: 42
+1970-01-01 00:00:05.763 [INFO] Log directory: /logs
+1970-01-01 00:00:05.780 [INFO] Current log file: /logs/0042_catcam_19700101_000005.log
+1970-01-01 00:00:20.102 [WARN] WiFi connection unstable
+1970-01-01 00:00:25.431 [ERROR] Camera initialization failed
+1970-01-01 00:01:10.892 [CRIT] DETERRENT_ACTIVATED: Boots (95.0%)
 ```
+
+**Note**: Device timestamps reset to 1970-01-01 on boot (no RTC/NTP configured). Boot counter provides reliable ordering.
 
 ## File Management
 
 ### Log File Naming
 
-Files are automatically named with timestamps:
+Files are automatically named with boot counter and timestamps:
 ```
-catcam_YYYYMMDD_HHMMSS.log
+BBBB_catcam_YYYYMMDD_HHMMSS.log
 ```
 
-Example: `catcam_20251004_143215.log`
+Where:
+- `BBBB` = 4-digit boot counter (0001, 0002, etc.)
+- `YYYYMMDD` = Date (usually 19700101 without RTC)
+- `HHMMSS` = Time at initialization
+
+Examples:
+```
+0001_catcam_19700101_000005.log  (First boot)
+0002_catcam_19700101_000008.log  (Second boot)
+0003_catcam_19700101_000012.log  (Third boot)
+```
+
+**Boot Counter Benefits**:
+- Reliable ordering when timestamps reset to 1970
+- Easy identification of reboot sequence
+- Persistent across power cycles (stored in NVS)
+- Automatically incremented on each initialization
 
 ### Automatic Rotation
 
@@ -184,11 +220,14 @@ When a log file exceeds the configured maximum size (default 1MB), SDLogger auto
 
 ```
 /logs/
-├── catcam_20251004_080530.log
-├── catcam_20251004_093142.log
-├── catcam_20251004_110723.log
-└── catcam_20251004_143215.log (current)
+├── 0001_catcam_19700101_000005.log
+├── 0002_catcam_19700101_000008.log
+├── 0003_catcam_19700101_000012.log
+├── 0004_catcam_19700101_000015.log
+└── 0005_catcam_19700101_000020.log (current)
 ```
+
+Files are easily sortable by boot sequence using standard `ls` or `sort` commands.
 
 ## Thread Safety
 
@@ -209,6 +248,38 @@ void task2(void* param) {
 - All file operations are protected
 - Safe for use in ISRs (if logging calls are brief)
 
+## Boot Counter Implementation
+
+SDLogger uses NVS (Non-Volatile Storage) to maintain a persistent boot counter across device reboots.
+
+**NVS Namespace**: `"sdlogger"`
+
+**Key**: `boot_count` (uint32_t)
+
+### How It Works
+
+1. On `init()`, read current boot count from NVS
+2. Increment boot count
+3. Store updated count back to NVS
+4. Use count in log filename generation
+
+### Manual Boot Counter Access
+
+```cpp
+// Read current boot counter (doesn't increment)
+Preferences prefs;
+prefs.begin("sdlogger", true);  // read-only
+uint32_t bootCount = prefs.getUInt("boot_count", 0);
+prefs.end();
+
+// Reset boot counter (use with caution)
+prefs.begin("sdlogger", false);  // read-write
+prefs.putUInt("boot_count", 0);
+prefs.end();
+```
+
+**Note**: Boot counter is separate from OTA Update's NVS namespace (`"ota"`).
+
 ## Dependencies
 
 ### Internal
@@ -220,6 +291,7 @@ void task2(void* param) {
 - `SPI.h` - SPI communication
 - `freertos/FreeRTOS.h` - RTOS support
 - `freertos/semphr.h` - Semaphore/mutex support
+- `Preferences.h` - NVS (Non-Volatile Storage) for boot counter
 
 ## Hardware Requirements
 
@@ -432,12 +504,16 @@ void rotateLogs()
 void setLogLevel(LogLevel minLevel)
 void setMaxFileSize(size_t maxSize)
 void setMaxFiles(int maxFiles)
+void setFileLoggingEnabled(bool enabled)  // Toggle SD file logging
 ```
 
 ### Status
 ```cpp
 bool isInitialized() const
 ```
+
+### Boot Counter
+The boot counter is automatically managed during `init()` and stored in NVS namespace `"sdlogger"` with key `boot_count`.
 
 ## License
 

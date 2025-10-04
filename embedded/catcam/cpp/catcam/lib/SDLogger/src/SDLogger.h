@@ -54,6 +54,7 @@ public:
     void setLogLevel(LogLevel minLevel) { _minLogLevel = minLevel; }
     void setMaxFileSize(size_t maxSize) { _maxFileSize = maxSize; }
     void setMaxFiles(int maxFiles) { _maxFiles = maxFiles; }
+    void setFileLoggingEnabled(bool enabled) { _fileLoggingEnabled = enabled; }
 
 private:
     SDLogger() = default;
@@ -67,7 +68,9 @@ private:
     LogLevel _minLogLevel = LOG_INFO;
     size_t _maxFileSize = 1024 * 1024; // 1MB default
     int _maxFiles = 10;
-    
+    bool _fileLoggingEnabled = true;
+    uint32_t _bootCounter = 0;
+
     // Thread safety
     SemaphoreHandle_t _mutex = nullptr;
     

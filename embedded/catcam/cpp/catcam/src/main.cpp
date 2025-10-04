@@ -1,11 +1,13 @@
 #include <Arduino.h>
 #include <esp_camera.h>
+#include <SD_MMC.h>
 #include <SDLogger.h>
 
 #include "BluetoothService.h"
 #include "BluetoothOTA.h"
 #include "SystemState.h"
 #include "WifiConnect.h"
+#include "OTAUpdate.h"
 #include "version.h"
 #include "secrets.h"
 
@@ -19,6 +21,7 @@
 SDLogger* sdLogger = nullptr;
 WifiConnect* wifiConnect = nullptr;
 BootBootsBluetoothService* bluetoothService = nullptr;
+BluetoothOTA* bluetoothOTA = nullptr;
 OTAUpdate* otaUpdate = nullptr;
 
 // System state instance
@@ -26,21 +29,40 @@ SystemState systemState;
 
 void setup() {
     Serial.begin(115200);
+
+    // CRITICAL: Check for pending OTA BEFORE initializing SDLogger
+    // This prevents flash access conflicts during firmware update
+    if (OTAUpdate::hasPendingUpdate()) {
+        Serial.println("Pending OTA update detected, initializing SD_MMC for flash...");
+
+        // Manually initialize SD_MMC (same pin setup as SDLogger does)
+        pinMode(14, PULLUP);
+        pinMode(15, PULLUP);
+        pinMode(2, PULLUP);
+        pinMode(4, PULLUP);
+        pinMode(12, PULLUP);
+        pinMode(13, PULLUP);
+
+        if (!SD_MMC.begin()) {
+            Serial.println("ERROR: Failed to initialize SD_MMC for OTA flash");
+            Serial.println("Continuing with normal boot...");
+        } else {
+            Serial.println("SD_MMC initialized, starting firmware flash...");
+            if (!OTAUpdate::flashFromSD()) {
+                Serial.println("ERROR: OTA flash from SD failed, continuing with normal boot");
+            }
+            // If flash succeeds, device reboots automatically
+            // If it fails, we continue with normal boot
+        }
+    }
+
+    // Initialize SDLogger for normal operation (after OTA check)
     SDLogger::getInstance().init("/logs");
     SDLogger::getInstance().setLogLevel(LOG_DEBUG);
     LOG_I("=== BootBoots System Starting ===");
-    // Initialize serial for debugging
-    // Serial.begin(115200);
-    // SDLogger::getInstance().init();
-    // SDLogger::getInstance().infof("\n=== BootBoots System Starting ===");
 
     // Record system start time
     systemState.systemStartTime = millis();
-
-    // Disable watchdog timers during initialization
-    // FIXME: Why were these here?
-    // disableCore0WDT();
-    // disableCore1WDT();
 
     // Initialize hardware first
     initializeHardware();
@@ -48,20 +70,11 @@ void setup() {
     // Initialize all system components
     initializeComponents();
 
-    // Perform comprehensive system checks
-    // FIXME: Uncomment when implemented
-    // performSystemChecks();
-
     // Mark system as initialized
     systemState.initialized = true;
 
     SDLogger::getInstance().infof("=== BootBoots System Ready ===");
     SDLogger::getInstance().infof("%s", BANNER);
-
-    // Signal successful initialization
-    // FIXME: Uncomment when implemented
-    // blinkStatusLED(5, 100); // 5 quick blinks
-    // delay(1000);
 
     // Log system startup
     if (systemState.sdCardReady) {
@@ -75,8 +88,17 @@ void setup() {
 }
 
 void loop() {
-    SDLogger::getInstance().debug("Loop iteration");
+    // Update Bluetooth services
     bluetoothService->updateSystemStatus(systemState);
+    if (bluetoothOTA) {
+        bluetoothOTA->handle();
+    }
+
+    // Handle OTA updates
+    if (otaUpdate) {
+        otaUpdate->handle();
+    }
+
     delay(1000);
 }
 
@@ -90,16 +112,18 @@ void initializeHardware() {
 void initializeComponents() {
     SDLogger::getInstance().infof("Initializing system components...");
 
-    // Initialize SD Logger first for early logging capability
-    if (SDLogger::getInstance().init()) {
+    // Check if SDLogger is initialized
+    if (SDLogger::getInstance().isInitialized()) {
         systemState.sdCardReady = true;
         SDLogger::getInstance().infof("SD Logger initialized successfully");
-    }
-    else {
+    } else {
         systemState.sdCardReady = false;
         // FIXME: Uncomment when implemented
         // handleSystemError("SD_INIT", "Failed to initialize SD Logger");
     }
+
+    // NOTE: OTA flash check has been moved to setup() to run BEFORE SDLogger init
+    // This prevents flash access conflicts during firmware updates
 
     // Initialize WiFi
     wifiConnect = new WifiConnect();
@@ -136,6 +160,19 @@ void initializeComponents() {
         SDLogger::getInstance().infof("OTA service initialized - updates available via WiFi");
     }
 
+    // Initialize Bluetooth OTA Service
+    bluetoothOTA = new BluetoothOTA();
+    bluetoothOTA->init("BootBoots-CatCam");
+    bluetoothOTA->setOTAUpdate(otaUpdate);
+    SDLogger::getInstance().infof("Bluetooth OTA service initialized");
+    if (systemState.sdCardReady) {
+        SDLogger::getInstance().infof("Bluetooth OTA enabled - remote updates via web interface");
+    }
+
+    // Start BLE advertising with BOTH service UUIDs
+    // This must be done after all services are initialized
+    BLEDevice::startAdvertising();
+    SDLogger::getInstance().infof("BLE advertising started with all service UUIDs");
 }
 
 void updateSystemStatus() {

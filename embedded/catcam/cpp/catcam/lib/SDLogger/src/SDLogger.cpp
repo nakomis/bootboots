@@ -4,6 +4,7 @@
 #include <functional>
 #include <SD_MMC.h>
 #include <FS.h>
+#include <Preferences.h>
 
 SDLogger& SDLogger::getInstance() {
     static SDLogger instance;
@@ -28,6 +29,14 @@ bool SDLogger::init(const char* logDir) {
 
     _logDir = String(logDir);
 
+    // Read and increment boot counter from NVS
+    Preferences prefs;
+    prefs.begin("sdlogger", false);  // read-write
+    _bootCounter = prefs.getUInt("boot_count", 0);
+    _bootCounter++;  // Increment for this boot
+    prefs.putUInt("boot_count", _bootCounter);
+    prefs.end();
+
     // Create mutex for thread safety
     _mutex = xSemaphoreCreateMutex();
     if (_mutex == nullptr) {
@@ -46,6 +55,7 @@ bool SDLogger::init(const char* logDir) {
 
     // Log initialization
     info("SDLogger initialized successfully");
+    infof("Boot count: %u", _bootCounter);
     infof("Log directory: %s", _logDir.c_str());
     infof("Current log file: %s", _currentLogFile.c_str());
 
@@ -181,7 +191,7 @@ void SDLogger::rotateLogs() {
 }
 
 void SDLogger::writeToFile(const char* message) {
-    if (!_initialized) return;
+    if (!_initialized || !_fileLoggingEnabled) return;
 
     safeFileOperation([this, message]() {
         fs::FS& fs = SD_MMC;
@@ -239,7 +249,11 @@ String SDLogger::generateLogFileName() {
 
     struct tm* timeinfo = localtime(&tv.tv_sec);
     char buffer[64];
-    strftime(buffer, sizeof(buffer), "catcam_%Y%m%d_%H%M%S.log", timeinfo);
+    // Format: BBBB_catcam_YYYYMMDD_HHMMSS.log (where BBBB is boot counter)
+    snprintf(buffer, sizeof(buffer), "%04u_catcam_", _bootCounter);
+    char timeBuffer[32];
+    strftime(timeBuffer, sizeof(timeBuffer), "%Y%m%d_%H%M%S.log", timeinfo);
+    strcat(buffer, timeBuffer);
 
     return _logDir + "/" + String(buffer);
 }
