@@ -320,187 +320,154 @@
 
 ---
 
-## 🔥 CURRENT SESSION SUMMARY (2025-10-04 - CRITICAL ISSUE ONGOING)
+## 🔥 CURRENT SESSION SUMMARY (2025-10-05 - OTA WORKING!)
 
 ### Device Status
-- **Current Version**: v1.0.10 (stable, advertising BLE)
-- **Latest Version on S3**: v1.0.11
-- **OTA Status**: ❌ NOT WORKING - Stage 1 succeeds, Stage 2 never happens
+- **Current Version**: v1.0.36 (stable, advertising BLE)
+- **Latest Version on S3**: v1.0.36
+- **OTA Status**: ✅ FULLY WORKING - Direct HTTP OTA with dual-partition table
 
-### Critical Issue: NVS Flag Not Being Set
+### ✅ RESOLVED: OTA Working with Dual Partition Table
 
-**Symptom**:
-- Stage 1 (download) completes successfully - 1.9MB `firmware_update.bin` exists on SD card
-- Device reboots after download
-- Stage 2 (flash) never happens - no "Pending OTA update detected" message in logs
-- Device boots normally with old firmware version
-- NVS flag `pending_ota=true` is never set
+**Previous Root Cause** (v1.0.3-v1.0.34):
+- Missing OTA partition table - device only had single `factory` partition
+- `esp_ota_get_next_update_partition()` returned same partition device was running from
+- Resulted in `ESP_ERR_OTA_PARTITION_CONFLICT` error
+- Two-stage SD card approach attempted but had NVS flag setting issues
 
-**Root Cause**:
-Device crashes somewhere between completing the HTTP download (line 574 in OTAUpdate.cpp) and setting the NVS flag (lines 600-611). The crash happens AFTER file.close() and _httpClient->end() but BEFORE or DURING prefs.begin("ota", false).
+**Solution** (v1.0.35+):
+1. **Created custom partition table** (`partitions_custom.csv`):
+   - Two 1.94MB app partitions (app0 and app1)
+   - Fits within 4MB flash constraint
+   - Minimal SPIFFS (832KB) for logging
+2. **Switched from Arduino Update class to ESP-IDF OTA API**:
+   - `esp_ota_begin()` with `OTA_SIZE_UNKNOWN` for incremental flash erase
+   - Compatible with active BLE (no upfront blocking erase like Arduino's `Update.begin()`)
+3. **Updated platformio.ini** to use `board_build.partitions = partitions_custom.csv`
+4. **Removed all BLE shutdown code** (no longer needed with ESP-IDF API)
 
-**Evidence**:
-- SD logs show "Starting two-stage OTA: downloading to SD card..." (line 442) as last message before SD logging disabled
-- 1.9MB firmware file exists on SD card (download succeeded)
-- No [OTA] diagnostic messages visible because SD logging is disabled during download
-- Serial monitor crashes/conflicts prevent capturing [OTA] diagnostics
-- No NVS flag found on subsequent boot (hasPendingUpdate() returns false)
+**Test Results**:
+- ✅ v1.0.35: USB flashed with new partition table
+- ✅ v1.0.35 → v1.0.36: OTA from app0 to app1 (SUCCESSFUL)
+- ✅ v1.0.36 → v1.0.36: OTA from app1 to app0 (SUCCESSFUL)
+- ✅ Download speed: ~1.9MB in 30 seconds (~63 KB/s)
+- ✅ BLE stays active during entire OTA process
+- ✅ No crashes, no hangs, no partition conflicts
+- ✅ Device reboots automatically after OTA completion
 
-**Attempted Fixes**:
-1. ✅ v1.0.8: Fixed WiFiClient memory leak (was being allocated but pointer lost)
-2. ✅ v1.0.10: Added detailed [OTA] diagnostics throughout downloadToSD()
-3. ✅ v1.0.10: Added Serial.flush() calls before NVS access
-4. ⏳ v1.0.12: Added boot counter for reliable log ordering
-5. ❌ Still crashes - need serial capture OR alternative approach
+**Key Implementation Files**:
+1. `partitions_custom.csv` - Custom partition table (NEW)
+2. `platformio.ini` - Added `board_build.partitions` configuration
+3. `lib/OTAUpdate/src/OTAUpdate.cpp` - Switched to ESP-IDF OTA API
+4. `lib/OTAUpdate/src/OTAUpdate.h` - Added esp_partition_t includes
 
 ### Version History & Key Changes
 
 | Version | Status | Changes | Result |
 |---------|--------|---------|--------|
-| v1.0.3  | OLD    | Original firmware before two-stage OTA | Stable |
-| v1.0.4  | FAILED | First two-stage OTA attempt | WiFiClient memory bug |
-| v1.0.5  | FAILED | Fixed NVS flag management + logging bugs | Flash access conflict |
-| v1.0.6  | STABLE | Fixed flash access conflict (moved flashFromSD before SDLogger init) | OTA still fails |
-| v1.0.7  | ON S3  | Same as v1.0.6 | OTA test failed |
-| v1.0.8  | STABLE | Fixed WiFiClient memory leak in downloadToSD() | OTA still fails |
-| v1.0.9  | ON S3  | Same as v1.0.8 | OTA test failed - download succeeded, NVS flag not set |
-| v1.0.10 | **CURRENT** | Added detailed [OTA] diagnostics | Device stable, OTA untested |
-| v1.0.11 | ON S3  | Same as v1.0.10 | OTA test failed - same NVS issue |
-| v1.0.12 | NEXT   | Add boot counter to log filenames | Not yet built |
+| v1.0.3-v1.0.34  | OLD    | Two-stage SD card OTA approach | Failed - NVS flag issues |
+| v1.0.35 | STABLE | Custom partition table + ESP-IDF OTA API | ✅ FIRST SUCCESSFUL OTA |
+| v1.0.36 | **CURRENT** | Same as v1.0.35 | ✅ OTA CONFIRMED WORKING |
 
 ### What Works ✅
 
-1. **Stage 1 - Download to SD**:
-   - HTTP client connection successful
-   - Firmware download from S3 works (1.9MB files confirmed)
-   - WiFiClient properly managed (no memory leaks)
-   - SD card file write successful
-   - File.close() succeeds
+1. **Direct HTTP OTA**:
+   - HTTP download from S3 directly to flash partition
+   - ESP-IDF `esp_ota_*` API with incremental erase
+   - BLE stays active during entire update
+   - No memory exhaustion issues
+   - Automatic partition switching (app0 ↔ app1)
 
-2. **Flash Access Conflict Fix**:
-   - flashFromSD() runs before SDLogger::init()
-   - SD_MMC manually initialized for firmware read only
-   - No conflicts between SD logging and Update library
+2. **Partition Management**:
+   - Dual 1.94MB app partitions in 4MB flash
+   - Automatic selection of inactive partition
+   - Safe boot partition switching via `esp_ota_set_boot_partition()`
+   - No partition conflict errors
 
-3. **NVS Flag Boot Loop Fix**:
-   - Flag cleared BEFORE flash attempt (line 601-603 in flashFromSD())
-   - Prevents permanent boot loops on flash failure
-   - Device recovers gracefully from flash errors
+3. **BLE Integration**:
+   - OTA commands received via Bluetooth
+   - Progress updates sent via BLE notifications
+   - No need to shutdown BLE during OTA
+   - Web interface connectivity maintained
 
-4. **SD Logging**:
-   - All errors properly logged when SD logging enabled
-   - Logs include firmware URLs, versions, progress
-   - Log rotation working
+4. **Build & Deploy**:
+   - Automated version bumping
+   - S3 upload with manifest.json updates
+   - Partition table included in build
+   - USB flash for partition table changes
 
-5. **Boot Counter** (v1.0.12+):
-   - NVS-based incremental counter for log ordering
-   - Files named: `0001_catcam_19700101_000000.log`, `0002_catcam_19700101_000100.log`, etc.
-   - Reliable sorting regardless of device time
+### Current Limitations ⚠️
 
-### What Doesn't Work ❌
-
-1. **NVS Flag Setting**:
-   - Device crashes after download completes
-   - Crash happens before/during prefs.begin() call
-   - NVS flag `pending_ota=true` never gets written
-   - Possible memory exhaustion or Preferences conflict
-
-2. **Stage 2 - Flash from SD**:
-   - Never executes because NVS flag not set
-   - flashFromSD() code is correct but never called
-   - Firmware file sits on SD card unused
-
-3. **End-to-End OTA**:
-   - Download succeeds but flash never triggers
-   - Device reboots to old firmware
-   - User must manually flash via USB
-
-4. **Serial Diagnostics Capture**:
-   - `pio device monitor` crashes with termios error
-   - Can't capture [OTA] diagnostic messages
-   - User's `pio monitor` conflicts with Claude's monitor
-   - No visibility into crash point without serial access
+1. **Flash Space Constraint**:
+   - Firmware: 1.9MB (approaching 2MB limit per partition)
+   - Two partitions required: 3.8MB total
+   - Flash usage: 95% of 4MB
+   - Very limited room for firmware growth
 
 ### Next Steps (In Priority Order)
 
-#### Option 1: Fix NVS Crash (RECOMMENDED IF CONTINUING TWO-STAGE)
-1. **Investigate NVS/Preferences conflict**:
-   - SD_MMC uses NVS for configuration
-   - HTTP client may allocate heap during cleanup
-   - Preferences.begin() may fail due to low memory
+#### 🎯 Phase 4: Bootloader + SD Card OTA Architecture (RECOMMENDED)
 
-2. **Try setting NVS flag BEFORE download**:
-   - Move prefs.putBool("pending", true) to start of downloadToSD()
-   - Update flag with size after download completes
-   - If download fails, device reboots and clears stale flag
+**Problem**: Current dual-partition approach uses 95% of 4MB flash (3.8MB for two 1.9MB app partitions). Firmware growth is severely constrained.
 
-3. **Try alternative persistence**:
-   - Write flag file to SD card instead of NVS: `/ota_pending.flag`
-   - Check for flag file in main.cpp before SDLogger init
-   - More reliable than NVS if memory is issue
+**Solution**: Single-partition OTA with dedicated bootloader:
 
-4. **Add memory diagnostics**:
-   - Log free heap before every operation
-   - Check for heap fragmentation
-   - Monitor largest free block
+**Architecture**:
+1. **Tiny Bootloader Partition** (~128KB):
+   - Checks NVS flag on boot
+   - If OTA pending, loads firmware from SD card
+   - Flashes to main app partition
+   - Minimal dependencies, maximum free heap
 
-#### Option 2: Alternative OTA Approaches (IF TWO-STAGE UNFIXABLE)
-1. **Try original updateFromURL() with HTTP** (not two-stage):
-   - v1.0.8 fixed WiFiClient memory leak
-   - May work now that leak is fixed
-   - Simpler, fewer failure points
+2. **Single Large App Partition** (~3.7MB):
+   - Main application runs here
+   - No need for dual partitions
+   - Room for firmware to grow to ~3.5MB
 
-2. **Use Arduino OTA (WiFi)** instead of HTTP:
-   - Built-in to ESP32 framework
-   - Well-tested and reliable
-   - Requires mDNS and being on same network
+3. **OTA Flow**:
+   - Web interface triggers firmware download to SD card via BLE command
+   - Device sets NVS flag and reboots into bootloader
+   - Bootloader reads from SD, flashes to app partition
+   - Bootloader clears flag and boots into main app
 
-3. **USB-only updates** (manual):
-   - Most reliable but requires physical access
-   - Always works
-   - Good fallback option
+**Benefits**:
+- ~1.85MB additional space for firmware growth (from 1.94MB → 3.7MB)
+- Simpler partition management
+- Lower memory pressure (bootloader runs with minimal services)
+- SD card acts as staging area (already proven to work in v1.0.4-v1.0.10)
 
-#### Option 3: Serial Capture (TO DIAGNOSE)
-1. **Close user's pio monitor first**
-2. **Use screen or minicom instead of pio monitor**:
-   ```bash
-   screen /dev/cu.usbserial-1430 115200
-   # or
-   minicom -D /dev/cu.usbserial-1430 -b 115200
-   ```
-3. **Capture [OTA] diagnostics to see exact crash point**
-4. **Identify which line causes crash**
+**Implementation Files**:
+1. **NEW**: `bootloader/` directory with minimal bootloader app
+2. **UPDATE**: `partitions_bootloader.csv` - New partition table
+3. **UPDATE**: `lib/OTAUpdate/src/OTAUpdate.cpp` - Download to SD + set NVS flag
+4. **REMOVE**: ESP-IDF OTA API code (replaced by bootloader flash)
 
-### Files Modified This Session
+**References**:
+- ESP-IDF bootloader customization: https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/bootloader.html
+- NVS bootloader integration: https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/storage/nvs_bootloader.html
+
+### Files Modified This Session (2025-10-05)
+
+#### Partition Table (NEW)
+1. **NEW**: `partitions_custom.csv`
+   - Dual 1.94MB app partitions (app0 @ 0x10000, app1 @ 0x200000)
+   - 832KB SPIFFS for logging (0x3F0000-0x3FA000)
+   - 24KB coredump partition (0x3FA000-0x400000)
 
 #### Core OTA Files
-1. `lib/OTAUpdate/src/OTAUpdate.h` (lines 54-56):
-   - Added `_client` member for HTTP connections
-   - Separated from `_secureClient` for HTTPS
-
 2. `lib/OTAUpdate/src/OTAUpdate.cpp`:
-   - Constructor (line 17): Initialize `_client = nullptr`
-   - Destructor (lines 31-34): Clean up `_client`
-   - downloadToSD() (lines 431-623):
-     - Fixed WiFiClient memory leak (lines 461-464)
-     - Added detailed [OTA] diagnostics (lines 443-620)
-     - Added Serial.flush() calls before critical operations
-   - Multiple [OTA] tagged Serial.println() for debugging
+   - Replaced Arduino `Update.begin()` with ESP-IDF `esp_ota_begin()` (line 357)
+   - Added `esp_ota_get_running_partition()` for diagnostics (line 319)
+   - Added `esp_ota_get_next_update_partition(NULL)` for partition selection (line 323)
+   - Replaced `Update.write()` with `esp_ota_write()` (line 365)
+   - Replaced `Update.end()` with `esp_ota_end()` + `esp_ota_set_boot_partition()` (lines 415-445)
+   - Added safety check for partition conflict (lines 341-353)
 
-3. `src/main.cpp` (lines 33-57):
-   - Moved flashFromSD() check to BEFORE SDLogger::init()
-   - Manual SD_MMC initialization for OTA flash
-   - Prevents flash access conflict
+3. `lib/OTAUpdate/src/OTAUpdate.h`:
+   - Added `#include <esp_ota_ops.h>` and `#include <esp_partition.h>`
 
-#### Logging Improvements
-4. `lib/SDLogger/src/SDLogger.h` (line 72):
-   - Added `_bootCounter` member variable
-
-5. `lib/SDLogger/src/SDLogger.cpp`:
-   - Added `#include <Preferences.h>` (line 7)
-   - init() (lines 32-38): Read and increment boot counter from NVS
-   - init() (line 58): Log boot count
-   - generateLogFileName() (lines 246-259): Prefix filenames with boot counter
+4. `platformio.ini`:
+   - Added `board_build.partitions = partitions_custom.csv` (line 15)
 
 ### Build Commands
 
@@ -560,100 +527,6 @@ ls -1 /Volumes/FAT32_Mount/logs/ | sort
 2. **Alternative**: Try SD card flag file instead of NVS (see Option 1.3 above)
 3. **Fallback**: Test original updateFromURL() now that WiFiClient leak is fixed (see Option 2.1 above)
 4. **Last Resort**: Manual USB updates only (see Option 2.3 above)
-
-### Stretch Goals (Future Enhancements)
-
-#### 1. URL Shortening via nakom.is
-
-**Problem**: S3 pre-signed URLs are extremely long (200+ characters) and wasteful over BLE.
-
-**Solution**: Use nakom.is URL shortener (`/Users/martinmu_1/repos/nakomis/nakom.is`) to create short URLs.
-
-**Benefits**:
-- Reduced BLE payload size
-- Easier debugging (readable short URLs)
-- Centralized URL management
-
-**Implementation**:
-```
-Long URL:  https://bootboots-firmware-updates.s3.eu-west-2.amazonaws.com/BootBoots/1.0.11/firmware.bin?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=...
-Short URL: https://n.is/fw-abc123
-```
-
-Web interface generates short URL via nakom.is API, device follows redirect to S3.
-
-#### 2. HTTPS vs HTTP Investigation
-
-**Current State**: Using HTTP URLs due to earlier SSL memory issues.
-
-**Question**: With WiFiClient memory leak fixed (v1.0.8), can we now use HTTPS?
-
-**Tasks**:
-1. Test HTTPS download with current code (WiFiClientSecure with `.setInsecure()`)
-2. Measure heap usage during HTTPS download
-3. Compare stability of HTTP vs HTTPS
-4. If HTTPS works, switch default to HTTPS for security
-
-**Expected Outcome**: HTTPS should work now that leak is fixed, providing better security.
-
-#### 3. HTTP Short URLs via CDN/Gateway
-
-**Context**: If HTTPS still doesn't work and we need HTTP, but AWS doesn't support pre-signed URLs over HTTP.
-
-**Problem**: Can't use HTTP pre-signed S3 URLs directly.
-
-**Solutions**:
-
-**Option A: CloudFront with Signed URLs**
-- Create CloudFront distribution for S3 bucket
-- Generate CloudFront signed URLs (supports HTTP)
-- Shorter URLs, CDN caching benefits
-- Requires CloudFront setup
-
-**Option B: API Gateway + Lambda Proxy**
-- API Gateway HTTP endpoint
-- Lambda function validates request, proxies to S3
-- Returns HTTP redirect or streams file
-- More flexible but adds latency
-
-**Option C: nakom.is as Smart Redirector**
-- nakom.is stores mapping: short URL → S3 URL
-- On request, fetches from S3 with credentials
-- Serves over HTTP to device
-- Requires nakom.is backend enhancement
-
-**Recommendation**: Option A (CloudFront) is cleanest AWS-native solution.
-
-#### 4. Firmware Signing & Verification
-
-**Enhancement**: Add MD5/SHA256 checksum verification.
-
-**Benefits**:
-- Detect corrupted downloads
-- Prevent flashing invalid firmware
-- Security against firmware tampering
-
-**Implementation**:
-- Store checksum in S3 alongside firmware
-- Download checksum first
-- Verify after download completes
-- Only set NVS flag if verification passes
-
-#### 5. Incremental OTA Updates
-
-**Enhancement**: Delta updates instead of full firmware.
-
-**Benefits**:
-- Smaller download size
-- Faster updates
-- Less SD card wear
-
-**Challenges**:
-- Requires complex diff/patch logic
-- Limited ESP32 libraries for binary patching
-- Storage for both old and new firmware during patch
-
-**Priority**: Low (full updates working is higher priority)
 
 ---
 

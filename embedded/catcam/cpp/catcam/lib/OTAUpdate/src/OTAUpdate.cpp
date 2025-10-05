@@ -2,6 +2,11 @@
 #include <HTTPClient.h>
 #include <SD_MMC.h>
 #include <Preferences.h>
+#include <esp_task_wdt.h>
+#include <esp_bt.h>
+#include <esp_bt_main.h>
+#include <esp_ota_ops.h>
+#include <esp_partition.h>
 
 // Static instance for callbacks
 OTAUpdate* OTAUpdate::_instance = nullptr;
@@ -304,50 +309,90 @@ bool OTAUpdate::updateFromURL(const char* firmwareURL) {
     
     SDLogger::getInstance().infof("Firmware size: %d bytes", _totalSize);
     _status = "Starting firmware download...";
-    
-    // Begin update process
-    if (!Update.begin(_totalSize)) {
-        SDLogger::getInstance().errorf("Update.begin failed: %s", Update.errorString());
-        _status = "Failed to begin update process";
+
+    // Use ESP-IDF OTA API instead of Arduino Update class
+    // This allows BLE to stay active during OTA - esp_ota_begin with OTA_SIZE_UNKNOWN
+    // does minimal initialization and erases flash incrementally during writes
+    SDLogger::getInstance().infof("Initializing ESP-IDF OTA update (BLE-friendly)");
+
+    // Get the currently running partition and the next OTA partition
+    const esp_partition_t* running_partition = esp_ota_get_running_partition();
+    SDLogger::getInstance().infof("Currently running from partition: %s", running_partition->label);
+
+    // Get the next OTA partition (the one we're NOT running from)
+    const esp_partition_t* update_partition = esp_ota_get_next_update_partition(NULL);
+    if (update_partition == NULL) {
+        SDLogger::getInstance().errorf("No OTA partition available");
+        _status = "Failed to find OTA partition";
         _httpUpdateInProgress = false;
         _updating = false;
         if (_updateCallback) {
-            _updateCallback(false, Update.errorString());
+            _updateCallback(false, "No OTA partition available");
         }
         _httpClient->end();
         SDLogger::getInstance().setFileLoggingEnabled(true);
-        // BLE was aialized - must reboot to restore connectivity
-        Serial.println("OTA failed - rebooting to restore BLE connectivity...");
-        delay(2000);
-        ESP.restart();
         return false;
     }
+
+    SDLogger::getInstance().infof("OTA partition: %s (subtype: %d), size: %d bytes",
+                                  update_partition->label, update_partition->subtype, update_partition->size);
+
+    // Safety check: Verify we're not trying to write to the running partition
+    if (update_partition->address == running_partition->address) {
+        SDLogger::getInstance().errorf("CRITICAL: update_partition is same as running_partition!");
+        SDLogger::getInstance().errorf("This should never happen - esp_ota_get_next_update_partition() is broken");
+        _status = "Partition conflict detected";
+        _httpUpdateInProgress = false;
+        _updating = false;
+        if (_updateCallback) {
+            _updateCallback(false, "Partition conflict");
+        }
+        _httpClient->end();
+        SDLogger::getInstance().setFileLoggingEnabled(true);
+        return false;
+    }
+
+    // Begin OTA update with OTA_SIZE_UNKNOWN for incremental erase
+    esp_ota_handle_t ota_handle;
+    esp_err_t err = esp_ota_begin(update_partition, OTA_SIZE_UNKNOWN, &ota_handle);
+    if (err != ESP_OK) {
+        SDLogger::getInstance().errorf("esp_ota_begin failed: %s", esp_err_to_name(err));
+        _status = "Failed to begin OTA update";
+        _httpUpdateInProgress = false;
+        _updating = false;
+        if (_updateCallback) {
+            _updateCallback(false, "OTA begin failed");
+        }
+        _httpClient->end();
+        SDLogger::getInstance().setFileLoggingEnabled(true);
+        return false;
+    }
+
+    SDLogger::getInstance().infof("OTA update started successfully (handle: 0x%x)", ota_handle);
     
     // Download and write firmware
     WiFiClient* stream = _httpClient->getStreamPtr();
     uint8_t buffer[1024];
     size_t bytesRead = 0;
-    
+
     while (_httpClient->connected() && _downloadedSize < _totalSize) {
         size_t available = stream->available();
         if (available > 0) {
             size_t readBytes = stream->readBytes(buffer, min(available, sizeof(buffer)));
-            
-            if (Update.write(buffer, readBytes) != readBytes) {
-                SDLogger::getInstance().errorf("Update.write failed: %s", Update.errorString());
+
+            // Write data to OTA partition using ESP-IDF API
+            err = esp_ota_write(ota_handle, buffer, readBytes);
+            if (err != ESP_OK) {
+                SDLogger::getInstance().errorf("esp_ota_write failed: %s", esp_err_to_name(err));
                 _status = "Failed to write firmware data";
-                Update.abort();
+                esp_ota_abort(ota_handle);
                 _httpUpdateInProgress = false;
                 _updating = false;
                 if (_updateCallback) {
-                    _updateCallback(false, "Failed to write firmware data");
+                    _updateCallback(false, "OTA write failed");
                 }
                 _httpClient->end();
                 SDLogger::getInstance().setFileLoggingEnabled(true);
-                // BLE was deinitialized - must reboot to restore connectivity
-                Serial.println("OTA failed - rebooting to restore BLE connectivity...");
-                delay(2000);
-                ESP.restart();
                 return false;
             }
             
@@ -369,37 +414,61 @@ bool OTAUpdate::updateFromURL(const char* firmwareURL) {
     }
     
     _httpClient->end();
-    
-    // Finalize update
-    if (_downloadedSize == _totalSize && Update.end(true)) {
-        SDLogger::getInstance().infof("HTTP OTA update completed successfully");
-        _status = "Update completed - rebooting...";
-        _progress = 100;
-        
-        if (_updateCallback) {
-            _updateCallback(true, "Update completed successfully");
-        }
-        
-        delay(2000);
-        ESP.restart();
-        return true;
-    } else {
-        SDLogger::getInstance().errorf("HTTP OTA update failed: %s", Update.errorString());
-        _status = "Update failed: " + String(Update.errorString());
-        Update.abort();
+
+    // Finalize OTA update
+    if (_downloadedSize != _totalSize) {
+        SDLogger::getInstance().errorf("Downloaded size (%d) doesn't match expected (%d)",
+                                      _downloadedSize, _totalSize);
+        _status = "Download incomplete";
+        esp_ota_abort(ota_handle);
         _httpUpdateInProgress = false;
         _updating = false;
-
         if (_updateCallback) {
-            _updateCallback(false, Update.errorString());
+            _updateCallback(false, "Download incomplete");
         }
         SDLogger::getInstance().setFileLoggingEnabled(true);
-        // BLE was deinitialized - must reboot to restore connectivity
-        Serial.println("OTA failed - rebooting to restore BLE connectivity...");
-        delay(2000);
-        ESP.restart();
         return false;
     }
+
+    // End OTA update
+    err = esp_ota_end(ota_handle);
+    if (err != ESP_OK) {
+        SDLogger::getInstance().errorf("esp_ota_end failed: %s", esp_err_to_name(err));
+        _status = "OTA end failed";
+        _httpUpdateInProgress = false;
+        _updating = false;
+        if (_updateCallback) {
+            _updateCallback(false, "OTA end failed");
+        }
+        SDLogger::getInstance().setFileLoggingEnabled(true);
+        return false;
+    }
+
+    // Set boot partition to the newly written OTA partition
+    err = esp_ota_set_boot_partition(update_partition);
+    if (err != ESP_OK) {
+        SDLogger::getInstance().errorf("esp_ota_set_boot_partition failed: %s", esp_err_to_name(err));
+        _status = "Failed to set boot partition";
+        _httpUpdateInProgress = false;
+        _updating = false;
+        if (_updateCallback) {
+            _updateCallback(false, "Boot partition set failed");
+        }
+        SDLogger::getInstance().setFileLoggingEnabled(true);
+        return false;
+    }
+
+    SDLogger::getInstance().infof("HTTP OTA update completed successfully");
+    _status = "Update completed - rebooting...";
+    _progress = 100;
+
+    if (_updateCallback) {
+        _updateCallback(true, "Update completed successfully");
+    }
+
+    delay(2000);
+    ESP.restart();
+    return true;
 }
 
 void OTAUpdate::cancelUpdate() {
@@ -426,11 +495,8 @@ void OTAUpdate::cancelUpdate() {
 #define OTA_BUFFER_SIZE 512
 
 bool OTAUpdate::hasPendingUpdate() {
-    Preferences prefs;
-    prefs.begin("ota", true);  // read-only
-    bool pending = prefs.getBool("pending", false);
-    prefs.end();
-    return pending;
+    // Check for SD card flag file instead of NVS
+    return SD_MMC.exists("/ota_pending.flag");
 }
 
 bool OTAUpdate::downloadToSD(const char* firmwareURL) {
@@ -446,6 +512,21 @@ bool OTAUpdate::downloadToSD(const char* firmwareURL) {
     Serial.println("[OTA] Disabling SD file logging...");
     SDLogger::getInstance().setFileLoggingEnabled(false);
     Serial.println("[OTA] SD file logging disabled");
+
+    // CRITICAL: Fully unmount and remount SD_MMC to clear any state
+    // This prevents 0x107 timeout errors during write operations
+    Serial.println("[OTA] Unmounting SD_MMC...");
+    SD_MMC.end();
+    delay(100);
+    Serial.println("[OTA] Remounting SD_MMC...");
+    if (!SD_MMC.begin()) {
+        SDLogger::getInstance().errorf("Failed to remount SD_MMC for OTA download");
+        Serial.println("[OTA] SD remount failed - rebooting...");
+        delay(2000);
+        ESP.restart();
+        return false;
+    }
+    Serial.println("[OTA] SD_MMC remounted successfully");
 
     Serial.println("[OTA] Setting state variables...");
     _httpUpdateInProgress = true;
@@ -596,18 +677,18 @@ bool OTAUpdate::downloadToSD(const char* firmwareURL) {
     Serial.printf("[OTA] Download complete: %d bytes written to SD card\n", written);
     Serial.flush();
 
-    // Set pending OTA flag in NVS
-    Serial.println("[OTA] Opening NVS preferences...");
-    Preferences prefs;
-    Serial.println("[OTA] Calling prefs.begin()...");
-    prefs.begin("ota", false);  // read-write
-    Serial.println("[OTA] NVS opened, setting pending flag...");
-    prefs.putBool("pending", true);
-    Serial.println("[OTA] Setting size...");
-    prefs.putUInt("size", firmwareSize);
-    Serial.println("[OTA] Closing prefs...");
-    prefs.end();
-    Serial.println("[OTA] NVS preferences closed");
+    // Set pending OTA flag using SD card file instead of NVS (more reliable)
+    Serial.println("[OTA] Creating SD flag file...");
+    File flagFile = SD_MMC.open("/ota_pending.flag", FILE_WRITE);
+    if (!flagFile) {
+        Serial.println("[OTA] ERROR: Failed to create flag file!");
+        // Continue anyway - firmware is downloaded
+    } else {
+        // Write firmware size to flag file
+        flagFile.printf("%u\n", firmwareSize);
+        flagFile.close();
+        Serial.println("[OTA] Flag file created successfully");
+    }
     Serial.flush();
 
     Serial.println("[OTA] OTA download complete - rebooting to flash firmware...");
@@ -625,24 +706,29 @@ bool OTAUpdate::downloadToSD(const char* firmwareURL) {
 bool OTAUpdate::flashFromSD() {
     SDLogger::getInstance().infof("Checking for pending OTA update...");
 
-    Preferences prefs;
-    prefs.begin("ota", true);  // read-only
-    bool pending = prefs.getBool("pending", false);
-    size_t expectedSize = prefs.getUInt("size", 0);
-    prefs.end();
-
-    if (!pending) {
+    // Check for SD card flag file instead of NVS
+    if (!SD_MMC.exists("/ota_pending.flag")) {
         SDLogger::getInstance().infof("No pending OTA update");
         return true;  // Not an error, just nothing to do
     }
 
-    SDLogger::getInstance().infof("Pending OTA update found, expected size: %d bytes", expectedSize);
+    SDLogger::getInstance().infof("Pending OTA flag file found");
 
-    // CRITICAL: Clear pending flag BEFORE attempting flash to prevent boot loops
-    prefs.begin("ota", false);
-    prefs.putBool("pending", false);
-    prefs.end();
-    SDLogger::getInstance().infof("Cleared pending OTA flag to prevent boot loop on failure");
+    // Read expected size from flag file
+    File flagFile = SD_MMC.open("/ota_pending.flag", FILE_READ);
+    size_t expectedSize = 0;
+    if (flagFile) {
+        String sizeStr = flagFile.readStringUntil('\n');
+        expectedSize = sizeStr.toInt();
+        flagFile.close();
+        SDLogger::getInstance().infof("Expected firmware size: %d bytes", expectedSize);
+    } else {
+        SDLogger::getInstance().warnf("Could not read flag file, will skip size check");
+    }
+
+    // CRITICAL: Delete flag file BEFORE attempting flash to prevent boot loops
+    SD_MMC.remove("/ota_pending.flag");
+    SDLogger::getInstance().infof("Deleted flag file to prevent boot loop on failure");
 
     // Open firmware file from SD card
     File file = SD_MMC.open(FIRMWARE_FILE, FILE_READ);
@@ -663,12 +749,31 @@ bool OTAUpdate::flashFromSD() {
 
     // Begin update
     SDLogger::getInstance().infof("Starting firmware flash from SD card...");
-    if (!Update.begin(fileSize)) {
-        SDLogger::getInstance().errorf("Update.begin() failed: %s", Update.errorString());
+
+    // Give system time to stabilize before flashing
+    delay(100);
+
+    // Attempt to begin update with retry
+    bool beginSuccess = false;
+    for (int attempt = 1; attempt <= 3 && !beginSuccess; attempt++) {
+        SDLogger::getInstance().infof("Attempting Update.begin() (attempt %d/3)...", attempt);
+        if (attempt > 1) {
+            delay(500);  // Wait before retry
+        }
+        beginSuccess = Update.begin(fileSize);
+        if (!beginSuccess) {
+            SDLogger::getInstance().errorf("Update.begin() attempt %d failed: %s", attempt, Update.errorString());
+        }
+    }
+
+    if (!beginSuccess) {
+        SDLogger::getInstance().errorf("Update.begin() failed after 3 attempts");
         file.close();
         SD_MMC.remove(FIRMWARE_FILE);
         return false;
     }
+
+    SDLogger::getInstance().infof("Update.begin() succeeded");
 
     // Write firmware to flash
     uint8_t buffer[OTA_BUFFER_SIZE];

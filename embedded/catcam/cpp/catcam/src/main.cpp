@@ -30,31 +30,8 @@ SystemState systemState;
 void setup() {
     Serial.begin(115200);
 
-    // CRITICAL: Check for pending OTA BEFORE initializing SDLogger
-    // This prevents flash access conflicts during firmware update
-    if (OTAUpdate::hasPendingUpdate()) {
-        Serial.println("Pending OTA update detected, initializing SD_MMC for flash...");
-
-        // Manually initialize SD_MMC (same pin setup as SDLogger does)
-        pinMode(14, PULLUP);
-        pinMode(15, PULLUP);
-        pinMode(2, PULLUP);
-        pinMode(4, PULLUP);
-        pinMode(12, PULLUP);
-        pinMode(13, PULLUP);
-
-        if (!SD_MMC.begin()) {
-            Serial.println("ERROR: Failed to initialize SD_MMC for OTA flash");
-            Serial.println("Continuing with normal boot...");
-        } else {
-            Serial.println("SD_MMC initialized, starting firmware flash...");
-            if (!OTAUpdate::flashFromSD()) {
-                Serial.println("ERROR: OTA flash from SD failed, continuing with normal boot");
-            }
-            // If flash succeeds, device reboots automatically
-            // If it fails, we continue with normal boot
-        }
-    }
+    // Direct HTTP OTA is now used instead of two-stage SD card approach
+    // No need to check for pending OTA updates on boot
 
     // Initialize SDLogger for normal operation (after OTA check)
     SDLogger::getInstance().init("/logs");

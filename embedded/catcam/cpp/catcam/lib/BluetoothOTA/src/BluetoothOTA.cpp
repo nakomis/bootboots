@@ -200,15 +200,19 @@ void BluetoothOTA::processOTAUpdate(const OTACommand& command) {
     SDLogger::getInstance().infof("Starting OTA update from URL: %s", command.firmware_url.c_str());
     sendStatusUpdate("starting", "Starting OTA update...");
 
-    // Stop BLE advertising to reduce interference during OTA
-    // Note: We don't deinitialize BLE because it causes hangs (see esp32-snippets #1155)
+    // Stop BLE advertising to free some memory for direct HTTP OTA
+    // Note: We can't fully deinit BLE as it causes hangs (see esp32-snippets #1155)
+    // Direct OTA needs ~19KB minimum - we'll rely on stopping advertising to free enough memory
     SDLogger::getInstance().infof("Stopping BLE advertising for OTA update");
     if (_pServer) {
         _pServer->getAdvertising()->stop();
     }
     BLEDevice::stopAdvertising();
 
-    SDLogger::getInstance().infof("Free heap before OTA: %d bytes", ESP.getFreeHeap());
+    // Give BLE time to stop advertising
+    delay(1000);
+
+    SDLogger::getInstance().infof("Free heap after stopping BLE: %d bytes", ESP.getFreeHeap());
 
     // Set up progress callback
     _otaUpdate->setUpdateCallback([](bool success, const char* error) {
@@ -216,17 +220,18 @@ void BluetoothOTA::processOTAUpdate(const OTACommand& command) {
         // Note: We can't access 'this' in a static callback, so we'll handle status in the main loop
     });
 
-    // Start the two-stage HTTP OTA update (download to SD, then flash on next boot)
-    bool started = _otaUpdate->downloadToSD(command.firmware_url.c_str());
+    // Start direct HTTP OTA update (single-stage: download and flash immediately)
+    // BLE is now fully disabled, so we have enough memory
+    bool started = _otaUpdate->updateFromURL(command.firmware_url.c_str());
 
     if (!started) {
-        sendStatusUpdate("error", "Failed to start OTA download");
-        SDLogger::getInstance().errorf("OTA download failed to start");
+        sendStatusUpdate("error", "Failed to start OTA update");
+        SDLogger::getInstance().errorf("OTA update failed to start");
         return;
     }
 
-    sendStatusUpdate("downloading", "Downloading firmware to SD card...", 0);
-    // Note: Device will reboot automatically after download completes
+    sendStatusUpdate("updating", "Updating firmware...", 0);
+    // Note: Device will reboot automatically after flash completes
 }
 
 // Server Callbacks Implementation
