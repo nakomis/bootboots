@@ -2,6 +2,8 @@
 #include <esp_camera.h>
 #include <SD_MMC.h>
 #include <SDLogger.h>
+#include <esp_ota_ops.h>
+#include <esp_partition.h>
 
 #include "BluetoothService.h"
 #include "BluetoothOTA.h"
@@ -29,6 +31,31 @@ SystemState systemState;
 
 void setup() {
     Serial.begin(115200);
+    delay(100);
+
+    // CRITICAL: Set boot partition to factory so bootloader runs on next reboot
+    // This ensures the bootloader can check for pending OTA updates from SD card
+    const esp_partition_t* factory = esp_partition_find_first(
+        ESP_PARTITION_TYPE_APP,
+        ESP_PARTITION_SUBTYPE_APP_FACTORY,
+        NULL
+    );
+
+    if (factory != NULL) {
+        const esp_partition_t* boot_partition = esp_ota_get_boot_partition();
+
+        // Only set boot partition if it's not already pointing to factory
+        if (boot_partition != factory) {
+            esp_err_t err = esp_ota_set_boot_partition(factory);
+            if (err == ESP_OK) {
+                Serial.println("[CATCAM] Set boot partition to factory for next reboot");
+            } else {
+                Serial.printf("[CATCAM] WARNING: Failed to set boot partition: %s\n", esp_err_to_name(err));
+            }
+        }
+    } else {
+        Serial.println("[CATCAM] WARNING: Factory partition not found - bootloader won't run on reboot");
+    }
 
     // Direct HTTP OTA is now used instead of two-stage SD card approach
     // No need to check for pending OTA updates on boot

@@ -220,9 +220,9 @@ void BluetoothOTA::processOTAUpdate(const OTACommand& command) {
         // Note: We can't access 'this' in a static callback, so we'll handle status in the main loop
     });
 
-    // Start direct HTTP OTA update (single-stage: download and flash immediately)
+    // Start bootloader-based OTA update (download to SD, bootloader flashes on reboot)
     // BLE is now fully disabled, so we have enough memory
-    bool started = _otaUpdate->updateFromURL(command.firmware_url.c_str());
+    bool started = _otaUpdate->downloadToSD(command.firmware_url.c_str());
 
     if (!started) {
         sendStatusUpdate("error", "Failed to start OTA update");

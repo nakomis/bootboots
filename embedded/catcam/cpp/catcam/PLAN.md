@@ -123,38 +123,22 @@
        - Stopping BLE advertising first still caused crash
        - Root cause: BLE deinit incompatible with active connections or insufficient memory
      - **Final Solution**: Two-stage OTA via SD card (see details below)
-  9. ✅ Verify firmware downloads from S3
+  9. ✅ Verify firmware downloads from S3 to SD card
   10. ✅ Verify ESP32 reboots after download
-  11. 🔴 **BLOCKER 4**: Boot Loop - NVS Flag Management (FIXED v1.0.5)
-      - Error: Device crashed during Stage 2 flash with `abort() at PC 0x40082222` in `esp_flash_erase_region`
-      - Root cause: NVS flag `pending_ota=true` was cleared AFTER flash attempt
-      - If flash failed, flag remained set causing permanent boot loop
-      - **Solution**: Move NVS flag clear to BEFORE flash attempt (line 601-603 in OTAUpdate.cpp)
-      - Prevents boot loops by clearing flag regardless of flash outcome
-  12. 🔴 **BLOCKER 5**: Missing Error Logs (FIXED v1.0.5)
-      - Error: Flash failures not logged to SD card, requiring serial monitor for diagnosis
-      - Root cause: `flashFromSD()` used `Serial.println()` instead of `SDLogger`
-      - **Solution**: Replace all Serial.println() with SDLogger::getInstance().infof/errorf()
-      - Enables post-mortem debugging via SD card logs without serial connection
-  13. 🔴 **BLOCKER 6**: Flash Access Conflict (FIXED v1.0.6)
-      - Error: Device crashed with `abort() at PC 0x40082222` at OTAUpdate.cpp:640 during Update.write()
-      - Backtrace: `esp_flash_erase_region` → `UpdateClass::_writeBuffer()` → `OTAUpdate::flashFromSD()`
-      - Root cause: `flashFromSD()` called AFTER `SDLogger::getInstance().init()` in main.cpp
-      - SD_MMC peripheral actively open for logging when Update library tried to erase flash partition
-      - ESP32 cannot safely erase/write flash while SD_MMC in use → flash access conflict
-      - **Solution**: Move `flashFromSD()` call to BEFORE SDLogger initialization in setup()
-      - Manually initialize SD_MMC for firmware read only, then init SDLogger after flash completes
-      - Changes in `src/main.cpp` lines 35-57 and 125-126
-  14. ✅ Verify ESP32 flashes from SD on boot
-  15. ⏳ Verify ESP32 reboots with new version - TESTING v1.0.6 → v1.0.7
-  16. ⏳ Reconnect and confirm version updated - PENDING
+  11. ✅ Verify bootloader detects pending OTA from NVS
+  12. ✅ Verify bootloader flashes firmware from SD card to OTA0
+  13. ✅ Verify bootloader deletes firmware file from SD card
+  14. ✅ Verify bootloader sets boot partition to OTA0
+  15. ✅ Verify ESP32 reboots with new version (v1.0.42)
+  16. ✅ Verify catcam app sets boot partition back to factory
+  17. ✅ Reconnect and confirm version updated successfully
 
-**Current Status** (2025-10-04):
-- Device running v1.0.6 firmware with all fixes applied
-- Testing OTA update from v1.0.6 → v1.0.7
-- Stage 1 (download to SD) complete, device rebooted
-- Stage 2 (flash from SD before SDLogger init) in progress
-- Waiting to confirm device boots with v1.0.7 and BLE advertising resumes
+**Current Status** (2025-10-09):
+- ✅ Device running v1.0.42 firmware
+- ✅ Bootloader OTA system fully operational
+- ✅ Tested complete OTA flow: v1.0.40 → v1.0.42 via web interface
+- ✅ Boot sequence working perfectly (factory bootloader runs every time)
+- ✅ System ready for production use
 
 ### 3.2 Two-Stage OTA Architecture ✅
 **Problem**: ESP32 has only ~38KB free heap with BLE active. Direct HTTP OTA requires:
@@ -320,12 +304,12 @@
 
 ---
 
-## 🔥 CURRENT SESSION SUMMARY (2025-10-05 - OTA WORKING!)
+## 🔥 CURRENT SESSION SUMMARY (2025-10-09 - BOOTLOADER OTA FULLY OPERATIONAL!)
 
 ### Device Status
-- **Current Version**: v1.0.36 (stable, advertising BLE)
-- **Latest Version on S3**: v1.0.36
-- **OTA Status**: ✅ FULLY WORKING - Direct HTTP OTA with dual-partition table
+- **Current Version**: v1.0.42 ✅ RUNNING
+- **Latest Version on S3**: v1.0.42
+- **OTA Status**: ✅ BOOTLOADER OTA FULLY OPERATIONAL - Production Ready!
 
 ### ✅ RESOLVED: OTA Working with Dual Partition Table
 
@@ -406,7 +390,7 @@
 
 ### Next Steps (In Priority Order)
 
-#### 🎯 Phase 4: Bootloader + SD Card OTA Architecture (RECOMMENDED)
+#### 🎯 Phase 4: Bootloader + SD Card OTA Architecture ✅ COMPLETE & TESTED (2025-10-05 to 2025-10-09)
 
 **Problem**: Current dual-partition approach uses 95% of 4MB flash (3.8MB for two 1.9MB app partitions). Firmware growth is severely constrained.
 
@@ -436,15 +420,104 @@
 - Lower memory pressure (bootloader runs with minimal services)
 - SD card acts as staging area (already proven to work in v1.0.4-v1.0.10)
 
-**Implementation Files**:
-1. **NEW**: `bootloader/` directory with minimal bootloader app
-2. **UPDATE**: `partitions_bootloader.csv` - New partition table
-3. **UPDATE**: `lib/OTAUpdate/src/OTAUpdate.cpp` - Download to SD + set NVS flag
-4. **REMOVE**: ESP-IDF OTA API code (replaced by bootloader flash)
+**✅ IMPLEMENTATION COMPLETE (v1.0.37-v1.0.39)**:
 
-**References**:
-- ESP-IDF bootloader customization: https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/bootloader.html
-- NVS bootloader integration: https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/storage/nvs_bootloader.html
+**Files Created**:
+1. ✅ `../bootloader/` - Factory app bootloader (448KB, Arduino-based)
+2. ✅ `../bootloader/src/main.cpp` - Bootloader logic (275 lines)
+3. ✅ `../bootloader/partitions_bootloader.csv` - New partition table
+4. ✅ `../bootloader/platformio.ini` - Bootloader build config
+5. ✅ `../bootloader/README.md` - Architecture documentation
+
+**Files Modified**:
+1. ✅ `partitions_custom.csv` - Updated to factory (448KB) + OTA0 (3.56MB) layout
+2. ✅ `lib/OTAUpdate/src/OTAUpdate.cpp`:
+   - Changed `hasPendingUpdate()` to check NVS instead of SD flag file
+   - Changed `downloadToSD()` to set NVS flags instead of SD flag file
+   - Deprecated `flashFromSD()` (bootloader handles flashing now)
+3. ✅ `lib/BluetoothOTA/src/BluetoothOTA.cpp`:
+   - Line 225: Changed from `updateFromURL()` to `downloadToSD()`
+4. ✅ `platformio.ini`:
+   - Added `extra_scripts = pre:extra_script.py` for size override
+   - Added `board_build.maximum_size = 3604480` (OTA0 size)
+5. ✅ `extra_script.py` - Override partition size check for OTA0
+
+**Partition Layout**:
+```
+Factory (448KB) @ 0x10000   → Bootloader app
+OTA0 (3.56MB) @ 0x80000     → Main application
+SPIFFS (40KB) @ 0x3F0000    → Logging
+Coredump (24KB) @ 0x3FA000  → Crash dumps
+```
+
+**OTA Flow**:
+1. Web triggers `ota_update` via BLE
+2. `BluetoothOTA::processOTAUpdate()` calls `downloadToSD()`
+3. Firmware downloaded to `/firmware_update.bin` on SD card
+4. NVS flags set: `pending=true`, `size=<bytes>`
+5. Device reboots
+6. **Bootloader** boots from factory partition
+7. Detects `pending=true` in NVS
+8. Flashes SD → OTA0, clears NVS, deletes SD file
+9. Boots into new firmware on OTA0
+
+**LED Feedback Patterns**:
+- 3 quick blinks (100ms): Bootloader starting
+- 10 rapid blinks (50ms): OTA flash in progress
+- Single blink (50ms): Flash progress (every 10%)
+- 5 quick blinks (100ms): OTA success
+- Slow blink (1000ms): Critical error
+
+**Version History**:
+- v1.0.37: Bootloader created, partition table updated
+- v1.0.38: First build with new partition table
+- v1.0.39: Fixed BluetoothOTA to use `downloadToSD()` instead of `updateFromURL()`
+- v1.0.40: Manually flashed with new partition table (factory + OTA0)
+- v1.0.41: Added `esp_ota_set_boot_partition(factory)` to catcam main.cpp
+- v1.0.42: **FIRST SUCCESSFUL BOOTLOADER OTA** ✅
+
+**🎯 BOOTLOADER BOOT SEQUENCE SOLUTION (v1.0.41)**:
+
+**Problem Identified**: ESP32 ROM bootloader doesn't automatically prefer factory partition when otadata is blank - it boots the first valid app partition it finds. With a valid catcam app at OTA0, the device was booting directly into OTA0, completely bypassing the factory bootloader.
+
+**Solution Implemented**:
+- Added `esp_ota_set_boot_partition(factory)` to catcam app's `setup()` function (main.cpp:36-58)
+- On every boot, the catcam app sets the next boot partition to factory
+- This ensures the bootloader always runs first on reboot
+- Bootloader checks for pending OTA updates, then boots into OTA0 if none pending
+
+**Boot Sequence (Working)**:
+```
+Power On / Reboot
+    ↓
+ESP32 ROM Bootloader
+    ↓
+Factory Bootloader (runs every time)
+    ↓
+Check NVS for pending OTA
+    ↓
+├─ Pending? → Flash from SD → OTA0 → Reboot
+└─ No → Boot directly into OTA0
+    ↓
+Catcam App (OTA0)
+    ↓
+Set boot partition to factory (for next reboot)
+    ↓
+Run normally
+```
+
+**Test Results (2025-10-09)**:
+- ✅ v1.0.40 → v1.0.42: Complete OTA via web interface
+- ✅ Download: 1.94MB firmware from S3 to SD card
+- ✅ NVS flags set correctly
+- ✅ Device rebooted into factory bootloader
+- ✅ Bootloader detected pending OTA
+- ✅ Flashed firmware from SD card to OTA0 (100% complete)
+- ✅ Deleted firmware file from SD card
+- ✅ Booted into v1.0.42 successfully
+- ✅ Boot sequence verified working
+
+**Status**: ✅ **PRODUCTION READY** - Bootloader OTA system fully operational and tested end-to-end.
 
 ### Files Modified This Session (2025-10-05)
 

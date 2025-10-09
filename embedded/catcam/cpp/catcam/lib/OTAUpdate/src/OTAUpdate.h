@@ -27,9 +27,9 @@ public:
     bool updateFromURL(const char* firmwareURL);
     void cancelUpdate();
 
-    // Two-stage OTA: Download to SD card, then flash on next boot
+    // Bootloader-based OTA: Download to SD card, bootloader flashes on reboot
     bool downloadToSD(const char* firmwareURL);
-    static bool flashFromSD();
+    static bool flashFromSD();  // Deprecated: bootloader handles flashing
     static bool hasPendingUpdate();
 
     // Security features

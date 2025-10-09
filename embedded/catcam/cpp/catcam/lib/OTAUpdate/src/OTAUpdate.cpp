@@ -495,8 +495,12 @@ void OTAUpdate::cancelUpdate() {
 #define OTA_BUFFER_SIZE 512
 
 bool OTAUpdate::hasPendingUpdate() {
-    // Check for SD card flag file instead of NVS
-    return SD_MMC.exists("/ota_pending.flag");
+    // Check NVS for pending bootloader OTA
+    Preferences prefs;
+    prefs.begin("ota", true);  // Read-only
+    bool pending = prefs.getBool("pending", false);
+    prefs.end();
+    return pending;
 }
 
 bool OTAUpdate::downloadToSD(const char* firmwareURL) {
@@ -677,22 +681,18 @@ bool OTAUpdate::downloadToSD(const char* firmwareURL) {
     Serial.printf("[OTA] Download complete: %d bytes written to SD card\n", written);
     Serial.flush();
 
-    // Set pending OTA flag using SD card file instead of NVS (more reliable)
-    Serial.println("[OTA] Creating SD flag file...");
-    File flagFile = SD_MMC.open("/ota_pending.flag", FILE_WRITE);
-    if (!flagFile) {
-        Serial.println("[OTA] ERROR: Failed to create flag file!");
-        // Continue anyway - firmware is downloaded
-    } else {
-        // Write firmware size to flag file
-        flagFile.printf("%u\n", firmwareSize);
-        flagFile.close();
-        Serial.println("[OTA] Flag file created successfully");
-    }
+    // Set NVS flags for bootloader to pick up
+    Serial.println("[OTA] Setting NVS flags for bootloader...");
+    Preferences prefs;
+    prefs.begin("ota", false);  // Read-write
+    prefs.putBool("pending", true);
+    prefs.putUInt("size", firmwareSize);
+    prefs.end();
+    Serial.println("[OTA] NVS flags set successfully");
     Serial.flush();
 
-    Serial.println("[OTA] OTA download complete - rebooting to flash firmware...");
-    SDLogger::getInstance().infof("OTA download complete, rebooting to flash firmware");
+    Serial.println("[OTA] OTA download complete - rebooting to bootloader for flash...");
+    SDLogger::getInstance().infof("OTA download complete, rebooting to bootloader");
     Serial.flush();
 
     delay(2000);
@@ -704,123 +704,29 @@ bool OTAUpdate::downloadToSD(const char* firmwareURL) {
 }
 
 bool OTAUpdate::flashFromSD() {
-    SDLogger::getInstance().infof("Checking for pending OTA update...");
+    // This method is deprecated - the bootloader now handles flashing from SD
+    // Just check for leftover files and clean them up
+    SDLogger::getInstance().infof("Checking for leftover OTA files (bootloader handles flashing)...");
 
-    // Check for SD card flag file instead of NVS
-    if (!SD_MMC.exists("/ota_pending.flag")) {
-        SDLogger::getInstance().infof("No pending OTA update");
-        return true;  // Not an error, just nothing to do
+    // Check for stale NVS flags (shouldn't happen, bootloader clears them)
+    Preferences prefs;
+    prefs.begin("ota", true);
+    bool pending = prefs.getBool("pending", false);
+    prefs.end();
+
+    if (pending) {
+        SDLogger::getInstance().warnf("WARNING: Stale OTA pending flag found - clearing it");
+        prefs.begin("ota", false);
+        prefs.putBool("pending", false);
+        prefs.putUInt("size", 0);
+        prefs.end();
     }
 
-    SDLogger::getInstance().infof("Pending OTA flag file found");
-
-    // Read expected size from flag file
-    File flagFile = SD_MMC.open("/ota_pending.flag", FILE_READ);
-    size_t expectedSize = 0;
-    if (flagFile) {
-        String sizeStr = flagFile.readStringUntil('\n');
-        expectedSize = sizeStr.toInt();
-        flagFile.close();
-        SDLogger::getInstance().infof("Expected firmware size: %d bytes", expectedSize);
-    } else {
-        SDLogger::getInstance().warnf("Could not read flag file, will skip size check");
-    }
-
-    // CRITICAL: Delete flag file BEFORE attempting flash to prevent boot loops
-    SD_MMC.remove("/ota_pending.flag");
-    SDLogger::getInstance().infof("Deleted flag file to prevent boot loop on failure");
-
-    // Open firmware file from SD card
-    File file = SD_MMC.open(FIRMWARE_FILE, FILE_READ);
-    if (!file) {
-        SDLogger::getInstance().errorf("Failed to open firmware file from SD card: %s", FIRMWARE_FILE);
-        return false;
-    }
-
-    size_t fileSize = file.size();
-    SDLogger::getInstance().infof("Firmware file size: %d bytes", fileSize);
-
-    if (fileSize != expectedSize) {
-        SDLogger::getInstance().errorf("File size mismatch! Expected %d, got %d", expectedSize, fileSize);
-        file.close();
+    // Clean up leftover firmware file if it exists
+    if (SD_MMC.exists(FIRMWARE_FILE)) {
+        SDLogger::getInstance().warnf("Leftover firmware file found - deleting");
         SD_MMC.remove(FIRMWARE_FILE);
-        return false;
     }
-
-    // Begin update
-    SDLogger::getInstance().infof("Starting firmware flash from SD card...");
-
-    // Give system time to stabilize before flashing
-    delay(100);
-
-    // Attempt to begin update with retry
-    bool beginSuccess = false;
-    for (int attempt = 1; attempt <= 3 && !beginSuccess; attempt++) {
-        SDLogger::getInstance().infof("Attempting Update.begin() (attempt %d/3)...", attempt);
-        if (attempt > 1) {
-            delay(500);  // Wait before retry
-        }
-        beginSuccess = Update.begin(fileSize);
-        if (!beginSuccess) {
-            SDLogger::getInstance().errorf("Update.begin() attempt %d failed: %s", attempt, Update.errorString());
-        }
-    }
-
-    if (!beginSuccess) {
-        SDLogger::getInstance().errorf("Update.begin() failed after 3 attempts");
-        file.close();
-        SD_MMC.remove(FIRMWARE_FILE);
-        return false;
-    }
-
-    SDLogger::getInstance().infof("Update.begin() succeeded");
-
-    // Write firmware to flash
-    uint8_t buffer[OTA_BUFFER_SIZE];
-    size_t written = 0;
-    size_t lastProgress = 0;
-
-    while (file.available()) {
-        size_t bytesRead = file.read(buffer, sizeof(buffer));
-        if (bytesRead > 0) {
-            size_t bytesWritten = Update.write(buffer, bytesRead);
-            if (bytesWritten != bytesRead) {
-                SDLogger::getInstance().errorf("Update.write() failed. Expected %d, wrote %d", bytesRead, bytesWritten);
-                file.close();
-                Update.abort();
-                SD_MMC.remove(FIRMWARE_FILE);
-                return false;
-            }
-
-            written += bytesWritten;
-            int progress = (written * 100) / fileSize;
-
-            // Log progress every 10%
-            if (progress >= lastProgress + 10) {
-                SDLogger::getInstance().infof("Flash progress: %d%% (%d/%d bytes)", progress, written, fileSize);
-                lastProgress = progress;
-            }
-        }
-    }
-
-    file.close();
-
-    // Finalize update
-    if (!Update.end(true)) {  // true = set new firmware size
-        SDLogger::getInstance().errorf("Update.end() failed: %s", Update.errorString());
-        SD_MMC.remove(FIRMWARE_FILE);
-        return false;
-    }
-
-    SDLogger::getInstance().infof("Firmware flash complete! Total written: %d bytes", written);
-
-    // Clean up: remove firmware file
-    SD_MMC.remove(FIRMWARE_FILE);
-    SDLogger::getInstance().infof("Deleted firmware file from SD card");
-
-    SDLogger::getInstance().infof("OTA update successful - rebooting with new firmware...");
-    delay(2000);
-    ESP.restart();
 
     return true;
 }
