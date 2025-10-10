@@ -40,13 +40,14 @@ class BluetoothOTA {
 public:
     BluetoothOTA();
     ~BluetoothOTA();
-    
+
     bool init(const char* deviceName = "BootBoots-CatCam");
+    bool initWithExistingServer(BLEServer* pServer);  // NEW: Use existing server
     void handle();
     bool isConnected();
     void sendStatusUpdate(const String& status, const String& message, int progress = 0);
     void handleOTACommand(const String& commandJson);
-    
+
     // OTA Update integration
     void setOTAUpdate(OTAUpdate* otaUpdate) { _otaUpdate = otaUpdate; }
     

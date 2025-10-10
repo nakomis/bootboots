@@ -25,61 +25,65 @@ bool BluetoothOTA::init(const char* deviceName) {
         SDLogger::getInstance().warnf("Bluetooth OTA already initialized");
         return true;
     }
-    
+
     _deviceName = String(deviceName);
-    
+
     SDLogger::getInstance().infof("Initializing Bluetooth OTA service...");
-    
+
     // Initialize BLE
     BLEDevice::init(_deviceName.c_str());
-    
+
     // Create BLE Server
     _pServer = BLEDevice::createServer();
     if (!_pServer) {
         SDLogger::getInstance().errorf("Failed to create BLE server");
         return false;
     }
-    
+
     // Set server callbacks
     _pServerCallbacks = new ServerCallbacks(this);
     _pServer->setCallbacks(_pServerCallbacks);
-    
+
     // Create BLE Service
     _pService = _pServer->createService(OTA_SERVICE_UUID);
     if (!_pService) {
         SDLogger::getInstance().errorf("Failed to create BLE service");
         return false;
     }
-    
+
     // Create Command Characteristic (Write)
     _pCommandCharacteristic = _pService->createCharacteristic(
         OTA_COMMAND_CHAR_UUID,
         BLECharacteristic::PROPERTY_WRITE
     );
-    
+
     if (!_pCommandCharacteristic) {
         SDLogger::getInstance().errorf("Failed to create command characteristic");
         return false;
     }
-    
+
     // Set command characteristic callbacks
     _pCallbacks = new BluetoothOTACallbacks(this);
     _pCommandCharacteristic->setCallbacks(_pCallbacks);
-    
+
     // Create Status Characteristic (Read/Notify)
     _pStatusCharacteristic = _pService->createCharacteristic(
         OTA_STATUS_CHAR_UUID,
         BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY
     );
-    
+
     if (!_pStatusCharacteristic) {
         SDLogger::getInstance().errorf("Failed to create status characteristic");
         return false;
     }
-    
+
     // Add descriptor for notifications
     _pStatusCharacteristic->addDescriptor(new BLE2902());
-    
+
+    // Set initial status value so clients can read the version
+    String initialStatus = createStatusJson("ready", "Bluetooth OTA service ready", 0);
+    _pStatusCharacteristic->setValue(initialStatus.c_str());
+
     // Start the service
     _pService->start();
 
@@ -95,10 +99,80 @@ bool BluetoothOTA::init(const char* deviceName) {
     SDLogger::getInstance().infof("Bluetooth OTA service initialized successfully");
     SDLogger::getInstance().infof("Device name: %s", _deviceName.c_str());
     SDLogger::getInstance().infof("Service UUID: %s", OTA_SERVICE_UUID);
-    
-    // Send initial status
-    sendStatusUpdate("ready", "Bluetooth OTA service ready");
-    
+
+    return true;
+}
+
+bool BluetoothOTA::initWithExistingServer(BLEServer* pServer) {
+    if (_initialized) {
+        SDLogger::getInstance().warnf("Bluetooth OTA already initialized");
+        return true;
+    }
+
+    if (!pServer) {
+        SDLogger::getInstance().errorf("Invalid BLE server provided");
+        return false;
+    }
+
+    SDLogger::getInstance().infof("Initializing Bluetooth OTA service with existing BLE server...");
+
+    // Use the provided server instead of creating a new one
+    _pServer = pServer;
+
+    // Note: Don't set server callbacks - the main service already has them
+
+    // Create BLE Service for OTA
+    _pService = _pServer->createService(OTA_SERVICE_UUID);
+    if (!_pService) {
+        SDLogger::getInstance().errorf("Failed to create OTA BLE service");
+        return false;
+    }
+
+    // Create Command Characteristic (Write)
+    _pCommandCharacteristic = _pService->createCharacteristic(
+        OTA_COMMAND_CHAR_UUID,
+        BLECharacteristic::PROPERTY_WRITE
+    );
+
+    if (!_pCommandCharacteristic) {
+        SDLogger::getInstance().errorf("Failed to create command characteristic");
+        return false;
+    }
+
+    // Set command characteristic callbacks
+    _pCallbacks = new BluetoothOTACallbacks(this);
+    _pCommandCharacteristic->setCallbacks(_pCallbacks);
+
+    // Create Status Characteristic (Read/Notify)
+    _pStatusCharacteristic = _pService->createCharacteristic(
+        OTA_STATUS_CHAR_UUID,
+        BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY
+    );
+
+    if (!_pStatusCharacteristic) {
+        SDLogger::getInstance().errorf("Failed to create status characteristic");
+        return false;
+    }
+
+    // Add descriptor for notifications
+    _pStatusCharacteristic->addDescriptor(new BLE2902());
+
+    // Set initial status value so clients can read the version
+    String initialStatus = createStatusJson("ready", "Bluetooth OTA service ready", 0);
+    _pStatusCharacteristic->setValue(initialStatus.c_str());
+
+    // Start the service
+    _pService->start();
+
+    // Add service UUID to advertising
+    BLEAdvertising* pAdvertising = BLEDevice::getAdvertising();
+    pAdvertising->addServiceUUID(OTA_SERVICE_UUID);
+
+    _initialized = true;
+
+    SDLogger::getInstance().infof("Bluetooth OTA service initialized successfully with shared server");
+    SDLogger::getInstance().infof("Service UUID: %s", OTA_SERVICE_UUID);
+
     return true;
 }
 

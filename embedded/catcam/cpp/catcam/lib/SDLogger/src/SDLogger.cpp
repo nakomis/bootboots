@@ -306,9 +306,30 @@ String SDLogger::getRecentLogEntries(int maxLines) {
             return false;
         }
 
-        // Read all lines into a circular buffer (simple approach for last N lines)
-        const int MAX_LINE_LENGTH = 256;
-        String lines[maxLines];
+        // If maxLines is -1, read all lines directly into result
+        if (maxLines == -1) {
+            result = "[";
+            bool first = true;
+            while (file.available()) {
+                String line = file.readStringUntil('\n');
+                if (line.length() > 0) {
+                    if (!first) result += ",";
+                    first = false;
+
+                    // Escape quotes and backslashes in log line
+                    line.replace("\\", "\\\\");
+                    line.replace("\"", "\\\"");
+                    result += "\"" + line + "\"";
+                    lineCount++;
+                }
+            }
+            result += "]";
+            file.close();
+            return true;
+        }
+
+        // Otherwise use circular buffer for last N lines
+        String *lines = new String[maxLines];
         int currentLine = 0;
         int totalLines = 0;
 
@@ -341,6 +362,7 @@ String SDLogger::getRecentLogEntries(int maxLines) {
         result += "]";
 
         lineCount = numLinesToReturn;
+        delete[] lines;
         return true;
     });
 

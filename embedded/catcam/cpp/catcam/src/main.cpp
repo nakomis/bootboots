@@ -92,8 +92,13 @@ void setup() {
 }
 
 void loop() {
-    // Update Bluetooth services
-    bluetoothService->updateSystemStatus(systemState);
+    // Update Bluetooth services - only every 10 seconds to avoid saturating BLE bandwidth
+    static unsigned long lastStatusUpdate = 0;
+    if (millis() - lastStatusUpdate > 10000) {
+        bluetoothService->updateSystemStatus(systemState);
+        lastStatusUpdate = millis();
+    }
+
     if (bluetoothOTA) {
         bluetoothOTA->handle();
     }
@@ -164,15 +169,19 @@ void initializeComponents() {
         SDLogger::getInstance().infof("OTA service initialized - updates available via WiFi");
     }
 
-    // TEMPORARILY DISABLED: Initialize Bluetooth OTA Service
-    // TODO: Fix BluetoothOTA to use the same BLE server as BluetoothService
-    // bluetoothOTA = new BluetoothOTA();
-    // bluetoothOTA->init("BootBoots-CatCam");
-    // bluetoothOTA->setOTAUpdate(otaUpdate);
-    // SDLogger::getInstance().infof("Bluetooth OTA service initialized");
-    // if (systemState.sdCardReady) {
-    //     SDLogger::getInstance().infof("Bluetooth OTA enabled - remote updates via web interface");
-    // }
+    // Initialize Bluetooth OTA Service using the shared BLE server
+    bluetoothOTA = new BluetoothOTA();
+    if (bluetoothOTA->initWithExistingServer(bluetoothService->getServer())) {
+        bluetoothOTA->setOTAUpdate(otaUpdate);
+        SDLogger::getInstance().infof("Bluetooth OTA service initialized with shared BLE server");
+        if (systemState.sdCardReady) {
+            SDLogger::getInstance().infof("Bluetooth OTA enabled - remote updates via web interface");
+        }
+    } else {
+        SDLogger::getInstance().errorf("Failed to initialize Bluetooth OTA service");
+        delete bluetoothOTA;
+        bluetoothOTA = nullptr;
+    }
 
     // Start BLE advertising
     // This must be done after all services are initialized

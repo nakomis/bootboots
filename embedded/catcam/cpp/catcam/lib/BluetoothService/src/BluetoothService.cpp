@@ -187,21 +187,49 @@ void BootBootsBluetoothService::processCommand(const String& command) {
         // Status is automatically sent via notifications
         SDLogger::getInstance().infof("Status request via command");
     } else if (cmd == "get_logs" || cmd == "request_logs") {
-        // Get logs and send via command characteristic notification
-        int entries = doc["entries"] | 10;
+        // Get logs and send via command characteristic notification in chunks
+        int entries = doc["entries"] | -1;  // -1 means all entries
         String logData = getLatestLogEntries(entries);
 
-        // Truncate if too large for BLE MTU
-        if (logData.length() > 500) {
-            logData = logData.substring(0, 500);
-            int lastComma = logData.lastIndexOf(',');
-            if (lastComma > 0) {
-                logData = logData.substring(0, lastComma) + "]";
-            }
+        SDLogger::getInstance().infof("Log request via command: %d entries, %d bytes total", entries, logData.length());
+
+        // Send logs in chunks to avoid BLE MTU limits
+        const int CHUNK_SIZE = 400;  // Safe size for BLE notifications
+        int totalLength = logData.length();
+        int numChunks = (totalLength + CHUNK_SIZE - 1) / CHUNK_SIZE;
+
+        for (int i = 0; i < numChunks; i++) {
+            int start = i * CHUNK_SIZE;
+            int length = min(CHUNK_SIZE, totalLength - start);
+            String chunk = logData.substring(start, start + length);
+
+            // Create a chunk message with metadata
+            DynamicJsonDocument chunkDoc(512);
+            chunkDoc["type"] = "log_chunk";
+            chunkDoc["chunk"] = i + 1;
+            chunkDoc["total"] = numChunks;
+            chunkDoc["data"] = chunk;
+
+            String chunkJson;
+            serializeJson(chunkDoc, chunkJson);
+
+            sendResponse(chunkJson);
+            SDLogger::getInstance().infof("Sent log chunk %d/%d (%d bytes)", i + 1, numChunks, chunkJson.length());
+
+            // Small delay between chunks to avoid overwhelming BLE
+            delay(50);
         }
 
-        SDLogger::getInstance().infof("Log request via command: %d entries, %d bytes", entries, logData.length());
-        sendResponse(logData);
+        // Send completion message
+        DynamicJsonDocument completeDoc(128);
+        completeDoc["type"] = "logs_complete";
+        completeDoc["total_chunks"] = numChunks;
+        completeDoc["total_bytes"] = totalLength;
+
+        String completeJson;
+        serializeJson(completeDoc, completeJson);
+        sendResponse(completeJson);
+        SDLogger::getInstance().infof("Log transfer complete: %d chunks, %d bytes", numChunks, totalLength);
     } else if (cmd == "ping") {
         DynamicJsonDocument response(256);
         response["response"] = "pong";

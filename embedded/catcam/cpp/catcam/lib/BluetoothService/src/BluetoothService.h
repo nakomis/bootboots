@@ -24,11 +24,14 @@ public:
     void setLogData(const String& logData);
     bool isConnected();
     void handleCommand(const String& command);
-    
+
+    // Get BLE server for sharing with other services
+    BLEServer* getServer() { return pServer; }
+
     // BLE Server callbacks
     void onConnect(BLEServer* pServer) override;
     void onDisconnect(BLEServer* pServer) override;
-    
+
     // BLE Characteristic callbacks
     void onWrite(BLECharacteristic* pCharacteristic) override;
     void onRead(BLECharacteristic* pCharacteristic) override;
