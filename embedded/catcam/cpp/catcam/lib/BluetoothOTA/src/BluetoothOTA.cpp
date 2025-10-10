@@ -243,7 +243,7 @@ void BluetoothOTA::ServerCallbacks::onConnect(BLEServer* pServer) {
 
 void BluetoothOTA::ServerCallbacks::onDisconnect(BLEServer* pServer) {
     _parent->_deviceConnected = false;
-    SDLogger::getInstance().infof("Bluetooth client disconnected");
+    SDLogger::getInstance().infof("BluetoothOTA client disconnected");
 }
 
 // Characteristic Callbacks Implementation

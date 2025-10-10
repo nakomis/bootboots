@@ -291,6 +291,66 @@ void SDLogger::cleanupOldLogs() {
     }
 }
 
+String SDLogger::getRecentLogEntries(int maxLines) {
+    if (!_initialized) {
+        return "{\"error\":\"Logger not initialized\"}";
+    }
+
+    String result = "";
+    int lineCount = 0;
+
+    bool success = safeFileOperation([this, maxLines, &result, &lineCount]() {
+        File file = SD_MMC.open(_currentLogFile.c_str(), FILE_READ);
+        if (!file) {
+            result = "{\"error\":\"Failed to open log file\"}";
+            return false;
+        }
+
+        // Read all lines into a circular buffer (simple approach for last N lines)
+        const int MAX_LINE_LENGTH = 256;
+        String lines[maxLines];
+        int currentLine = 0;
+        int totalLines = 0;
+
+        while (file.available()) {
+            String line = file.readStringUntil('\n');
+            if (line.length() > 0) {
+                lines[currentLine % maxLines] = line;
+                currentLine++;
+                totalLines++;
+            }
+        }
+        file.close();
+
+        // Build JSON array with the last N lines
+        result = "[";
+        int startIdx = (totalLines > maxLines) ? currentLine % maxLines : 0;
+        int numLinesToReturn = (totalLines < maxLines) ? totalLines : maxLines;
+
+        for (int i = 0; i < numLinesToReturn; i++) {
+            int idx = (startIdx + i) % maxLines;
+            if (i > 0) result += ",";
+
+            // Escape quotes and backslashes in log line
+            String escapedLine = lines[idx];
+            escapedLine.replace("\\", "\\\\");
+            escapedLine.replace("\"", "\\\"");
+
+            result += "\"" + escapedLine + "\"";
+        }
+        result += "]";
+
+        lineCount = numLinesToReturn;
+        return true;
+    });
+
+    if (!success) {
+        return "{\"error\":\"Failed to read log entries\"}";
+    }
+
+    return result;
+}
+
 bool SDLogger::safeFileOperation(std::function<bool()> operation) {
     if (!_initialized || _mutex == nullptr) {
         return false;

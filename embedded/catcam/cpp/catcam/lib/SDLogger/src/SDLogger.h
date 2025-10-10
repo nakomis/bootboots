@@ -49,7 +49,10 @@ public:
     void flush();
     void rotateLogs();
     bool isInitialized() const { return _initialized; }
-    
+
+    // Log retrieval
+    String getRecentLogEntries(int maxLines = 50);
+
     // Configuration
     void setLogLevel(LogLevel minLevel) { _minLogLevel = minLevel; }
     void setMaxFileSize(size_t maxSize) { _maxFileSize = maxSize; }

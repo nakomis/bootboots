@@ -44,13 +44,14 @@ void BootBootsBluetoothService::init(const char* deviceName) {
     );
     pLogsCharacteristic->setCallbacks(this);
     LOG_DF("Logs Characteristic created with UUID: %s", LOGS_CHARACTERISTIC_UUID);
-    
-    // Create Command Characteristic (Write)
+
+    // Create Command Characteristic (Write/Notify for request/response)
     pCommandCharacteristic = pService->createCharacteristic(
         COMMAND_CHARACTERISTIC_UUID,
-        BLECharacteristic::PROPERTY_WRITE
+        BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_NOTIFY
     );
     pCommandCharacteristic->setCallbacks(this);
+    pCommandCharacteristic->addDescriptor(new BLE2902());
     LOG_DF("Command Characteristic created with UUID: %s", COMMAND_CHARACTERISTIC_UUID);
     
     // Start the service
@@ -113,16 +114,8 @@ void BootBootsBluetoothService::setLogData(const String& logData) {
 }
 
 String BootBootsBluetoothService::getLatestLogEntries(int maxEntries) {
-    // This would interface with SDLogger to get recent log entries
-    // For now, return a placeholder - this should be implemented to read from SD card
-    DynamicJsonDocument doc(2048);
-    doc["log_entries"] = maxEntries;
-    doc["message"] = "Log retrieval not yet implemented - check SD card directly";
-    doc["timestamp"] = millis();
-    
-    String jsonString;
-    serializeJson(doc, jsonString);
-    return jsonString;
+    // Get recent log entries from SDLogger
+    return SDLogger::getInstance().getRecentLogEntries(maxEntries);
 }
 
 bool BootBootsBluetoothService::isConnected() {
@@ -136,7 +129,7 @@ void BootBootsBluetoothService::onConnect(BLEServer* pServer) {
 
 void BootBootsBluetoothService::onDisconnect(BLEServer* pServer) {
     deviceConnected = false;
-    SDLogger::getInstance().infof("Bluetooth client disconnected");
+    SDLogger::getInstance().infof("BluetoothService client disconnected");
     
     // Restart advertising
     delay(500);
@@ -145,6 +138,8 @@ void BootBootsBluetoothService::onDisconnect(BLEServer* pServer) {
 }
 
 void BootBootsBluetoothService::onWrite(BLECharacteristic* pCharacteristic) {
+    LOG_DF("Bluetooth characteristic written");
+    LOG_DF("Characteristic UUID: %s", pCharacteristic->getUUID().toString().c_str());
     if (pCharacteristic == pCommandCharacteristic) {
         String command = pCharacteristic->getValue().c_str();
         SDLogger::getInstance().infof("Bluetooth command received: %s", command.c_str());
@@ -157,15 +152,29 @@ void BootBootsBluetoothService::onRead(BLECharacteristic* pCharacteristic) {
         pCharacteristic->setValue(currentStatusJson.c_str());
         SDLogger::getInstance().infof("Bluetooth status read requested");
     } else if (pCharacteristic == pLogsCharacteristic) {
-        String logData = getLatestLogEntries(50);
+        // Request fewer lines to stay within BLE MTU limits (typically 512 bytes)
+        String logData = getLatestLogEntries(10);
+
+        // Truncate if still too large (BLE characteristic max is ~512 bytes)
+        if (logData.length() > 500) {
+            logData = logData.substring(0, 500);
+            // Close JSON array if truncated
+            int lastComma = logData.lastIndexOf(',');
+            if (lastComma > 0) {
+                logData = logData.substring(0, lastComma) + "]";
+            }
+        }
+
         pCharacteristic->setValue(logData.c_str());
-        SDLogger::getInstance().infof("Bluetooth logs read requested");
+        SDLogger::getInstance().infof("Bluetooth logs read requested (%d bytes)", logData.length());
     }
 }
 
 void BootBootsBluetoothService::processCommand(const String& command) {
     DynamicJsonDocument doc(512);
     DeserializationError error = deserializeJson(doc, command);
+
+    LOG_DF("Processing command: %s", command.c_str());
     
     if (error) {
         SDLogger::getInstance().warnf("Invalid JSON command: %s", command.c_str());
@@ -177,17 +186,29 @@ void BootBootsBluetoothService::processCommand(const String& command) {
     if (cmd == "get_status") {
         // Status is automatically sent via notifications
         SDLogger::getInstance().infof("Status request via command");
-    } else if (cmd == "get_logs") {
-        int entries = doc["entries"] | 50;
+    } else if (cmd == "get_logs" || cmd == "request_logs") {
+        // Get logs and send via command characteristic notification
+        int entries = doc["entries"] | 10;
         String logData = getLatestLogEntries(entries);
-        pLogsCharacteristic->setValue(logData.c_str());
-        SDLogger::getInstance().infof("Log request via command: %d entries", entries);
+
+        // Truncate if too large for BLE MTU
+        if (logData.length() > 500) {
+            logData = logData.substring(0, 500);
+            int lastComma = logData.lastIndexOf(',');
+            if (lastComma > 0) {
+                logData = logData.substring(0, lastComma) + "]";
+            }
+        }
+
+        SDLogger::getInstance().infof("Log request via command: %d entries, %d bytes", entries, logData.length());
+        sendResponse(logData);
     } else if (cmd == "ping") {
         DynamicJsonDocument response(256);
         response["response"] = "pong";
         response["timestamp"] = millis();
         String responseStr;
         serializeJson(response, responseStr);
+        SDLogger::getInstance().infof("Ping received, sending pong");
         sendResponse(responseStr);
     } else {
         SDLogger::getInstance().warnf("Unknown command: %s", cmd.c_str());
