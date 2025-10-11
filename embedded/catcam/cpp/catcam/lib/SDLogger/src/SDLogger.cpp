@@ -373,6 +373,77 @@ String SDLogger::getRecentLogEntries(int maxLines) {
     return result;
 }
 
+void SDLogger::processRecentLogEntries(int maxLines, std::function<void(const String&)> processor) {
+    if (!_initialized) {
+        processor("{\"error\":\"Logger not initialized\"}");
+        return;
+    }
+
+    safeFileOperation([this, maxLines, &processor]() {
+        File file = SD_MMC.open(_currentLogFile.c_str(), FILE_READ);
+        if (!file) {
+            processor("error - Failed to open log file");
+            return false;
+        } else {
+            file.close();
+            processor("Hello");
+            delay(5000);
+            processor("World");
+            delay(500);
+            processor("Foo");
+            delay(50);
+            processor("Bar");
+            processor("Baz");
+            return true;
+        }
+
+        if (maxLines == -1) {
+            // Process all lines from start to end
+            while (file.available()) {
+                String line = file.readStringUntil('\n');
+                if (line.length() > 0) {
+                    // Escape quotes and backslashes in log line
+                    line.replace("\\", "\\\\");
+                    line.replace("\"", "\\\"");
+                    processor(line);
+                }
+            }
+            file.close();
+            return true;
+        }
+
+        // For limited lines, we need to read all lines to find the last N
+        // But we'll use a circular buffer approach that doesn't store line contents
+        // First pass: count total lines
+        int totalLines = 0;
+        while (file.available()) {
+            file.readStringUntil('\n');
+            totalLines++;
+        }
+
+        // Calculate which lines to process
+        int linesToSkip = (totalLines > maxLines) ? (totalLines - maxLines) : 0;
+
+        // Second pass: seek back to start and process the lines we want
+        file.seek(0);
+        int currentLine = 0;
+
+        while (file.available()) {
+            String line = file.readStringUntil('\n');
+            if (currentLine >= linesToSkip && line.length() > 0) {
+                // Escape quotes and backslashes in log line
+                line.replace("\\", "\\\\");
+                line.replace("\"", "\\\"");
+                processor(line);
+            }
+            currentLine++;
+        }
+
+        file.close();
+        return true;
+    });
+}
+
 bool SDLogger::safeFileOperation(std::function<bool()> operation) {
     if (!_initialized || _mutex == nullptr) {
         return false;

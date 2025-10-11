@@ -187,49 +187,44 @@ void BootBootsBluetoothService::processCommand(const String& command) {
         // Status is automatically sent via notifications
         SDLogger::getInstance().infof("Status request via command");
     } else if (cmd == "get_logs" || cmd == "request_logs") {
-        // Get logs and send via command characteristic notification in chunks
+        // Get logs and send via command characteristic notification, one line at a time
         int entries = doc["entries"] | -1;  // -1 means all entries
-        String logData = getLatestLogEntries(entries);
 
-        SDLogger::getInstance().infof("Log request via command: %d entries, %d bytes total", entries, logData.length());
+        SDLogger::getInstance().infof("Log request via command: %d entries requested", entries);
 
-        // Send logs in chunks to avoid BLE MTU limits
-        const int CHUNK_SIZE = 400;  // Safe size for BLE notifications
-        int totalLength = logData.length();
-        int numChunks = (totalLength + CHUNK_SIZE - 1) / CHUNK_SIZE;
+        int lineCount = 0;
 
-        for (int i = 0; i < numChunks; i++) {
-            int start = i * CHUNK_SIZE;
-            int length = min(CHUNK_SIZE, totalLength - start);
-            String chunk = logData.substring(start, start + length);
+        // Process each log entry and send as a chunk
+        SDLogger::getInstance().processRecentLogEntries(entries, [this, &lineCount](const String& logLine) {
+            lineCount++;
 
-            // Create a chunk message with metadata
+            // Create a chunk message for this log line
             DynamicJsonDocument chunkDoc(512);
             chunkDoc["type"] = "log_chunk";
-            chunkDoc["chunk"] = i + 1;
-            chunkDoc["total"] = numChunks;
-            chunkDoc["data"] = chunk;
+            chunkDoc["chunk"] = lineCount;
+            chunkDoc["data"] = logLine;
 
             String chunkJson;
             serializeJson(chunkDoc, chunkJson);
 
             sendResponse(chunkJson);
-            SDLogger::getInstance().infof("Sent log chunk %d/%d (%d bytes)", i + 1, numChunks, chunkJson.length());
 
             // Small delay between chunks to avoid overwhelming BLE
             delay(50);
-        }
+
+            chunkDoc["data"] = "MHChuck";
+            sendResponse(chunkJson);
+        });
 
         // Send completion message
         DynamicJsonDocument completeDoc(128);
         completeDoc["type"] = "logs_complete";
-        completeDoc["total_chunks"] = numChunks;
-        completeDoc["total_bytes"] = totalLength;
+        completeDoc["total_chunks"] = lineCount;
 
         String completeJson;
         serializeJson(completeDoc, completeJson);
         sendResponse(completeJson);
-        SDLogger::getInstance().infof("Log transfer complete: %d chunks, %d bytes", numChunks, totalLength);
+        SDLogger::getInstance().infof("Log transfer complete: %d lines sent", lineCount);
     } else if (cmd == "ping") {
         DynamicJsonDocument response(256);
         response["response"] = "pong";

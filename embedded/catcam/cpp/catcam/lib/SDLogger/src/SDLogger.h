@@ -52,6 +52,7 @@ public:
 
     // Log retrieval
     String getRecentLogEntries(int maxLines = 50);
+    void processRecentLogEntries(int maxLines, std::function<void(const String&)> processor);
 
     // Configuration
     void setLogLevel(LogLevel minLevel) { _minLogLevel = minLevel; }
