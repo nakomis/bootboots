@@ -8,6 +8,7 @@ struct SystemState {
     bool wifiConnected = false;
     bool sdCardReady = false;
     bool i2cReady = false;
+    bool pcf8574Ready = false;
     bool atomizerEnabled = true;
     unsigned long lastDetection = 0;
     unsigned long lastStatusReport = 0;

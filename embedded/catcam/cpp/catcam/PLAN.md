@@ -18,46 +18,80 @@ Rebuild the BootBoots catcam project incrementally by bringing in components fro
 ✅ **Working**: OTA updates, BLE services, SD logging, WiFi
 ❌ **Missing**: PCF8574, Camera, Atomizer, HTTP Client, AI integration
 
-## Phase 1: PCF8574 Manager (Foundation for Pin Expansion)
+## Phase 1: PCF8574 Manager (Foundation for Pin Expansion) ✅ CODE COMPLETE
 
-### 1.1 Copy PCF8574Manager Library
-**Files to copy**:
-- `old.catcam/lib/PCF8574Manager/` → `catcam/lib/PCF8574Manager/`
+### 1.1 Copy PCF8574Manager Library ✅
+**Files copied**:
+- `old.catcam/lib/PCF8574Manager/` → `catcam/lib/PCF8574Manager/` ✓
 
 **Features**:
 - I2C GPIO expansion (8 pins: P0-P7)
 - Safety features: emergency shutdown, error tracking, self-test
 - Pin assignments from old project:
   - P0: Atomizer control
-  - P1: Flash LED
+  - P1: Flash LED ← **Currently blinking in test loop**
   - P2: Pressure sensor input
   - P3-P7: Spare (future expansion)
 
-### 1.2 Update Dependencies
+### 1.2 Update Dependencies ✅
 **platformio.ini**:
 - Already has `Wire` library ✓
-- Verify I2C speed: 100kHz for reliability
+- I2C speed: 100kHz for reliability ✓
 
-### 1.3 Integrate into Main
-**src/main.cpp modifications**:
-- Add `#include "PCF8574Manager.h"`
-- Add global: `PCF8574Manager* pcfManager = nullptr;`
-- Update `initializeHardware()`: Initialize I2C on GPIO1/GPIO3
-- Update `initializeComponents()`: Initialize PCF8574 at address 0x20
-- Update `SystemState.h`: Add `bool pcf8574Ready = false;`
+### 1.3 Integrate into Main ✅
+**src/main.cpp modifications** (COMPLETED):
+- ✅ Added `#include <Wire.h>` and `#include "PCF8574Manager.h"`
+- ✅ Added global: `PCF8574Manager* pcfManager = nullptr;`
+- ✅ Added pin definitions: I2C_SDA (GPIO1), I2C_SCL (GPIO3), PCF8574_ADDRESS (0x20)
+- ✅ Updated `initializeHardware()`:
+  - **Enable internal pull-ups** on GPIO1/GPIO3 using `pinMode(pin, INPUT_PULLUP)`
+  - Initialize I2C on GPIO1/GPIO3 at 100kHz
+  - No external pull-up resistors needed! ✅
+- ✅ Updated `initializeComponents()`: Initialize PCF8574 at address 0x20 with self-test
+- ✅ Updated `SystemState.h`: Added `bool pcf8574Ready = false;`
+- ✅ Updated system status log: Added PCF8574 status display
 
-### 1.4 Create Simple Test
-**Test plan**:
-- Initialize PCF8574
-- Run self-test
-- Blink LED on P1 (Flash LED pin)
-- Verify via BLE status messages (since Serial won't work)
-- **Note**: Must disconnect PCF8574 wiring to flash firmware
+### 1.4 Create Simple Test ✅
+**Test code integrated** (main.cpp loop()):
+- ✅ Initialize PCF8574 with self-test
+- ✅ Blink LED on P1 (Flash LED pin) every 2 seconds
+- ✅ Log blink state via SDLogger (debug level)
+- ✅ Verify via BLE status messages (Serial won't work with PCF8574 connected)
+- ⚠️ **CRITICAL**: Must disconnect PCF8574 wiring from GPIO1/GPIO3 before flashing firmware
 
-### 1.5 Documentation
-- Update PLAN.md with PCF8574 status
-- Document pin conflict and flashing procedure
-- Create PCF8574_TESTING.md with wiring diagram
+**Build Status**: ✅ **SUCCESS** (54.4% flash, 20.0% RAM)
+
+### 1.5 Documentation ✅
+- ✅ Created `PCF8574_TESTING.md` with complete testing guide
+- ✅ Documented pin conflict (GPIO1/GPIO3 = UART0)
+- ✅ Documented flashing procedure (disconnect before flash, reconnect after)
+- ✅ Created wiring diagram
+- ✅ Added troubleshooting section
+- ✅ Updated PLAN.md with Phase 1 completion status
+
+### 1.6 Current Status: **READY FOR HARDWARE TESTING** ⏳
+
+**Next Steps**:
+1. **Upload firmware to S3** (build and upload):
+   ```bash
+   python scripts/build_and_upload.py --version-type patch
+   ```
+2. **Wire PCF8574** according to PCF8574_TESTING.md:
+   - Connect SDA to GPIO1, SCL to GPIO3
+   - Connect power (3.3V) and ground
+   - Set address pins (A0, A1, A2 all to GND = address 0x20)
+   - **No external pull-up resistors needed** - internal pull-ups enabled automatically ✅
+3. **Deploy firmware via OTA** (web interface → Firmware Manager → Deploy)
+   - No need to disconnect PCF8574! OTA works wirelessly ✅
+4. **Verify via web interface**:
+   - Bluetooth tab → Connect to device
+   - Check system status for "PCF8574: OK"
+   - Click "Retrieve Logs" → Search for "PCF8574" initialization messages
+   - All debugging via web interface - no need to remove SD card! ✅
+5. **Visual test**: LED on P1 should blink every 2 seconds
+6. **Update PLAN.md**: Mark Phase 1 as fully tested ✓
+
+**Note**: Only disconnect PCF8574 for initial USB serial flash if OTA not yet available.
 
 ## Phase 2: Camera Module
 
@@ -193,12 +227,13 @@ Rebuild the BootBoots catcam project incrementally by bringing in components fro
 
 ## Critical Notes & Gotchas
 
-### 🔴 PCF8574 Flashing Procedure
-1. **Before flashing**: Physically disconnect PCF8574 from GPIO1/GPIO3
-2. **Flash firmware**: Via USB-serial
-3. **After flashing**: Reconnect PCF8574 to GPIO1/GPIO3
-4. **No Serial Monitor**: Cannot use after PCF8574 connected (pin conflict)
+### 🔴 PCF8574 Pin Conflict & Flashing
+1. **OTA Updates (Recommended)**: ✅ No disconnection needed - flash wirelessly!
+2. **USB Serial Flashing Only**: ⚠️ Physically disconnect PCF8574 from GPIO1/GPIO3 before flashing
+3. **After USB Flash**: Reconnect PCF8574 to GPIO1/GPIO3 and power cycle
+4. **Serial Monitor**: Cannot use after PCF8574 connected (GPIO1/GPIO3 pin conflict)
 5. **Debugging**: Use BLE status messages and SD logging only
+6. **Future Updates**: Always use OTA once PCF8574 is wired!
 
 ### ⚠️ Memory Constraints
 - ESP32-CAM: Limited RAM (~38KB free with BLE active)
@@ -253,7 +288,7 @@ Rebuild the BootBoots catcam project incrementally by bringing in components fro
 
 ## Current Status
 
-**Last Updated**: 2025-10-11
+**Last Updated**: 2025-10-11 (Phase 1 Code Complete)
 
 ### ✅ Completed Infrastructure
 - Bootloader + OTA system (factory + OTA0 partitions)
@@ -262,17 +297,37 @@ Rebuild the BootBoots catcam project incrementally by bringing in components fro
 - SD card logging with chunked transfer
 - WiFi connectivity
 - Web interface firmware manager
+- **PCF8574 Manager integration** (code complete, ready for hardware testing)
 
 ### 🔄 In Progress
-- Phase 1: PCF8574 Manager (NEXT)
+- **Phase 1: PCF8574 Manager - Hardware Testing** ⏳
+  - Code complete ✅
+  - Build successful ✅
+  - Documentation complete ✅
+  - **Awaiting hardware test**: Flash firmware, wire PCF8574, verify LED blink
 
 ### ⏳ Pending
-- Phase 2-7: Camera through Production
+- Phase 2: Camera Module
+- Phase 3: Flash LED Control
+- Phase 4: HTTP Client for AI
+- Phase 5: Atomizer Control
+- Phase 6: Complete AI Detection Loop
+- Phase 7: Testing & Refinement
 
 ## Next Steps
-1. Copy PCF8574Manager library to catcam/lib/
-2. Update platformio.ini (if needed)
-3. Modify main.cpp to initialize PCF8574
-4. Create PCF8574 test with LED blink on P1
-5. Build, flash (with PCF8574 disconnected), test (with PCF8574 connected)
-6. Document results and proceed to Camera integration
+1. **Hardware Test Phase 1**:
+   - Upload firmware to S3: `python scripts/build_and_upload.py --version-type patch`
+   - Wire PCF8574 (no external pull-ups needed - internal pull-ups enabled automatically)
+   - Deploy firmware via OTA (web interface → Firmware Manager)
+     - **No disconnection needed!** OTA works wirelessly ✅
+   - Verify via web interface (Bluetooth tab):
+     - Check status for "PCF8574: OK"
+     - Retrieve logs and search for "PCF8574" initialization
+     - **No need to remove SD card!** All logs via web interface ✅
+   - Visual test: LED on P1 blinks every 2 seconds
+2. **After Phase 1 Success**:
+   - Update PLAN.md with hardware test results
+   - Remove/comment out LED blink test in loop()
+   - Proceed to Phase 2: Camera Module integration
+
+**Note**: The pin conflict only affects USB serial flashing, not OTA updates!

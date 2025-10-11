@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <Wire.h>
 #include <esp_camera.h>
 #include <SD_MMC.h>
 #include <SDLogger.h>
@@ -7,6 +8,7 @@
 
 #include "BluetoothService.h"
 #include "BluetoothOTA.h"
+#include "PCF8574Manager.h"
 #include "SystemState.h"
 #include "WifiConnect.h"
 #include "OTAUpdate.h"
@@ -19,12 +21,18 @@
 #define OTA_PASSWORD "bootboots-ota-2025"
 #endif
 
+// Pin configuration
+#define I2C_SDA 1               // GPIO1 (U0TXD) - SDA
+#define I2C_SCL 3               // GPIO3 (U0RXD) - SCL
+#define PCF8574_ADDRESS 0x20    // I2C address for PCF8574
+
 // Global system components
 SDLogger* sdLogger = nullptr;
 WifiConnect* wifiConnect = nullptr;
 BootBootsBluetoothService* bluetoothService = nullptr;
 BluetoothOTA* bluetoothOTA = nullptr;
 OTAUpdate* otaUpdate = nullptr;
+PCF8574Manager* pcfManager = nullptr;
 
 // System state instance
 SystemState systemState;
@@ -83,10 +91,11 @@ void setup() {
     // Log system startup
     if (systemState.sdCardReady) {
         SDLogger::getInstance().infof("BootBoots system initialized successfully");
-        SDLogger::getInstance().infof("System Status - Camera: %s, WiFi: %s, I2C: %s, Atomizer: %s",
+        SDLogger::getInstance().infof("System Status - Camera: %s, WiFi: %s, I2C: %s, PCF8574: %s, Atomizer: %s",
             systemState.cameraReady ? "OK" : "FAIL",
             systemState.wifiConnected ? "OK" : "FAIL",
             systemState.i2cReady ? "OK" : "FAIL",
+            systemState.pcf8574Ready ? "OK" : "FAIL",
             systemState.atomizerEnabled ? "ON" : "OFF");
     }
 }
@@ -108,12 +117,34 @@ void loop() {
         otaUpdate->handle();
     }
 
+    // PCF8574 Test: Blink LED on P1 (Flash LED pin) every 2 seconds if PCF8574 is ready
+    if (pcfManager && systemState.pcf8574Ready) {
+        static unsigned long lastBlink = 0;
+        static bool ledState = false;
+
+        if (millis() - lastBlink > 2000) {
+            ledState = !ledState;
+            pcfManager->setFlashLED(ledState);
+            SDLogger::getInstance().debugf("PCF8574 Flash LED (P1): %s", ledState ? "ON" : "OFF");
+            lastBlink = millis();
+        }
+    }
+
     delay(1000);
 }
 
 void initializeHardware() {
     SDLogger::getInstance().infof("Initializing hardware...");
 
+    // Enable internal pull-ups on I2C pins before initializing I2C
+    pinMode(I2C_SDA, INPUT_PULLUP);
+    pinMode(I2C_SCL, INPUT_PULLUP);
+
+    // Initialize I2C with custom pins (UART0 pins for PCF8574)
+    Wire.begin(I2C_SDA, I2C_SCL);
+    Wire.setClock(100000); // 100kHz I2C clock for reliability
+    systemState.i2cReady = true;
+    SDLogger::getInstance().infof("I2C initialized on GPIO%d (SDA) and GPIO%d (SCL) with internal pull-ups", I2C_SDA, I2C_SCL);
 
     SDLogger::getInstance().infof("Hardware initialization complete");
 }
@@ -133,6 +164,20 @@ void initializeComponents() {
 
     // NOTE: OTA flash check has been moved to setup() to run BEFORE SDLogger init
     // This prevents flash access conflicts during firmware updates
+
+    // Initialize PCF8574 Manager
+    pcfManager = new PCF8574Manager(PCF8574_ADDRESS);
+    if (pcfManager->init(I2C_SDA, I2C_SCL)) {
+        systemState.pcf8574Ready = true;
+        SDLogger::getInstance().infof("PCF8574 Manager initialized successfully at address 0x%02X", PCF8574_ADDRESS);
+        if (systemState.sdCardReady) {
+            SDLogger::getInstance().infof("PCF8574 Manager initialized - 8 GPIO pins available");
+        }
+    } else {
+        systemState.pcf8574Ready = false;
+        SDLogger::getInstance().warnf("WARNING: PCF8574 Manager initialization failed");
+        SDLogger::getInstance().warnf("Check I2C connections on GPIO%d (SDA) and GPIO%d (SCL)", I2C_SDA, I2C_SCL);
+    }
 
     // Initialize WiFi
     wifiConnect = new WifiConnect();
