@@ -12,7 +12,8 @@ BluetoothOTA provides a BLE-based wrapper around the OTAUpdate service, allowing
 - **Status Notifications**: Sends real-time update progress and status to connected clients
 - **Firmware URL Support**: Downloads firmware from HTTP/HTTPS URLs (e.g., S3 signed URLs)
 - **Update Management**: Start, cancel, and monitor firmware updates
-- **Connection Handling**: Automatic reconnection and advertising management
+- **BLE Server Sharing**: Shares BLE server with BluetoothService (ESP32 supports only one server)
+- **Initial Status Value**: Sets initial status on characteristic for immediate version display
 
 ## BLE Service Specification
 
@@ -63,7 +64,43 @@ Returns JSON status:
 
 ## Usage
 
-### Initialization
+### Initialization (Shared BLE Server - Recommended)
+
+```cpp
+#include <BluetoothOTA.h>
+#include <BluetoothService.h>
+#include <OTAUpdate.h>
+
+BluetoothOTA* bluetoothOTA;
+BootBootsBluetoothService* bluetoothService;
+OTAUpdate* otaUpdate;
+
+void setup() {
+    // Initialize main Bluetooth service first (creates BLE server)
+    bluetoothService = new BootBootsBluetoothService();
+    bluetoothService->init("BootBoots-CatCam");
+
+    // Initialize OTA update service
+    otaUpdate = new OTAUpdate();
+    otaUpdate->init("BootBoots-CatCam");
+
+    // Initialize Bluetooth OTA using the SHARED BLE server
+    bluetoothOTA = new BluetoothOTA();
+    if (bluetoothOTA->initWithExistingServer(bluetoothService->getServer())) {
+        bluetoothOTA->setOTAUpdate(otaUpdate);
+        Serial.println("Bluetooth OTA initialized with shared BLE server");
+    }
+}
+
+void loop() {
+    if (bluetoothOTA) {
+        bluetoothOTA->handle();
+    }
+    otaUpdate->handle();
+}
+```
+
+### Standalone Initialization (Not Recommended)
 
 ```cpp
 #include <BluetoothOTA.h>
@@ -76,7 +113,8 @@ void setup() {
     // Initialize OTA update service first
     otaUpdate.init("BootBoots-CatCam");
 
-    // Initialize Bluetooth OTA and link to OTA service
+    // Initialize Bluetooth OTA with its own BLE server
+    // NOTE: Cannot be used if BluetoothService is also active
     bleOTA.init("BootBoots-CatCam");
     bleOTA.setOTAUpdate(&otaUpdate);
 }
@@ -135,13 +173,52 @@ Mobile App (BLE Client)
 
 This two-stage approach allows OTA updates to work with BLE active and limited memory.
 
+## BLE Server Sharing
+
+ESP32 can only have **ONE BLE server** instance active at a time. If your application uses both BluetoothService and BluetoothOTA, they must share the same BLE server.
+
+### Why Server Sharing?
+
+Attempting to create multiple BLE servers will cause crashes:
+```cpp
+// ❌ WRONG - Creates two servers (will crash)
+bluetoothService->init("BootBoots-CatCam");  // Creates BLE server
+bluetoothOTA->init("BootBoots-CatCam");       // Tries to create another server - CRASH!
+```
+
+### Correct Usage with Shared Server
+
+```cpp
+// ✅ CORRECT - Shares one server
+bluetoothService->init("BootBoots-CatCam");                           // Creates BLE server
+bluetoothOTA->initWithExistingServer(bluetoothService->getServer()); // Uses existing server
+```
+
+### How It Works
+
+1. **BluetoothService** creates and owns the primary BLE server
+2. **BluetoothService** exposes the server via `getServer()`
+3. **BluetoothOTA** uses `initWithExistingServer()` to add its service to the existing server
+4. Both services advertise their UUIDs on the same server
+5. Clients can connect and access both services simultaneously
+
+### Implementation Details
+
+When using `initWithExistingServer()`:
+- BluetoothOTA does NOT set server callbacks (BluetoothService manages them)
+- BluetoothOTA creates its own service and characteristics on the shared server
+- Initial status value is set on the status characteristic for immediate reads
+- Service UUID is added to advertising
+
 ## Implementation Notes
 
 - Device name defaults to "BootBoots-CatCam"
-- Automatically restarts advertising when client disconnects
 - Requires WiFi connection for HTTP firmware downloads
 - OTAUpdate must be initialized before BluetoothOTA can function
 - All status messages are logged via SDLogger
+- **BLE Server Sharing**: Use `initWithExistingServer()` when using with BluetoothService
+- **Initial Status**: Status characteristic has initial value set for immediate version display
+- **No Early Status Updates**: sendStatusUpdate() not called during initialization to prevent crashes
 
 ## Security Considerations
 
@@ -155,7 +232,8 @@ This two-stage approach allows OTA updates to work with BLE active and limited m
 
 #### Methods
 
-- `bool init(const char* deviceName)` - Initialize BLE service
+- `bool init(const char* deviceName)` - Initialize BLE service with its own server (standalone mode)
+- `bool initWithExistingServer(BLEServer* pServer)` - Initialize using shared BLE server (recommended)
 - `void handle()` - Process BLE events (call in loop)
 - `bool isConnected()` - Check if client is connected
 - `void sendStatusUpdate(const String& status, const String& message, int progress)` - Send status to client

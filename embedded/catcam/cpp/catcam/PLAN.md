@@ -304,12 +304,95 @@
 
 ---
 
-## 🔥 CURRENT SESSION SUMMARY (2025-10-09 - BOOTLOADER OTA FULLY OPERATIONAL!)
+## 🔥 CURRENT SESSION SUMMARY (2025-10-10 - CHUNKED LOGS + FIRMWARE MANAGER FIXES!)
 
 ### Device Status
-- **Current Version**: v1.0.42 ✅ RUNNING
-- **Latest Version on S3**: v1.0.42
-- **OTA Status**: ✅ BOOTLOADER OTA FULLY OPERATIONAL - Production Ready!
+- **Current Version**: v1.0.54 ✅ RUNNING
+- **Latest Version on S3**: v1.0.54
+- **OTA Status**: ✅ BOOTLOADER OTA + FIRMWARE MANAGER FULLY OPERATIONAL - Production Ready!
+
+### ✅ NEW: Chunked Log Retrieval (v1.0.50-v1.0.53)
+
+**Problem**: BLE MTU limits (~512 bytes) prevented retrieving more than ~10 log entries. Log transfer was also slow due to 1Hz status updates saturating BLE bandwidth.
+
+**Solution**: Implemented chunked log transfer with bandwidth optimization:
+
+**Implementation**:
+1. **Reduced Status Update Frequency** (main.cpp):
+   - Changed from every 1s to every 10s
+   - Frees BLE bandwidth for log transfers
+   - Status updates: 369 bytes → sent 10x less frequently
+
+2. **Chunked Log Transfer** (BluetoothService.cpp):
+   - Chunk size: 400 bytes (safe for 512-byte MTU)
+   - Chunk format: `{"type":"log_chunk","chunk":N,"total":T,"data":"..."}`
+   - Completion message: `{"type":"logs_complete","total_chunks":N,"total_bytes":B}`
+   - 50ms delay between chunks to avoid overwhelming BLE stack
+
+3. **Retrieve All Logs** (SDLogger.cpp):
+   - Support for `entries = -1` (all log entries)
+   - Direct read from SD card without circular buffer
+   - Proper memory allocation with `new String[]`
+
+4. **Web App Chunk Reassembly** (Bluetooth.tsx):
+   - Accumulate chunks in state
+   - Detect completion message
+   - Reassemble full log data
+   - Display with left-aligned dark theme styling
+
+**Test Results**:
+- ✅ v1.0.50: Built and uploaded to S3
+- ✅ v1.0.53: Successfully uploaded to device (after bootloop fix)
+- ✅ Chunked log transfer working in web interface
+- ✅ All log entries retrieved successfully
+- ✅ Logs display properly with dark theme
+
+### ✅ NEW: Firmware Manager Fixes (v1.0.51-v1.0.54)
+
+**Problem**: Firmware Manager couldn't connect to device due to BLE server conflicts and version retrieval issues.
+
+**Issues Fixed**:
+
+1. **BLE Server Conflict** (v1.0.51):
+   - BluetoothOTA was trying to create its own BLE server
+   - ESP32 can only have ONE BLE server instance
+   - **Solution**: Added `initWithExistingServer()` method to BluetoothOTA
+   - Both BluetoothService and BluetoothOTA now share same BLE server
+
+2. **Bootloop on v1.0.52**:
+   - Calling `sendStatusUpdate()` before client connected caused crashes
+   - **Solution**: Removed early `sendStatusUpdate()` calls from initialization
+
+3. **Partition Upload Issues** (v1.0.52-v1.0.53):
+   - Firmware uploaded to factory partition (448KB) instead of ota_0 (3.56MB)
+   - 1.9MB firmware overflowed factory partition causing bootloop
+   - **Solution**: Upload to correct address: 0x80000 (ota_0 partition)
+   - Command: `esptool.py write_flash 0x1000 bootloader.bin 0x8000 partitions.bin 0x80000 firmware.bin`
+
+4. **Version Not Displaying** (v1.0.54):
+   - Status characteristic had no initial value
+   - `refreshVersion()` tried to read empty characteristic
+   - **Solution**: Set initial status value with version during `initWithExistingServer()`
+   - Now reads version from characteristic successfully
+
+**Files Modified**:
+1. `main.cpp` (lines 94-112): Reduced status update frequency to 10s
+2. `main.cpp` (lines 172-184): Re-enabled BluetoothOTA with shared server
+3. `BluetoothService.cpp` (lines 189-232): Chunked log transfer implementation
+4. `BluetoothService.h` (line 29): Added `getServer()` method
+5. `BluetoothOTA.h` (line 45): Added `initWithExistingServer()` declaration
+6. `BluetoothOTA.cpp` (lines 105-175): Implemented `initWithExistingServer()`
+7. `BluetoothOTA.cpp` (lines 84-85, 160-161): Set initial status characteristic value
+8. `SDLogger.cpp` (lines 294-374): Support for retrieving all log entries
+9. `Bluetooth.tsx` (lines 73, 146-160): Chunk reassembly in web app
+10. `bluetoothService.ts` (lines 71-95, 168-219): Fixed version retrieval with notifications
+
+**Version History**:
+- v1.0.50: Chunked logs + 10s status updates (built to S3)
+- v1.0.51: BluetoothOTA shared server support (bootloop - sendStatusUpdate issue)
+- v1.0.52: Fixed bootloop (wrong partition upload)
+- v1.0.53: Uploaded to correct ota_0 partition (version not displaying)
+- v1.0.54: **CURRENT** - Set initial status value, version displays correctly ✅
 
 ### ✅ RESOLVED: OTA Working with Dual Partition Table
 

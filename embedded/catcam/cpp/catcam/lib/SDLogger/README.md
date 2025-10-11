@@ -19,6 +19,8 @@ SDLogger provides a robust, thread-safe logging system that writes structured lo
 - **Convenience Macros**: Simple macros for quick logging
 - **Specialized Methods**: Domain-specific logging for deterrent events
 - **Configurable**: Adjustable log level, file size, and retention
+- **Log Retrieval**: Read recent log entries or all entries from current log file
+- **BLE Integration**: Log retrieval API used by BluetoothService for remote access
 
 ## Log Levels
 
@@ -160,6 +162,25 @@ SDLogger::getInstance().rotateLogs();
 // Ensure all buffered data is written
 SDLogger::getInstance().flush();
 ```
+
+### Retrieve Log Entries
+
+```cpp
+// Get last 10 log entries as JSON array string
+String logs = SDLogger::getInstance().getRecentLogEntries(10);
+// Returns: ["2023-01-01 00:00:01.234 [INFO] Message 1", "2023-01-01 00:00:02.345 [INFO] Message 2", ...]
+
+// Get ALL log entries from current log file
+String allLogs = SDLogger::getInstance().getRecentLogEntries(-1);
+
+// Parse and display
+// Note: logs are returned as a JSON array string, can be parsed with ArduinoJson
+```
+
+**Use Cases**:
+- Remote log retrieval via BLE (used by BluetoothService)
+- Diagnostic log viewing on web interface
+- Log analysis and debugging
 
 ## Log Format
 
@@ -446,9 +467,37 @@ SDLogger::getInstance().criticalf("*** OTA UPDATE STARTED ***");
 
 // WifiConnect (could be integrated)
 LOG_IF("WiFi connected: %s", WiFi.localIP().toString().c_str());
+
+// BluetoothService - Log retrieval
+String logs = SDLogger::getInstance().getRecentLogEntries(50);
+// Sends logs to mobile app via BLE
 ```
 
 All services should use SDLogger for consistent logging.
+
+### BLE Log Retrieval Integration
+
+SDLogger's `getRecentLogEntries()` method is used by BluetoothService to provide remote log access:
+
+**BluetoothService Integration**:
+```cpp
+// In BluetoothService.cpp - handling "get_logs" command
+String getLatestLogEntries(int maxEntries) {
+    return SDLogger::getInstance().getRecentLogEntries(maxEntries);
+}
+
+// Client requests logs via BLE command
+// {"command": "get_logs", "entries": -1}
+// Service retrieves all logs and sends in chunks
+String logData = getLatestLogEntries(-1);
+// ... chunk and send via BLE notifications
+```
+
+**Key Features for BLE**:
+- Returns JSON array string for easy parsing by web app
+- Supports retrieving all entries (`maxLines = -1`) for complete logs
+- Thread-safe for concurrent access during BLE operations
+- Memory-efficient circular buffer for limited entry counts
 
 ## API Reference
 
@@ -497,6 +546,11 @@ void logDetection(const char* catName, float confidence, int pictureNumber)
 ```cpp
 void flush()
 void rotateLogs()
+```
+
+### Log Retrieval
+```cpp
+String getRecentLogEntries(int maxLines = 10)  // Returns JSON array string; use -1 for all entries
 ```
 
 ### Configuration
