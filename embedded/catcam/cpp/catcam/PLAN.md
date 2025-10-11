@@ -39,7 +39,7 @@ Rebuild the BootBoots catcam project incrementally by bringing in components fro
 - I2C speed: 100kHz for reliability ✓
 
 ### 1.3 Integrate into Main ✅
-**src/main.cpp modifications** (COMPLETED):
+**src/main.cpp   difications** (COMPLETED):
 - ✅ Added `#include <Wire.h>` and `#include "PCF8574Manager.h"`
 - ✅ Added global: `PCF8574Manager* pcfManager = nullptr;`
 - ✅ Added pin definitions: I2C_SDA (GPIO1), I2C_SCL (GPIO3), PCF8574_ADDRESS (0x20)

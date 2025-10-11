@@ -52,9 +52,10 @@ bool BluetoothOTA::init(const char* deviceName) {
     }
 
     // Create Command Characteristic (Write)
+    // Use PROPERTY_WRITE_NR (Write Without Response) for better reliability with large payloads
     _pCommandCharacteristic = _pService->createCharacteristic(
         OTA_COMMAND_CHAR_UUID,
-        BLECharacteristic::PROPERTY_WRITE
+        BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR
     );
 
     if (!_pCommandCharacteristic) {
@@ -65,6 +66,9 @@ bool BluetoothOTA::init(const char* deviceName) {
     // Set command characteristic callbacks
     _pCallbacks = new BluetoothOTACallbacks(this);
     _pCommandCharacteristic->setCallbacks(_pCallbacks);
+
+    // Set maximum value length to accommodate large URLs (up to 512 bytes)
+    _pCommandCharacteristic->setAccessPermissions(ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE);
 
     // Create Status Characteristic (Read/Notify)
     _pStatusCharacteristic = _pService->createCharacteristic(
@@ -129,9 +133,10 @@ bool BluetoothOTA::initWithExistingServer(BLEServer* pServer) {
     }
 
     // Create Command Characteristic (Write)
+    // Use PROPERTY_WRITE_NR (Write Without Response) for better reliability with large payloads
     _pCommandCharacteristic = _pService->createCharacteristic(
         OTA_COMMAND_CHAR_UUID,
-        BLECharacteristic::PROPERTY_WRITE
+        BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR
     );
 
     if (!_pCommandCharacteristic) {
@@ -142,6 +147,9 @@ bool BluetoothOTA::initWithExistingServer(BLEServer* pServer) {
     // Set command characteristic callbacks
     _pCallbacks = new BluetoothOTACallbacks(this);
     _pCommandCharacteristic->setCallbacks(_pCallbacks);
+
+    // Set maximum value length to accommodate large URLs (up to 512 bytes)
+    _pCommandCharacteristic->setAccessPermissions(ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE);
 
     // Create Status Characteristic (Read/Notify)
     _pStatusCharacteristic = _pService->createCharacteristic(

@@ -101,12 +101,6 @@ void setup() {
 }
 
 void loop() {
-    // Update Bluetooth services - only every 10 seconds to avoid saturating BLE bandwidth
-    static unsigned long lastStatusUpdate = 0;
-    if (millis() - lastStatusUpdate > 10000) {
-        bluetoothService->updateSystemStatus(systemState);
-        lastStatusUpdate = millis();
-    }
 
     if (bluetoothOTA) {
         bluetoothOTA->handle();
