@@ -23,7 +23,7 @@ bool SDLogger::init(const char* logDir) {
     pinMode(12, PULLUP);
     pinMode(13, PULLUP);
     if (!SD_MMC.begin()) {
-        Serial.println("SDLogger: Failed to initialize SD_MMC");
+        // Serial.println("SDLogger: Failed to initialize SD_MMC");
         return false;
     }
 

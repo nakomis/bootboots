@@ -88,7 +88,7 @@ void setup() {
     bluetoothOTA = new BluetoothOTA();
     if (bluetoothOTA->initWithExistingServer(bluetoothService->getServer())) {
         bluetoothOTA->setOTAUpdate(otaUpdate);
-        Serial.println("Bluetooth OTA initialized with shared BLE server");
+        // Serial.println("Bluetooth OTA initialized with shared BLE server");
     }
 }
 

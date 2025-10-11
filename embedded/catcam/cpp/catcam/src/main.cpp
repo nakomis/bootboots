@@ -38,7 +38,7 @@ PCF8574Manager* pcfManager = nullptr;
 SystemState systemState;
 
 void setup() {
-    Serial.begin(115200);
+    // Serial.begin(115200);
     delay(100);
 
     // CRITICAL: Set boot partition to factory so bootloader runs on next reboot
@@ -56,13 +56,13 @@ void setup() {
         if (boot_partition != factory) {
             esp_err_t err = esp_ota_set_boot_partition(factory);
             if (err == ESP_OK) {
-                Serial.println("[CATCAM] Set boot partition to factory for next reboot");
+                // Serial.println("[CATCAM] Set boot partition to factory for next reboot");
             } else {
-                Serial.printf("[CATCAM] WARNING: Failed to set boot partition: %s\n", esp_err_to_name(err));
+                // Serial.printf("[CATCAM] WARNING: Failed to set boot partition: %s\n", esp_err_to_name(err));
             }
         }
     } else {
-        Serial.println("[CATCAM] WARNING: Factory partition not found - bootloader won't run on reboot");
+        // Serial.println("[CATCAM] WARNING: Factory partition not found - bootloader won't run on reboot");
     }
 
     // Direct HTTP OTA is now used instead of two-stage SD card approach

@@ -42,9 +42,9 @@ LOG_CRITICAL = 4  // Critical issues requiring immediate attention
 void setup() {
     // Initialize with default log directory (/logs)
     if (SDLogger::getInstance().init()) {
-        Serial.println("Logger initialized successfully");
+        // Serial.println("Logger initialized successfully");
     } else {
-        Serial.println("Logger initialization failed");
+        // Serial.println("Logger initialization failed");
     }
 }
 ```
@@ -336,8 +336,8 @@ Ensure your hardware has these pins connected appropriately for SD_MMC mode.
 
 ```cpp
 if (!SDLogger::getInstance().init()) {
-    Serial.println("SD card initialization failed");
-    Serial.println("Check SD card insertion and formatting");
+    // Serial.println("SD card initialization failed");
+    // Serial.println("Check SD card insertion and formatting");
     // Continue without logging or implement fallback
 }
 ```

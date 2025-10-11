@@ -210,12 +210,12 @@ bool PCF8574Manager::isSafeToOperate() {
         return false;
     }
     
-    // Check communication timeout
-    if ((millis() - _lastCommunication) > MAX_COMMUNICATION_TIMEOUT_MS) {
-        SDLogger::getInstance().errorf("PCF8574: Communication timeout, entering emergency mode");
-        emergencyShutdown();
-        return false;
-    }
+    // // Check communication timeout
+    // if ((millis() - _lastCommunication) > MAX_COMMUNICATION_TIMEOUT_MS) {
+    //     SDLogger::getInstance().errorf("PCF8574: Communication timeout, entering emergency mode");
+    //     emergencyShutdown();
+    //     return false;
+    // }
     
     return true;
 }

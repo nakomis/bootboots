@@ -23,22 +23,22 @@ int WifiConnect::connect()
     {
         if (millis() - startMillis > WIFI_CONNECT_TIMEOUT_MILLIS)
         {
-            Serial.println();
-            Serial.println("Bailing out of WiFi Connect");
+            // Serial.println();
+            // Serial.println("Bailing out of WiFi Connect");
             WiFi.disconnect();
             return 1;
         }
         Serial.print(".");
         delay(100);
     }
-    Serial.println("\nWi-Fi Connected.\n");
+    // Serial.println("\nWi-Fi Connected.\n");
     Serial.print("IP Address: ");
-    Serial.println(WiFi.localIP());
+    // Serial.println(WiFi.localIP());
     Serial.print("MAC Address: ");
-    Serial.println(WiFi.macAddress());
+    // Serial.println(WiFi.macAddress());
     Serial.print("SSID: ");
-    Serial.println(WiFi.SSID());
+    // Serial.println(WiFi.SSID());
     Serial.print("Signal Strength: ");
-    Serial.println(WiFi.RSSI()); 
+    // Serial.println(WiFi.RSSI()); 
     return 0;
 }

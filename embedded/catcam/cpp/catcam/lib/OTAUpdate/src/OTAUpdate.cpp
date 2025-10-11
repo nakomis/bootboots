@@ -248,7 +248,7 @@ bool OTAUpdate::updateFromURL(const char* firmwareURL) {
 
     // Disable SD file logging to free memory during OTA
     SDLogger::getInstance().setFileLoggingEnabled(false);
-    Serial.println("SD file logging disabled for OTA - using serial only");
+    // Serial.println("SD file logging disabled for OTA - using serial only");
 
     _httpUpdateInProgress = true;
     _updating = true;
@@ -281,7 +281,7 @@ bool OTAUpdate::updateFromURL(const char* firmwareURL) {
         _httpClient->end();
         SDLogger::getInstance().setFileLoggingEnabled(true);
         // BLE was deinitialized - must reboot to restore connectivity
-        Serial.println("OTA failed - rebooting to restore BLE connectivity...");
+        // Serial.println("OTA failed - rebooting to restore BLE connectivity...");
         delay(2000);
         ESP.restart();
         return false;
@@ -301,7 +301,7 @@ bool OTAUpdate::updateFromURL(const char* firmwareURL) {
         _httpClient->end();
         SDLogger::getInstance().setFileLoggingEnabled(true);
         // BLE was deinitialized - must reboot to restore connectivity
-        Serial.println("OTA failed - rebooting to restore BLE connectivity...");
+        // Serial.println("OTA failed - rebooting to restore BLE connectivity...");
         delay(2000);
         ESP.restart();
         return false;
@@ -510,66 +510,66 @@ bool OTAUpdate::downloadToSD(const char* firmwareURL) {
     }
 
     SDLogger::getInstance().infof("Starting two-stage OTA: downloading to SD card from %s", firmwareURL);
-    Serial.println("[OTA] Starting two-stage OTA");
+    // Serial.println("[OTA] Starting two-stage OTA");
 
     // Disable SD file logging to free memory during download
-    Serial.println("[OTA] Disabling SD file logging...");
+    // Serial.println("[OTA] Disabling SD file logging...");
     SDLogger::getInstance().setFileLoggingEnabled(false);
-    Serial.println("[OTA] SD file logging disabled");
+    // Serial.println("[OTA] SD file logging disabled");
 
     // CRITICAL: Fully unmount and remount SD_MMC to clear any state
     // This prevents 0x107 timeout errors during write operations
-    Serial.println("[OTA] Unmounting SD_MMC...");
+    // Serial.println("[OTA] Unmounting SD_MMC...");
     SD_MMC.end();
     delay(100);
-    Serial.println("[OTA] Remounting SD_MMC...");
+    // Serial.println("[OTA] Remounting SD_MMC...");
     if (!SD_MMC.begin()) {
         SDLogger::getInstance().errorf("Failed to remount SD_MMC for OTA download");
-        Serial.println("[OTA] SD remount failed - rebooting...");
+        // Serial.println("[OTA] SD remount failed - rebooting...");
         delay(2000);
         ESP.restart();
         return false;
     }
-    Serial.println("[OTA] SD_MMC remounted successfully");
+    // Serial.println("[OTA] SD_MMC remounted successfully");
 
-    Serial.println("[OTA] Setting state variables...");
+    // Serial.println("[OTA] Setting state variables...");
     _httpUpdateInProgress = true;
     _updating = true;
     _progress = 0;
     _status = "Downloading to SD card...";
-    Serial.println("[OTA] State variables set");
+    // Serial.println("[OTA] State variables set");
 
     // Configure HTTP client
-    Serial.println("[OTA] Configuring HTTP client...");
+    // Serial.println("[OTA] Configuring HTTP client...");
     String url = String(firmwareURL);
-    Serial.println("[OTA] URL string created");
+    // Serial.println("[OTA] URL string created");
 
     if (url.startsWith("https://")) {
-        Serial.println("[OTA] Using HTTPS");
+        // Serial.println("[OTA] Using HTTPS");
         SDLogger::getInstance().infof("Using HTTPS secure connection");
         _httpClient->begin(*_secureClient, firmwareURL);
     } else {
-        Serial.println("[OTA] Using HTTP");
+        // Serial.println("[OTA] Using HTTP");
         SDLogger::getInstance().infof("Using HTTP connection");
         // Allocate WiFiClient if not already allocated
         if (!_client) {
-            Serial.println("[OTA] Allocating WiFiClient...");
+            // Serial.println("[OTA] Allocating WiFiClient...");
             _client = new WiFiClient();
-            Serial.println("[OTA] WiFiClient allocated");
+            // Serial.println("[OTA] WiFiClient allocated");
         }
-        Serial.println("[OTA] Calling HTTPClient.begin()...");
+        // Serial.println("[OTA] Calling HTTPClient.begin()...");
         _httpClient->begin(*_client, firmwareURL);
-        Serial.println("[OTA] HTTPClient.begin() complete");
+        // Serial.println("[OTA] HTTPClient.begin() complete");
     }
 
-    Serial.println("[OTA] Setting timeout...");
+    // Serial.println("[OTA] Setting timeout...");
     _httpClient->setTimeout(30000);  // 30 second timeout
-    Serial.println("[OTA] Timeout set");
+    // Serial.println("[OTA] Timeout set");
 
     // Make HTTP GET request
-    Serial.println("[OTA] Sending HTTP GET request...");
+    // Serial.println("[OTA] Sending HTTP GET request...");
     int httpCode = _httpClient->GET();
-    Serial.printf("[OTA] HTTP GET returned code: %d\n", httpCode);
+    // Serial.printf("[OTA] HTTP GET returned code: %d\n", httpCode);
 
     if (httpCode != HTTP_CODE_OK) {
         SDLogger::getInstance().errorf("HTTP GET failed: %d", httpCode);
@@ -577,7 +577,7 @@ bool OTAUpdate::downloadToSD(const char* firmwareURL) {
         SDLogger::getInstance().setFileLoggingEnabled(true);
         _httpUpdateInProgress = false;
         _updating = false;
-        Serial.println("Download failed - rebooting to restore connectivity...");
+        // Serial.println("Download failed - rebooting to restore connectivity...");
         delay(2000);
         ESP.restart();
         return false;
@@ -591,13 +591,13 @@ bool OTAUpdate::downloadToSD(const char* firmwareURL) {
         SDLogger::getInstance().setFileLoggingEnabled(true);
         _httpUpdateInProgress = false;
         _updating = false;
-        Serial.println("Invalid firmware size - rebooting to restore connectivity...");
+        // Serial.println("Invalid firmware size - rebooting to restore connectivity...");
         delay(2000);
         ESP.restart();
         return false;
     }
 
-    Serial.printf("Firmware size: %d bytes\n", firmwareSize);
+    // Serial.printf("Firmware size: %d bytes\n", firmwareSize);
     _totalSize = firmwareSize;
 
     // Open SD card file for writing
@@ -608,7 +608,7 @@ bool OTAUpdate::downloadToSD(const char* firmwareURL) {
         SDLogger::getInstance().setFileLoggingEnabled(true);
         _httpUpdateInProgress = false;
         _updating = false;
-        Serial.println("SD card error - rebooting to restore connectivity...");
+        // Serial.println("SD card error - rebooting to restore connectivity...");
         delay(2000);
         ESP.restart();
         return false;
@@ -620,7 +620,7 @@ bool OTAUpdate::downloadToSD(const char* firmwareURL) {
     size_t written = 0;
     size_t lastProgress = 0;
 
-    Serial.println("Downloading firmware to SD card...");
+    // Serial.println("Downloading firmware to SD card...");
     while (_httpClient->connected() && written < firmwareSize) {
         size_t available = stream->available();
         if (available) {
@@ -637,7 +637,7 @@ bool OTAUpdate::downloadToSD(const char* firmwareURL) {
                     SDLogger::getInstance().setFileLoggingEnabled(true);
                     _httpUpdateInProgress = false;
                     _updating = false;
-                    Serial.println("SD write error - rebooting to restore connectivity...");
+                    // Serial.println("SD write error - rebooting to restore connectivity...");
                     delay(2000);
                     ESP.restart();
                     return false;
@@ -649,7 +649,7 @@ bool OTAUpdate::downloadToSD(const char* firmwareURL) {
 
                 // Log progress every 10%
                 if (_progress >= lastProgress + 10) {
-                    Serial.printf("Download progress: %d%% (%d/%d bytes)\n", _progress, written, firmwareSize);
+                    // Serial.printf("Download progress: %d%% (%d/%d bytes)\n", _progress, written, firmwareSize);
                     lastProgress = _progress;
                 }
             }
@@ -657,13 +657,13 @@ bool OTAUpdate::downloadToSD(const char* firmwareURL) {
         delay(1);  // Yield to watchdog
     }
 
-    Serial.println("[OTA] Closing file...");
+    // Serial.println("[OTA] Closing file...");
     file.close();
-    Serial.println("[OTA] File closed");
+    // Serial.println("[OTA] File closed");
 
-    Serial.println("[OTA] Ending HTTP client...");
+    // Serial.println("[OTA] Ending HTTP client...");
     _httpClient->end();
-    Serial.println("[OTA] HTTP client ended");
+    // Serial.println("[OTA] HTTP client ended");
     Serial.flush();
 
     if (written != firmwareSize) {
@@ -672,31 +672,31 @@ bool OTAUpdate::downloadToSD(const char* firmwareURL) {
         SDLogger::getInstance().setFileLoggingEnabled(true);
         _httpUpdateInProgress = false;
         _updating = false;
-        Serial.println("Download incomplete - rebooting to restore connectivity...");
+        // Serial.println("Download incomplete - rebooting to restore connectivity...");
         delay(2000);
         ESP.restart();
         return false;
     }
 
-    Serial.printf("[OTA] Download complete: %d bytes written to SD card\n", written);
+    // Serial.printf("[OTA] Download complete: %d bytes written to SD card\n", written);
     Serial.flush();
 
     // Set NVS flags for bootloader to pick up
-    Serial.println("[OTA] Setting NVS flags for bootloader...");
+    // Serial.println("[OTA] Setting NVS flags for bootloader...");
     Preferences prefs;
     prefs.begin("ota", false);  // Read-write
     prefs.putBool("pending", true);
     prefs.putUInt("size", firmwareSize);
     prefs.end();
-    Serial.println("[OTA] NVS flags set successfully");
+    // Serial.println("[OTA] NVS flags set successfully");
     Serial.flush();
 
-    Serial.println("[OTA] OTA download complete - rebooting to bootloader for flash...");
+    // Serial.println("[OTA] OTA download complete - rebooting to bootloader for flash...");
     SDLogger::getInstance().infof("OTA download complete, rebooting to bootloader");
     Serial.flush();
 
     delay(2000);
-    Serial.println("[OTA] Restarting...");
+    // Serial.println("[OTA] Restarting...");
     Serial.flush();
     ESP.restart();
 

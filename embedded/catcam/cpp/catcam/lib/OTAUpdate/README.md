@@ -96,9 +96,9 @@ void loop() {
 otaUpdate.setUpdateCallback([](bool success, const char* error) {
     if (success) {
         // Download complete, device will reboot to flash
-        Serial.println("Download complete, rebooting to flash...");
+        // Serial.println("Download complete, rebooting to flash...");
     } else {
-        Serial.printf("Download failed: %s\n", error);
+        // Serial.printf("Download failed: %s\n", error);
     }
 });
 
@@ -107,7 +107,7 @@ const char* firmwareURL = "http://example.com/firmware.bin";
 bool started = otaUpdate.downloadToSD(firmwareURL);
 
 if (started) {
-    Serial.println("Firmware download started...");
+    // Serial.println("Firmware download started...");
     // Device will automatically reboot after download completes
     // Flash happens on next boot
 }
@@ -121,18 +121,18 @@ void setup() {
 
     // Check for pending OTA BEFORE initializing any peripherals
     if (OTAUpdate::hasPendingUpdate()) {
-        Serial.println("Pending OTA detected, initializing SD for flash...");
+        // Serial.println("Pending OTA detected, initializing SD for flash...");
 
         // Manually initialize SD_MMC
         pinMode(14, PULLUP); pinMode(15, PULLUP); pinMode(2, PULLUP);
         pinMode(4, PULLUP); pinMode(12, PULLUP); pinMode(13, PULLUP);
 
         if (!SD_MMC.begin()) {
-            Serial.println("ERROR: Failed to initialize SD_MMC");
+            // Serial.println("ERROR: Failed to initialize SD_MMC");
         } else {
-            Serial.println("SD_MMC initialized, flashing firmware...");
+            // Serial.println("SD_MMC initialized, flashing firmware...");
             if (!OTAUpdate::flashFromSD()) {
-                Serial.println("ERROR: Flash failed, continuing normal boot");
+                // Serial.println("ERROR: Flash failed, continuing normal boot");
             }
             // If flash succeeds, device reboots automatically
         }

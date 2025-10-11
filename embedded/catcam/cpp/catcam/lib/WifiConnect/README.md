@@ -30,9 +30,9 @@ void setup() {
     int result = wifi.connect();
 
     if (result == 0) {
-        Serial.println("WiFi connection successful!");
+        // Serial.println("WiFi connection successful!");
     } else {
-        Serial.println("WiFi connection failed!");
+        // Serial.println("WiFi connection failed!");
     }
 }
 ```
@@ -52,22 +52,22 @@ void setup() {
         int result = wifi.connect();
 
         if (result == 0) {
-            Serial.println("Successfully connected to WiFi");
+            // Serial.println("Successfully connected to WiFi");
             break;
         }
 
         attempts++;
-        Serial.printf("Connection attempt %d of %d failed\n", attempts, maxAttempts);
+        // Serial.printf("Connection attempt %d of %d failed\n", attempts, maxAttempts);
 
         if (attempts < maxAttempts) {
-            Serial.println("Retrying in 5 seconds...");
+            // Serial.println("Retrying in 5 seconds...");
             delay(5000);
         }
     }
 
     if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("Failed to connect after multiple attempts");
-        Serial.println("Continuing in offline mode...");
+        // Serial.println("Failed to connect after multiple attempts");
+        // Serial.println("Continuing in offline mode...");
     }
 }
 ```
@@ -76,7 +76,7 @@ void setup() {
 
 ```cpp
 if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("Already connected");
+    // Serial.println("Already connected");
 } else {
     wifi.connect();
 }
@@ -212,9 +212,9 @@ void setup() {
     if (wifi.connect() == 0) {
         // Initialize OTA updates (requires WiFi)
         ota.init("BootBoots-CatCam", "ota_password");
-        Serial.println("OTA updates enabled");
+        // Serial.println("OTA updates enabled");
     } else {
-        Serial.println("OTA updates disabled - no WiFi");
+        // Serial.println("OTA updates disabled - no WiFi");
     }
 }
 
@@ -238,7 +238,7 @@ const unsigned long CHECK_INTERVAL = 30000;  // 30 seconds
 void loop() {
     if (millis() - lastCheck > CHECK_INTERVAL) {
         if (WiFi.status() != WL_CONNECTED) {
-            Serial.println("WiFi disconnected, reconnecting...");
+            // Serial.println("WiFi disconnected, reconnecting...");
             wifi.connect();
         }
         lastCheck = millis();
