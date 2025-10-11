@@ -164,55 +164,6 @@ class FirmwareBuilder:
             print(f"❌ Upload error: {e}")
             return False
 
-    def create_version_manifest(self, version):
-        """Create a version manifest file for the web UI"""
-        try:
-            s3_client = boto3.client('s3')
-            firmware_file = self.find_firmware_file()
-            firmware_size = self.get_firmware_size(firmware_file)
-
-            # Get existing manifest or create new one
-            manifest_key = f"{self.project_name}/manifest.json"
-
-            try:
-                response = s3_client.get_object(Bucket=self.s3_bucket, Key=manifest_key)
-                manifest = json.loads(response['Body'].read().decode('utf-8'))
-            except ClientError:
-                manifest = {
-                    "project": self.project_name,
-                    "versions": []
-                }
-
-            # Add new version if not already present
-            version_info = {
-                "version": version,
-                "timestamp": subprocess.check_output(['date', '-Iseconds'], text=True).strip(),
-                "firmware_path": f"{self.project_name}/{version}/firmware.bin",
-                "size": firmware_size
-            }
-
-            # Remove existing version if present, then add new one
-            manifest["versions"] = [v for v in manifest["versions"] if v["version"] != version]
-            manifest["versions"].append(version_info)
-
-            # Sort versions (newest first)
-            manifest["versions"].sort(key=lambda x: [int(n) for n in x["version"].split('.')], reverse=True)
-
-            # Upload updated manifest
-            s3_client.put_object(
-                Bucket=self.s3_bucket,
-                Key=manifest_key,
-                Body=json.dumps(manifest, indent=2),
-                ContentType='application/json'
-            )
-
-            print(f"✅ Updated version manifest with v{version}")
-            return True
-
-        except Exception as e:
-            print(f"❌ Failed to update manifest: {e}")
-            return False
-
 def main():
     parser = argparse.ArgumentParser(
         description='Build and upload BootBoots firmware',
@@ -279,7 +230,6 @@ Examples:
     if not args.build_only:
         print("📡 Uploading to S3...")
         if builder.upload_to_s3(version):
-            builder.create_version_manifest(version)
             print()
             print("=" * 60)
             print(f"✅ Firmware v{version} successfully built and uploaded!")
@@ -288,6 +238,7 @@ Examples:
             print(f"   Project: {builder.project_name}")
             print(f"   Version: {version}")
             print()
+            print("📝 Note: Manifest will be updated automatically by Lambda")
             print("🎉 Ready for OTA deployment via web interface!")
         else:
             print()

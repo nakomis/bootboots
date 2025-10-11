@@ -625,11 +625,74 @@ Run normally
 4. `platformio.ini`:
    - Added `board_build.partitions = partitions_custom.csv` (line 15)
 
+### ✅ COMPLETE: Automated S3 Firmware Cleanup (2025-10-11)
+
+**Problem**: Firmware versions were accumulating in S3 bucket without limit, increasing storage costs and making version management difficult.
+
+**Solution**: AWS Lambda function triggered on S3 uploads to automatically:
+- Keep only the 3 most recent firmware versions per project
+- Delete older versions automatically
+- Update manifest.json after cleanup
+- Support multiple projects in same bucket
+
+**Implementation**:
+1. **Lambda Function** (`infra/lambda/firmware-cleanup/`):
+   - Node.js 22.x runtime, 256 MB memory, 60s timeout
+   - Semantic version parsing and comparison
+   - S3 event processing from bucket notifications
+   - Automatic manifest.json regeneration
+
+2. **CDK Stack** (`infra/lib/firmware-cleanup-stack.ts`):
+   - Uses `Bucket.fromBucketName()` to reference existing bucket
+   - S3 event notification via `bucket.addEventNotification()`
+   - Lambda triggered on `ObjectCreated` events for `firmware.bin` files
+   - IAM permissions for S3 operations (list, get, delete, put)
+
+3. **Upload Script Simplified** (`scripts/build_and_upload.py`):
+   - Removed `create_version_manifest()` method (~50 lines)
+   - Manifest updates now handled automatically by Lambda
+   - Reduced code complexity
+
+**Deployment**:
+```bash
+cd /Users/martinmu_1/repos/nakomis/bootboots/infra
+npm install
+export AWS_PROFILE=nakom.is-sandbox
+cdk deploy BootBootsFirmwareCleanupStack
+```
+
+**Test Results** (2025-10-11):
+- ✅ Uploaded firmware v1.0.55 (1,945,056 bytes)
+- ✅ Lambda triggered automatically within seconds
+- ✅ Found 52 total firmware versions
+- ✅ Kept top 3: v1.0.55, v1.0.54, v1.0.53
+- ✅ Deleted 49 old versions (v1.0.52 through v1.0.2)
+- ✅ Updated manifest.json with 3 retained versions
+- ✅ Execution time: 3.8 seconds
+- ✅ Memory used: 112 MB / 256 MB
+- ✅ **Storage savings: ~95 MB**
+
+**Benefits**:
+- Cost savings: Automatic cleanup reduces S3 storage costs
+- Simplified upload script: No manual manifest management
+- Multi-project support: Works for all projects in bucket
+- Consistent state: Manifest always matches S3 contents
+
+**Documentation**:
+- `/Users/martinmu_1/repos/nakomis/bootboots/infra/CHANGELOG.md` - Change log
+- `/Users/martinmu_1/repos/nakomis/bootboots/infra/DEPLOYMENT.md` - Deployment guide
+- `/Users/martinmu_1/repos/nakomis/bootboots/infra/lambda/firmware-cleanup/README.md` - Lambda docs
+
 ### Build Commands
 
 **Normal build and upload**:
 ```bash
 AWS_PROFILE=nakom.is-sandbox python scripts/build_and_upload.py --version-type patch
+```
+
+**Build without version bump** (for testing):
+```bash
+AWS_PROFILE=nakom.is-sandbox python scripts/build_and_upload.py --no-bump
 ```
 
 **Flash via USB** (device in download mode):
