@@ -21,9 +21,19 @@
 #define OTA_PASSWORD "bootboots-ota-2025"
 #endif
 
-// Pin configuration
+// Board-specific pin configuration
+#ifdef ESP32S3_CAM
+// ESP32-S3 CAM: Dedicated I2C pins (not shared with UART)
+#define I2C_SDA 4               // GPIO4 - SDA
+#define I2C_SCL 5               // GPIO5 - SCL
+#define BOARD_NAME "ESP32-S3-CAM"
+#else
+// Original ESP32-CAM: I2C on UART0 pins
 #define I2C_SDA 1               // GPIO1 (U0TXD) - SDA
 #define I2C_SCL 3               // GPIO3 (U0RXD) - SCL
+#define BOARD_NAME "ESP32-CAM"
+#endif
+
 #define PCF8574_ADDRESS 0x20    // I2C address for PCF8574
 
 // Global system components
@@ -71,7 +81,7 @@ void setup() {
     // Initialize SDLogger for normal operation (after OTA check)
     SDLogger::getInstance().init("/logs");
     SDLogger::getInstance().setLogLevel(LOG_DEBUG);
-    LOG_I("=== BootBoots System Starting ===");
+    SDLogger::getInstance().infof("=== BootBoots System Starting (%s) ===", BOARD_NAME);
 
     // Record system start time
     systemState.systemStartTime = millis();

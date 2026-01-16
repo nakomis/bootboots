@@ -21,7 +21,28 @@
 // Constants
 #define FIRMWARE_FILE "/firmware_update.bin"
 #define FLASH_BUFFER_SIZE 512
+
+#ifdef ESP32S3_CAM
+// ESP32-S3 CAM board configuration
+#define LED_PIN 48  // May vary by board - some S3 CAM boards have LED on GPIO48
+// SD Card pins for ESP32-S3 (SDMMC 1-bit mode)
+#define SD_MMC_CLK  39
+#define SD_MMC_CMD  38
+#define SD_MMC_D0   40
+#define BOARD_NAME  "ESP32-S3-CAM"
+// ESP32-S3 UART0 pins (exposed on UART USB-C connector)
+#define UART_TX_PIN 43
+#define UART_RX_PIN 44
+// Create HardwareSerial instance for UART0
+HardwareSerial DebugSerial(0);  // UART0
+#define DEBUG_SERIAL DebugSerial
+#else
+// Original ESP32-CAM (AI-Thinker) configuration
 #define LED_PIN 33  // Built-in LED on ESP32-CAM
+#define BOARD_NAME  "ESP32-CAM"
+// Original ESP32-CAM uses Serial for UART
+#define DEBUG_SERIAL Serial
+#endif
 
 // Global objects
 Preferences prefs;
@@ -37,16 +58,22 @@ void blinkLED(int times, int delayMs = 200) {
 
 void setup() {
     // Initialize serial for diagnostics
-    Serial.begin(115200);
+#ifdef ESP32S3_CAM
+    // On ESP32-S3, configure UART0 with specific pins (Serial is USB CDC by default)
+    DEBUG_SERIAL.begin(115200, SERIAL_8N1, UART_RX_PIN, UART_TX_PIN);
+#else
+    // Original ESP32-CAM uses Serial for UART
+    DEBUG_SERIAL.begin(115200);
+#endif
     delay(500);
 
     // Initialize LED
     pinMode(LED_PIN, OUTPUT);
     digitalWrite(LED_PIN, LOW);
 
-    Serial.println("\n\n========================================");
-    Serial.println(VERSION_STRING);
-    Serial.println("========================================\n");
+    DEBUG_SERIAL.println("\n\n========================================");
+    DEBUG_SERIAL.printf("%s (%s)\n", VERSION_STRING, BOARD_NAME);
+    DEBUG_SERIAL.println("========================================\n");
 
     // Blink LED to indicate bootloader is running
     blinkLED(3, 100);
@@ -58,7 +85,7 @@ void setup() {
     prefs.end();
 
     if (!pendingOTA) {
-        Serial.println("[BOOTLOADER] No pending OTA update");
+        DEBUG_SERIAL.println("[BOOTLOADER] No pending OTA update");
 
         // Check if OTA0 partition exists and has valid app
         const esp_partition_t* ota0 = esp_partition_find_first(
@@ -73,56 +100,60 @@ void setup() {
 
             if (boot_partition != ota0) {
                 // First boot or otadata was erased - set OTA0 as boot partition
-                Serial.println("[BOOTLOADER] Setting OTA0 as boot partition for first time");
+                DEBUG_SERIAL.println("[BOOTLOADER] Setting OTA0 as boot partition for first time");
                 esp_ota_set_boot_partition(ota0);
             }
 
-            Serial.println("[BOOTLOADER] Booting into main application (OTA0)...\n");
+            DEBUG_SERIAL.println("[BOOTLOADER] Booting into main application (OTA0)...\n");
             delay(500);
             ESP.restart();
         } else {
-            Serial.println("[BOOTLOADER] ERROR: OTA0 partition not found!");
-            Serial.println("[BOOTLOADER] System halted.");
+            DEBUG_SERIAL.println("[BOOTLOADER] ERROR: OTA0 partition not found!");
+            DEBUG_SERIAL.println("[BOOTLOADER] System halted.");
             while(1) {
                 blinkLED(1, 1000);  // Slow blink to indicate error
             }
         }
     }
 
-    Serial.printf("[BOOTLOADER] Pending OTA update detected (size: %u bytes)\n", firmwareSize);
-    Serial.println("[BOOTLOADER] Starting OTA flash from SD card...\n");
+    DEBUG_SERIAL.printf("[BOOTLOADER] Pending OTA update detected (size: %u bytes)\n", firmwareSize);
+    DEBUG_SERIAL.println("[BOOTLOADER] Starting OTA flash from SD card...\n");
 
     // Blink LED rapidly during OTA
     blinkLED(10, 50);
 
     // Initialize SD card
+#ifdef ESP32S3_CAM
+    // ESP32-S3: Set custom SD card pins before begin
+    SD_MMC.setPins(SD_MMC_CLK, SD_MMC_CMD, SD_MMC_D0);
+#endif
     if (!SD_MMC.begin("/sdcard", true)) {  // 1-bit mode
-        Serial.println("[BOOTLOADER] ERROR: SD card initialization failed!");
+        DEBUG_SERIAL.println("[BOOTLOADER] ERROR: SD card initialization failed!");
 
         // Clear the pending flag to prevent boot loop
         prefs.begin("ota", false);
         prefs.putBool("pending", false);
         prefs.end();
 
-        Serial.println("[BOOTLOADER] Cleared pending flag to prevent boot loop");
-        Serial.println("[BOOTLOADER] Rebooting into main app...\n");
+        DEBUG_SERIAL.println("[BOOTLOADER] Cleared pending flag to prevent boot loop");
+        DEBUG_SERIAL.println("[BOOTLOADER] Rebooting into main app...\n");
         delay(2000);
         ESP.restart();
     }
 
-    Serial.println("[BOOTLOADER] SD card initialized");
+    DEBUG_SERIAL.println("[BOOTLOADER] SD card initialized");
 
     // Check if firmware file exists
     if (!SD_MMC.exists(FIRMWARE_FILE)) {
-        Serial.printf("[BOOTLOADER] ERROR: Firmware file not found: %s\n", FIRMWARE_FILE);
+        DEBUG_SERIAL.printf("[BOOTLOADER] ERROR: Firmware file not found: %s\n", FIRMWARE_FILE);
 
         // Clear the pending flag
         prefs.begin("ota", false);
         prefs.putBool("pending", false);
         prefs.end();
 
-        Serial.println("[BOOTLOADER] Cleared pending flag");
-        Serial.println("[BOOTLOADER] Rebooting into main app...\n");
+        DEBUG_SERIAL.println("[BOOTLOADER] Cleared pending flag");
+        DEBUG_SERIAL.println("[BOOTLOADER] Rebooting into main app...\n");
         SD_MMC.end();
         delay(2000);
         ESP.restart();
@@ -130,24 +161,24 @@ void setup() {
 
     File firmware = SD_MMC.open(FIRMWARE_FILE, FILE_READ);
     if (!firmware) {
-        Serial.printf("[BOOTLOADER] ERROR: Failed to open firmware file: %s\n", FIRMWARE_FILE);
+        DEBUG_SERIAL.printf("[BOOTLOADER] ERROR: Failed to open firmware file: %s\n", FIRMWARE_FILE);
 
         prefs.begin("ota", false);
         prefs.putBool("pending", false);
         prefs.end();
 
-        Serial.println("[BOOTLOADER] Cleared pending flag");
-        Serial.println("[BOOTLOADER] Rebooting into main app...\n");
+        DEBUG_SERIAL.println("[BOOTLOADER] Cleared pending flag");
+        DEBUG_SERIAL.println("[BOOTLOADER] Rebooting into main app...\n");
         SD_MMC.end();
         delay(2000);
         ESP.restart();
     }
 
     size_t fileSize = firmware.size();
-    Serial.printf("[BOOTLOADER] Firmware file size: %u bytes\n", fileSize);
+    DEBUG_SERIAL.printf("[BOOTLOADER] Firmware file size: %u bytes\n", fileSize);
 
     if (firmwareSize > 0 && fileSize != firmwareSize) {
-        Serial.printf("[BOOTLOADER] WARNING: File size mismatch (expected: %u, actual: %u)\n",
+        DEBUG_SERIAL.printf("[BOOTLOADER] WARNING: File size mismatch (expected: %u, actual: %u)\n",
                      firmwareSize, fileSize);
     }
 
@@ -159,7 +190,7 @@ void setup() {
     );
 
     if (ota0 == NULL) {
-        Serial.println("[BOOTLOADER] ERROR: OTA0 partition not found!");
+        DEBUG_SERIAL.println("[BOOTLOADER] ERROR: OTA0 partition not found!");
         firmware.close();
         SD_MMC.end();
 
@@ -167,17 +198,17 @@ void setup() {
         prefs.putBool("pending", false);
         prefs.end();
 
-        Serial.println("[BOOTLOADER] System halted.");
+        DEBUG_SERIAL.println("[BOOTLOADER] System halted.");
         while(1) {
             blinkLED(1, 1000);
         }
     }
 
-    Serial.printf("[BOOTLOADER] OTA0 partition: label=%s, size=%u bytes\n",
+    DEBUG_SERIAL.printf("[BOOTLOADER] OTA0 partition: label=%s, size=%u bytes\n",
                  ota0->label, ota0->size);
 
     if (fileSize > ota0->size) {
-        Serial.printf("[BOOTLOADER] ERROR: Firmware too large (%u bytes) for partition (%u bytes)\n",
+        DEBUG_SERIAL.printf("[BOOTLOADER] ERROR: Firmware too large (%u bytes) for partition (%u bytes)\n",
                      fileSize, ota0->size);
         firmware.close();
         SD_MMC.end();
@@ -186,7 +217,7 @@ void setup() {
         prefs.putBool("pending", false);
         prefs.end();
 
-        Serial.println("[BOOTLOADER] System halted.");
+        DEBUG_SERIAL.println("[BOOTLOADER] System halted.");
         while(1) {
             blinkLED(1, 1000);
         }
@@ -197,22 +228,22 @@ void setup() {
     prefs.putBool("pending", false);
     prefs.putUInt("size", 0);
     prefs.end();
-    Serial.println("[BOOTLOADER] Cleared pending OTA flag");
+    DEBUG_SERIAL.println("[BOOTLOADER] Cleared pending OTA flag");
 
     // Begin OTA
     esp_ota_handle_t ota_handle;
     esp_err_t err = esp_ota_begin(ota0, OTA_SIZE_UNKNOWN, &ota_handle);
     if (err != ESP_OK) {
-        Serial.printf("[BOOTLOADER] ERROR: esp_ota_begin failed: %s\n", esp_err_to_name(err));
+        DEBUG_SERIAL.printf("[BOOTLOADER] ERROR: esp_ota_begin failed: %s\n", esp_err_to_name(err));
         firmware.close();
         SD_MMC.end();
 
-        Serial.println("[BOOTLOADER] Rebooting into main app...\n");
+        DEBUG_SERIAL.println("[BOOTLOADER] Rebooting into main app...\n");
         delay(2000);
         ESP.restart();
     }
 
-    Serial.println("[BOOTLOADER] OTA begin successful, starting flash...");
+    DEBUG_SERIAL.println("[BOOTLOADER] OTA begin successful, starting flash...");
 
     // Flash firmware in chunks
     uint8_t buffer[FLASH_BUFFER_SIZE];
@@ -226,12 +257,12 @@ void setup() {
         if (bytesRead > 0) {
             err = esp_ota_write(ota_handle, buffer, bytesRead);
             if (err != ESP_OK) {
-                Serial.printf("[BOOTLOADER] ERROR: esp_ota_write failed: %s\n", esp_err_to_name(err));
+                DEBUG_SERIAL.printf("[BOOTLOADER] ERROR: esp_ota_write failed: %s\n", esp_err_to_name(err));
                 esp_ota_abort(ota_handle);
                 firmware.close();
                 SD_MMC.end();
 
-                Serial.println("[BOOTLOADER] Rebooting into main app...\n");
+                DEBUG_SERIAL.println("[BOOTLOADER] Rebooting into main app...\n");
                 delay(2000);
                 ESP.restart();
             }
@@ -241,7 +272,7 @@ void setup() {
             // Print progress every 10%
             size_t progress = (bytesWritten * 100) / fileSize;
             if (progress >= lastProgress + 10) {
-                Serial.printf("[BOOTLOADER] Flash progress: %u%% (%u/%u bytes)\n",
+                DEBUG_SERIAL.printf("[BOOTLOADER] Flash progress: %u%% (%u/%u bytes)\n",
                              progress, bytesWritten, fileSize);
                 blinkLED(1, 50);  // Quick blink for progress
                 lastProgress = progress;
@@ -249,49 +280,49 @@ void setup() {
         }
     }
 
-    Serial.printf("[BOOTLOADER] Flash complete: %u bytes written\n", bytesWritten);
+    DEBUG_SERIAL.printf("[BOOTLOADER] Flash complete: %u bytes written\n", bytesWritten);
 
     firmware.close();
 
     // End OTA
     err = esp_ota_end(ota_handle);
     if (err != ESP_OK) {
-        Serial.printf("[BOOTLOADER] ERROR: esp_ota_end failed: %s\n", esp_err_to_name(err));
+        DEBUG_SERIAL.printf("[BOOTLOADER] ERROR: esp_ota_end failed: %s\n", esp_err_to_name(err));
         SD_MMC.end();
 
-        Serial.println("[BOOTLOADER] Rebooting into main app...\n");
+        DEBUG_SERIAL.println("[BOOTLOADER] Rebooting into main app...\n");
         delay(2000);
         ESP.restart();
     }
 
-    Serial.println("[BOOTLOADER] OTA end successful");
+    DEBUG_SERIAL.println("[BOOTLOADER] OTA end successful");
 
     // Set OTA0 as boot partition
     err = esp_ota_set_boot_partition(ota0);
     if (err != ESP_OK) {
-        Serial.printf("[BOOTLOADER] ERROR: esp_ota_set_boot_partition failed: %s\n", esp_err_to_name(err));
+        DEBUG_SERIAL.printf("[BOOTLOADER] ERROR: esp_ota_set_boot_partition failed: %s\n", esp_err_to_name(err));
         SD_MMC.end();
 
-        Serial.println("[BOOTLOADER] Rebooting anyway...\n");
+        DEBUG_SERIAL.println("[BOOTLOADER] Rebooting anyway...\n");
         delay(2000);
         ESP.restart();
     }
 
-    Serial.println("[BOOTLOADER] Boot partition set to OTA0");
+    DEBUG_SERIAL.println("[BOOTLOADER] Boot partition set to OTA0");
 
     // Delete firmware file to save space
     if (SD_MMC.remove(FIRMWARE_FILE)) {
-        Serial.printf("[BOOTLOADER] Deleted firmware file: %s\n", FIRMWARE_FILE);
+        DEBUG_SERIAL.printf("[BOOTLOADER] Deleted firmware file: %s\n", FIRMWARE_FILE);
     } else {
-        Serial.printf("[BOOTLOADER] WARNING: Failed to delete firmware file: %s\n", FIRMWARE_FILE);
+        DEBUG_SERIAL.printf("[BOOTLOADER] WARNING: Failed to delete firmware file: %s\n", FIRMWARE_FILE);
     }
 
     SD_MMC.end();
 
-    Serial.println("\n========================================");
-    Serial.println("[BOOTLOADER] OTA UPDATE SUCCESSFUL!");
-    Serial.println("[BOOTLOADER] Rebooting into new firmware...");
-    Serial.println("========================================\n");
+    DEBUG_SERIAL.println("\n========================================");
+    DEBUG_SERIAL.println("[BOOTLOADER] OTA UPDATE SUCCESSFUL!");
+    DEBUG_SERIAL.println("[BOOTLOADER] Rebooting into new firmware...");
+    DEBUG_SERIAL.println("========================================\n");
 
     // Success blink
     blinkLED(5, 100);

@@ -16,6 +16,14 @@ bool SDLogger::init(const char* logDir) {
         return true;
     }
 
+#ifdef ESP32S3_CAM
+    // ESP32-S3 CAM: Set custom SD card pins (SDMMC 1-bit mode)
+    SD_MMC.setPins(39, 38, 40);  // CLK, CMD, D0
+    if (!SD_MMC.begin("/sdcard", true)) {  // 1-bit mode
+        return false;
+    }
+#else
+    // Original ESP32-CAM: Use default SDMMC 4-bit mode pins
     pinMode(14, PULLUP);
     pinMode(15, PULLUP);
     pinMode(2, PULLUP);
@@ -26,6 +34,7 @@ bool SDLogger::init(const char* logDir) {
         // Serial.println("SDLogger: Failed to initialize SD_MMC");
         return false;
     }
+#endif
 
     _logDir = String(logDir);
 
