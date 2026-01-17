@@ -3,9 +3,14 @@ import { Construct } from 'constructs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as iot from 'aws-cdk-lib/aws-iot';
 import { ThingWithCert } from 'cdk-iot-core-certificates-v3';
+import { RestApi } from 'aws-cdk-lib/aws-apigateway';
+
+export interface IoTDeviceStackProps extends cdk.StackProps {
+    api: RestApi
+}
 
 export class IotDeviceStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props?: IoTDeviceStackProps) {
     super(scope, id, props);
 
     const thingName = "BootBootsThing";
@@ -26,10 +31,11 @@ export class IotDeviceStack extends cdk.Stack {
       roles: [bbRole]
     });
 
+    // Allow the IoT device to PUT on any resource of the BootBoots API
     bbPolicy.addStatements(new iam.PolicyStatement({
-      actions: ["ec2:DescribeAccountAttributes"],
+      actions: ["execute-api:Invoke"],
       effect: iam.Effect.ALLOW,
-      resources: ["*"]
+      resources: [props!.api.arnForExecuteApi('PUT', '/*', '*')]
     }));
 
     const bbRoleAlias = new iot.CfnRoleAlias(this, 'BootBootsRoleAlias', {

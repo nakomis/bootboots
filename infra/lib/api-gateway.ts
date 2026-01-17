@@ -10,6 +10,8 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 
 export class ApiGatewayStack extends cdk.Stack {
+  public api: apigateway.RestApi; 
+
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
@@ -56,9 +58,8 @@ export class ApiGatewayStack extends cdk.Stack {
     // Grant S3 write permissions to the Lambda function
     imagesBucket.grantWrite(inferLambda);
 
-
     // Create the API Gateway
-    const api = new apigateway.RestApi(this, 'BootBootsInferApi', {
+    this.api = new apigateway.RestApi(this, 'BootBootsInferApi', {
       restApiName: 'BootBootsInference API',
       description: 'BootBoots Inference API Gateway with POST /infer endpoint',
       binaryMediaTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/octet-stream'],
@@ -72,7 +73,7 @@ export class ApiGatewayStack extends cdk.Stack {
     });
 
     // Create the /infer resource
-    const inferResource = api.root.addResource('infer');
+    const inferResource = this.api.root.addResource('infer');
 
     // Create API key
     const apiKey = new apigateway.ApiKey(this, 'BootBootsApiKey', {
@@ -82,6 +83,7 @@ export class ApiGatewayStack extends cdk.Stack {
 
     // Add POST method to /infer with API key requirement
     inferResource.addMethod('POST', new apigateway.LambdaIntegration(inferLambda), {
+      authorizationType: apigateway.AuthorizationType.IAM,
       apiKeyRequired: true,
       methodResponses: [
         {
@@ -97,6 +99,31 @@ export class ApiGatewayStack extends cdk.Stack {
           statusCode: '500',
         },
       ],
+    });
+
+    // Create the authCheck resource for IoT device authentication verification
+    const authCheckResource = this.api.root.addResource('authCheck');
+    authCheckResource.addMethod('POST', new apigateway.MockIntegration({
+      integrationResponses: [{
+        statusCode: '200',
+        responseTemplates: {
+          'application/json': JSON.stringify({ status: 'authenticated' }),
+        },
+      }],
+      requestTemplates: {
+        'application/json': '{"statusCode": 200}',
+      },
+    }), {
+      authorizationType: apigateway.AuthorizationType.IAM,
+      methodResponses: [{
+        statusCode: '200',
+      }],
+    });
+
+    // Output the authCheck ARN for IAM policy reference
+    new cdk.CfnOutput(this, 'AuthCheckApiArn', {
+      value: `arn:aws:execute-api:${this.region}:${this.account}:${this.api.restApiId}/*/POST/authCheck`,
+      description: 'ARN for the authCheck endpoint (for IAM policies)',
     });
 
     // Create usage plan with 500 requests per day quota
@@ -118,8 +145,8 @@ export class ApiGatewayStack extends cdk.Stack {
 
     // Associate the usage plan with the API stage
     usagePlan.addApiStage({
-      api: api,
-      stage: api.deploymentStage,
+      api: this.api,
+      stage: this.api.deploymentStage,
     });
 
     // Look up the existing hosted zone for sandbox.nakomis.com
@@ -141,7 +168,7 @@ export class ApiGatewayStack extends cdk.Stack {
     });
 
     // Map the custom domain to the API Gateway
-    customDomain.addBasePathMapping(api, {
+    customDomain.addBasePathMapping(this.api, {
       basePath: '',
     });
 
@@ -154,13 +181,13 @@ export class ApiGatewayStack extends cdk.Stack {
 
     // Output the API Gateway URL
     new cdk.CfnOutput(this, 'BootBootsInferApiGatewayUrl', {
-      value: api.url,
+      value: this.api.url,
       description: 'URL of the API Gateway',
     });
 
     // Output the /infer endpoint URL
     new cdk.CfnOutput(this, 'InferEndpointUrl', {
-      value: `${api.url}infer`,
+      value: `${this.api.url}infer`,
       description: 'URL of the /infer POST endpoint',
     });
 
