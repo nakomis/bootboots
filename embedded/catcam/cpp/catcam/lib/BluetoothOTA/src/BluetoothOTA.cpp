@@ -12,7 +12,15 @@ BluetoothOTA::BluetoothOTA() {
     _otaUpdate = nullptr;
     _initialized = false;
     _deviceConnected = false;
+    _wasConnected = false;
+    _pendingConnectNotify = false;
+    _hasPendingCommand = false;
+    _pendingLength = 0;
+    memset(_pendingBuffer, 0, MAX_PENDING_SIZE);
     _deviceName = "BootBoots-CatCam";
+    _totalChunks = 0;
+    _receivedChunks = 0;
+    _chunkVersion = "";
 }
 
 BluetoothOTA::~BluetoothOTA() {
@@ -186,12 +194,53 @@ bool BluetoothOTA::initWithExistingServer(BLEServer* pServer) {
 
 void BluetoothOTA::handle() {
     if (!_initialized) return;
-    
-    // Handle disconnection
-    if (!_deviceConnected && _pServer->getConnectedCount() == 0) {
-        delay(500); // Give the bluetooth stack time to get ready
-        _pServer->startAdvertising(); // Restart advertising
+
+    // Handle deferred connect notification (avoid stack overflow in BLE callback)
+    if (_pendingConnectNotify) {
+        _pendingConnectNotify = false;
+        sendStatusUpdate("connected", "Client connected to BootBoots");
     }
+
+    // Handle deferred command processing (avoid stack overflow in BLE callback)
+    if (_hasPendingCommand && _pendingLength > 0) {
+        _hasPendingCommand = false;
+
+        // Copy buffer to local String now that we're in main loop context
+        String commandCopy = String(_pendingBuffer);
+        _pendingLength = 0;
+        _pendingBuffer[0] = '\0';
+
+        // Process multiple commands if delimited by newlines (from queued chunks)
+        int startPos = 0;
+        int newlinePos;
+        while ((newlinePos = commandCopy.indexOf('\n', startPos)) != -1) {
+            String singleCommand = commandCopy.substring(startPos, newlinePos);
+            if (singleCommand.length() > 0) {
+                handleOTACommand(singleCommand);
+            }
+            startPos = newlinePos + 1;
+        }
+        // Process the last (or only) command
+        if (startPos < (int)commandCopy.length()) {
+            String lastCommand = commandCopy.substring(startPos);
+            if (lastCommand.length() > 0) {
+                handleOTACommand(lastCommand);
+            }
+        }
+    }
+
+    // Only restart advertising after a disconnection (not continuously)
+    // This prevents aborting incoming connection attempts
+    bool currentlyConnected = _pServer && _pServer->getConnectedCount() > 0;
+
+    if (_wasConnected && !currentlyConnected) {
+        // Just disconnected - restart advertising after a short delay
+        SDLogger::getInstance().infof("BluetoothOTA: Client disconnected, restarting advertising");
+        delay(500);
+        _pServer->startAdvertising();
+    }
+
+    _wasConnected = currentlyConnected;
 }
 
 bool BluetoothOTA::isConnected() {
@@ -217,6 +266,63 @@ void BluetoothOTA::handleOTACommand(const String& commandJson) {
     
     if (command.action == "ota_update") {
         processOTAUpdate(command);
+    } else if (command.action == "url_chunk") {
+        // Handle chunked URL transfer for long S3 signed URLs
+        DynamicJsonDocument doc(1024);
+        deserializeJson(doc, commandJson);
+
+        int chunkIndex = doc["chunk_index"] | -1;
+        int totalChunks = doc["total_chunks"] | 0;
+        String chunkData = doc["chunk_data"].as<String>();
+        String version = doc["version"].as<String>();
+
+        SDLogger::getInstance().infof("Received URL chunk %d/%d (%d bytes)",
+                                      chunkIndex + 1, totalChunks, chunkData.length());
+
+        if (chunkIndex < 0 || chunkIndex >= 10 || totalChunks > 10) {
+            sendStatusUpdate("error", "Invalid chunk parameters");
+            return;
+        }
+
+        // Reset if this is the first chunk or total changed
+        if (chunkIndex == 0 || totalChunks != _totalChunks) {
+            _totalChunks = totalChunks;
+            _receivedChunks = 0;
+            _chunkVersion = version;
+            for (int i = 0; i < 10; i++) {
+                _urlChunks[i] = "";
+            }
+        }
+
+        // Store the chunk
+        _urlChunks[chunkIndex] = chunkData;
+        _receivedChunks++;
+
+        // Check if all chunks received
+        if (_receivedChunks >= _totalChunks) {
+            // Reassemble the URL
+            String fullUrl = "";
+            for (int i = 0; i < _totalChunks; i++) {
+                fullUrl += _urlChunks[i];
+            }
+
+            SDLogger::getInstance().infof("URL reassembled (%d bytes), starting OTA update", fullUrl.length());
+
+            // Create OTA command with full URL
+            OTACommand otaCmd;
+            otaCmd.action = "ota_update";
+            otaCmd.firmware_url = fullUrl;
+            otaCmd.version = _chunkVersion;
+
+            // Reset chunk state
+            _totalChunks = 0;
+            _receivedChunks = 0;
+
+            // Process the OTA update
+            processOTAUpdate(otaCmd);
+        } else {
+            sendStatusUpdate("chunk_received", "Chunk " + String(chunkIndex + 1) + "/" + String(totalChunks) + " received");
+        }
     } else if (command.action == "get_status") {
         // Send current status
         if (_otaUpdate) {
@@ -319,8 +425,9 @@ void BluetoothOTA::processOTAUpdate(const OTACommand& command) {
 // Server Callbacks Implementation
 void BluetoothOTA::ServerCallbacks::onConnect(BLEServer* pServer) {
     _parent->_deviceConnected = true;
-    SDLogger::getInstance().infof("Bluetooth client connected");
-    _parent->sendStatusUpdate("connected", "Client connected to BootBoots");
+    // Defer status update to handle() to avoid stack overflow in BLE callback context
+    // The BTC_TASK has limited stack and sendStatusUpdate uses too much
+    _parent->_pendingConnectNotify = true;
 }
 
 void BluetoothOTA::ServerCallbacks::onDisconnect(BLEServer* pServer) {
@@ -330,10 +437,26 @@ void BluetoothOTA::ServerCallbacks::onDisconnect(BLEServer* pServer) {
 
 // Characteristic Callbacks Implementation
 void BluetoothOTACallbacks::onWrite(BLECharacteristic* pCharacteristic) {
-    std::string value = pCharacteristic->getValue();
-    
-    if (value.length() > 0) {
-        String command = String(value.c_str());
-        _parent->handleOTACommand(command);
+    // With reduced debug logging (CORE_DEBUG_LEVEL=2), we have more stack space
+    // Copy data to buffer here so we don't lose chunks between handle() calls
+    uint8_t* data = pCharacteristic->getData();
+    size_t len = pCharacteristic->getLength();
+
+    if (data && len > 0) {
+        int currentLen = _parent->_pendingLength;
+        int needed = currentLen + len + 1;  // +1 for newline delimiter
+
+        if (needed < BluetoothOTA::MAX_PENDING_SIZE - 1) {
+            // Add newline delimiter if not first command
+            if (currentLen > 0) {
+                _parent->_pendingBuffer[currentLen] = '\n';
+                currentLen++;
+            }
+            // Copy raw bytes
+            memcpy(_parent->_pendingBuffer + currentLen, data, len);
+            _parent->_pendingLength = currentLen + len;
+            _parent->_pendingBuffer[_parent->_pendingLength] = '\0';
+            _parent->_hasPendingCommand = true;
+        }
     }
 }

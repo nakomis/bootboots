@@ -117,8 +117,9 @@ cd ../catcam && pio run -e esp32s3cam
 
 ### Full Flash (both bootloader and catcam)
 
-1. Put device in download mode: Hold BOOT button, plug USB into **OTG port**, release BOOT
-2. Run:
+1. **Close the serial monitor first** (if running) - it locks the serial port
+2. Put device in download mode: Hold BOOT button, plug USB into **OTG port**, release BOOT
+3. Run:
 
 ```bash
 cd /Users/martinmu_1/repos/nakomis/bootboots/embedded/catcam/cpp
@@ -132,6 +133,8 @@ cd /Users/martinmu_1/repos/nakomis/bootboots/embedded/catcam/cpp
 ```
 
 ### Flash Only Main App (catcam)
+
+**Remember:** Close the serial monitor first, then put device in download mode.
 
 ```bash
 ~/.platformio/packages/tool-esptoolpy/esptool.py --chip esp32s3 --port /dev/cu.usbmodem* --baud 921600 \

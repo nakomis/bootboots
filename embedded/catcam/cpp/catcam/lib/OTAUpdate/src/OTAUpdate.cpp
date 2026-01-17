@@ -523,7 +523,12 @@ bool OTAUpdate::downloadToSD(const char* firmwareURL) {
     SD_MMC.end();
     delay(100);
     // Serial.println("[OTA] Remounting SD_MMC...");
+#ifdef ESP32S3_CAM
+    SD_MMC.setPins(39, 38, 40);  // CLK, CMD, D0 for ESP32-S3 CAM
+    if (!SD_MMC.begin("/sdcard", true)) {  // 1-bit mode for ESP32-S3
+#else
     if (!SD_MMC.begin()) {
+#endif
         SDLogger::getInstance().errorf("Failed to remount SD_MMC for OTA download");
         // Serial.println("[OTA] SD remount failed - rebooting...");
         delay(2000);

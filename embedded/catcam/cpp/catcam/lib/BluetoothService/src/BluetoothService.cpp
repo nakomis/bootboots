@@ -3,10 +3,10 @@
 // External reference to systemState defined in main.cpp
 extern SystemState systemState;
 
-BootBootsBluetoothService::BootBootsBluetoothService() 
-    : pServer(nullptr), pService(nullptr), pStatusCharacteristic(nullptr), 
-      pLogsCharacteristic(nullptr), pCommandCharacteristic(nullptr), 
-      deviceConnected(false) {
+BootBootsBluetoothService::BootBootsBluetoothService()
+    : pServer(nullptr), pService(nullptr), pStatusCharacteristic(nullptr),
+      pLogsCharacteristic(nullptr), pCommandCharacteristic(nullptr),
+      deviceConnected(false), pendingConnectLog(false) {
 }
 
 void BootBootsBluetoothService::init(const char* deviceName) {
@@ -122,9 +122,18 @@ bool BootBootsBluetoothService::isConnected() {
     return deviceConnected;
 }
 
+void BootBootsBluetoothService::handle() {
+    // Process deferred operations to avoid stack overflow in BLE callbacks
+    if (pendingConnectLog) {
+        pendingConnectLog = false;
+        SDLogger::getInstance().infof("Bluetooth client connected");
+    }
+}
+
 void BootBootsBluetoothService::onConnect(BLEServer* pServer) {
     deviceConnected = true;
-    SDLogger::getInstance().infof("Bluetooth client connected");
+    // Defer logging to handle() - BLE callback has limited stack (BTC_TASK)
+    pendingConnectLog = true;
 }
 
 void BootBootsBluetoothService::onDisconnect(BLEServer* pServer) {

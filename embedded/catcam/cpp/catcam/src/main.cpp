@@ -48,8 +48,11 @@ PCF8574Manager* pcfManager = nullptr;
 SystemState systemState;
 
 void setup() {
-    // Serial.begin(115200);
-    delay(100);
+    Serial.begin(115200);
+    delay(500);  // Give serial time to initialize
+    Serial.println("\n\n=== CATCAM STARTING ===");
+    Serial.printf("Version: %s\n", FIRMWARE_VERSION);
+    Serial.flush();
 
     // CRITICAL: Set boot partition to factory so bootloader runs on next reboot
     // This ensures the bootloader can check for pending OTA updates from SD card
@@ -79,7 +82,11 @@ void setup() {
     // No need to check for pending OTA updates on boot
 
     // Initialize SDLogger for normal operation (after OTA check)
-    SDLogger::getInstance().init("/logs");
+    Serial.println("Initializing SDLogger...");
+    Serial.flush();
+    bool sdLoggerOk = SDLogger::getInstance().init("/logs");
+    Serial.printf("SDLogger init result: %s\n", sdLoggerOk ? "OK" : "FAILED");
+    Serial.flush();
     SDLogger::getInstance().setLogLevel(LOG_DEBUG);
     SDLogger::getInstance().infof("=== BootBoots System Starting (%s) ===", BOARD_NAME);
 
@@ -111,6 +118,11 @@ void setup() {
 }
 
 void loop() {
+
+    // Handle Bluetooth service (deferred operations)
+    if (bluetoothService) {
+        bluetoothService->handle();
+    }
 
     if (bluetoothOTA) {
         bluetoothOTA->handle();

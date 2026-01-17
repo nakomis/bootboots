@@ -37,6 +37,8 @@ private:
 };
 
 class BluetoothOTA {
+    friend class BluetoothOTACallbacks;  // Allow callbacks to access private members
+
 public:
     BluetoothOTA();
     ~BluetoothOTA();
@@ -50,7 +52,7 @@ public:
 
     // OTA Update integration
     void setOTAUpdate(OTAUpdate* otaUpdate) { _otaUpdate = otaUpdate; }
-    
+
 private:
     BLEServer* _pServer;
     BLEService* _pService;
@@ -61,7 +63,20 @@ private:
     
     bool _initialized;
     bool _deviceConnected;
+    bool _wasConnected;  // Track previous connection state for advertising restart
+    bool _pendingConnectNotify;  // Deferred connect notification (avoid stack overflow in callback)
+    volatile bool _hasPendingCommand;  // Flag for deferred command processing
+    // Raw buffer for incoming BLE data (avoid String operations in callback)
+    static const int MAX_PENDING_SIZE = 4096;
+    char _pendingBuffer[MAX_PENDING_SIZE];
+    volatile int _pendingLength;
     String _deviceName;
+
+    // URL chunking support (for long S3 signed URLs)
+    String _urlChunks[10];  // Store up to 10 chunks
+    int _totalChunks;
+    int _receivedChunks;
+    String _chunkVersion;
     
     // Helper methods
     OTACommand parseCommand(const String& json);

@@ -20,6 +20,7 @@ class BootBootsBluetoothService : public BLEServerCallbacks, public BLECharacter
 public:
     BootBootsBluetoothService();
     void init(const char* deviceName = "BootBoots-CatCam");
+    void handle();  // Call in main loop to process deferred operations
     void updateSystemStatus(const SystemState& state);
     void setLogData(const String& logData);
     bool isConnected();
@@ -44,6 +45,7 @@ private:
     BLECharacteristic* pCommandCharacteristic;
     
     bool deviceConnected;
+    volatile bool pendingConnectLog;  // Deferred logging to avoid stack overflow in BLE callback
     String currentStatusJson;
     String currentLogsData;
     
