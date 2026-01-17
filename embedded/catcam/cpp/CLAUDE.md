@@ -113,9 +113,11 @@ cd bootloader && pio run -e esp32s3cam
 cd ../catcam && pio run -e esp32s3cam
 ```
 
-## OTA Deployment (Preferred Method)
+## Deployment Methods
 
-The easiest way to deploy new firmware is via Bluetooth OTA from the web interface:
+### OTA Deployment (Preferred Method)
+
+**This is the preferred way to deploy firmware.** No USB connection required - the device is updated wirelessly via Bluetooth OTA from the web interface.
 
 ```bash
 cd /Users/martinmu_1/repos/nakomis/bootboots/embedded/catcam/cpp/catcam
@@ -135,9 +137,11 @@ This script:
 
 Then use the web interface at localhost:3000 to trigger the OTA update via Bluetooth.
 
-## Flash Commands
+### USB Flash Commands (Backup Method)
 
-### Full Flash (both bootloader and catcam)
+**Use this only when OTA is not available** (e.g., device is bricked, bootloader needs updating, or first-time flash).
+
+#### Full Flash (both bootloader and catcam)
 
 1. **Close the serial monitor first** (if running) - it locks the serial port
 2. Put device in download mode: Hold BOOT button, plug USB into **OTG port**, release BOOT
@@ -154,7 +158,7 @@ cd /Users/martinmu_1/repos/nakomis/bootboots/embedded/catcam/cpp
   0x110000 catcam/.pio/build/esp32s3cam/firmware.bin
 ```
 
-### Flash Only Main App (catcam)
+#### Flash Only Main App (catcam)
 
 **Remember:** Close the serial monitor first, then put device in download mode.
 
@@ -164,9 +168,9 @@ cd /Users/martinmu_1/repos/nakomis/bootboots/embedded/catcam/cpp
   0x110000 catcam/.pio/build/esp32s3cam/firmware.bin
 ```
 
-### Serial Monitor
+#### Serial Monitor (for debugging)
 
-After flashing, unplug from OTG port and plug into **UART port**:
+For debugging via USB, unplug from OTG port and plug into **UART port**:
 
 ```bash
 pio device monitor -b 115200

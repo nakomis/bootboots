@@ -12,8 +12,10 @@
 #include "SystemState.h"
 #include "WifiConnect.h"
 #include "OTAUpdate.h"
+#include "AWSAuth.h"
 #include "version.h"
 #include "secrets.h"
+#include <HTTPClient.h>
 
 #include "main.h"
 
@@ -43,6 +45,15 @@ BootBootsBluetoothService* bluetoothService = nullptr;
 BluetoothOTA* bluetoothOTA = nullptr;
 OTAUpdate* otaUpdate = nullptr;
 PCF8574Manager* pcfManager = nullptr;
+AWSAuth* awsAuth = nullptr;
+
+// AWS Auth configuration
+const char* AWS_ROLE_ALIAS = "BootBootsRoleAlias";
+const char* API_HOST = "api.bootboots.sandbox.nakomis.com";
+const char* API_PATH = "/authCheck";
+
+// Function declarations
+void testAWSAuth();
 
 // System state instance
 SystemState systemState;
@@ -197,12 +208,22 @@ void initializeComponents() {
 
     // Initialize WiFi
     wifiConnect = new WifiConnect();
-    if (wifiConnect->connect()) {
+    if (wifiConnect->connect() == 0) {  // connect() returns 0 on success
         systemState.wifiConnected = true;
         SDLogger::getInstance().infof("WiFi connected successfully");
         SDLogger::getInstance().infof("IP Address: %s", WiFi.localIP().toString().c_str());
         if (systemState.sdCardReady) {
             SDLogger::getInstance().infof("WiFi connected successfully");
+        }
+
+        // Initialize AWS Auth and test it
+        awsAuth = new AWSAuth("eu-west-2");
+        if (awsAuth->initialize(AWS_CERT_CA, AWS_CERT_CRT, AWS_CERT_PRIVATE, AWS_IOT_CREDENTIALS_ENDPOINT)) {
+            SDLogger::getInstance().infof("AWS Auth initialized successfully");
+            // Run AWS Auth test
+            testAWSAuth();
+        } else {
+            SDLogger::getInstance().errorf("Failed to initialize AWS Auth");
         }
     } else {
         SDLogger::getInstance().warnf("WARNING: WiFi connection failed");
@@ -297,4 +318,63 @@ void handleSystemError(const char* component, const char* error) {
     // blinkStatusLED(5, 200); // 5 fast blinks for error
 }
 
+void testAWSAuth() {
+    SDLogger::getInstance().infof("=== Testing AWS Auth ===");
 
+    // Step 1: Get temporary credentials using the role alias
+    SDLogger::getInstance().infof("Step 1: Getting temporary credentials via role alias: %s", AWS_ROLE_ALIAS);
+    if (!awsAuth->getCredentialsWithRoleAlias(AWS_ROLE_ALIAS)) {
+        SDLogger::getInstance().errorf("Failed to get AWS credentials");
+        return;
+    }
+
+    SDLogger::getInstance().infof("Credentials obtained successfully!");
+
+    // Step 2: Make a signed POST request to authCheck endpoint
+    SDLogger::getInstance().infof("Step 2: Making signed POST request to https://%s%s", API_HOST, API_PATH);
+
+    String payload = "{}";  // Empty JSON payload
+
+    // Create SigV4 signed headers
+    SigV4Headers headers = awsAuth->createSigV4Headers("POST", API_PATH, API_HOST, payload);
+
+    if (!headers.isValid) {
+        SDLogger::getInstance().errorf("Failed to create SigV4 headers");
+        return;
+    }
+
+    // Make the actual HTTP request
+    WiFiClientSecure client;
+    client.setInsecure();  // For testing - in production, set proper CA cert
+
+    HTTPClient http;
+    String url = "https://" + String(API_HOST) + String(API_PATH);
+    http.begin(client, url);
+
+    // Add all required headers
+    http.addHeader("Content-Type", headers.contentType);
+    http.addHeader("Host", headers.host);
+    http.addHeader("X-Amz-Date", headers.date);
+    http.addHeader("X-Amz-Security-Token", headers.securityToken);
+    http.addHeader("Authorization", headers.authorization);
+
+    SDLogger::getInstance().debugf("Authorization: %s", headers.authorization.c_str());
+
+    int httpResponseCode = http.POST(payload);
+
+    SDLogger::getInstance().infof("HTTP Response Code: %d", httpResponseCode);
+
+    if (httpResponseCode == 200) {
+        SDLogger::getInstance().infof("SUCCESS! authCheck returned 200");
+        String response = http.getString();
+        SDLogger::getInstance().infof("Response: %s", response.c_str());
+    } else {
+        SDLogger::getInstance().errorf("FAILED! Expected 200, got %d", httpResponseCode);
+        String response = http.getString();
+        SDLogger::getInstance().errorf("Response: %s", response.c_str());
+    }
+
+    http.end();
+
+    SDLogger::getInstance().infof("=== AWS Auth Test Complete ===");
+}

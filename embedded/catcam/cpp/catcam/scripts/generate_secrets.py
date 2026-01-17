@@ -73,8 +73,19 @@ def get_iot_endpoint(iot_client) -> str:
         raise
 
 
+def get_iot_credentials_endpoint(iot_client) -> str:
+    """Get the AWS IoT Credentials Provider endpoint for the account."""
+    try:
+        response = iot_client.describe_endpoint(endpointType='iot:CredentialProvider')
+        return response['endpointAddress']
+    except ClientError as e:
+        print(f"Error fetching IoT credentials endpoint: {e}")
+        raise
+
+
 def generate_secrets_h(wifi_ssid: str, wifi_password: str, iot_endpoint: str,
-                       root_ca: str, cert_pem: str, priv_key: str) -> str:
+                       iot_credentials_endpoint: str, root_ca: str,
+                       cert_pem: str, priv_key: str) -> str:
     """Generate the contents of secrets.h."""
     return f'''#ifndef CATCAM_SECRETS_H
 #define CATCAM_SECRETS_H
@@ -82,6 +93,7 @@ def generate_secrets_h(wifi_ssid: str, wifi_password: str, iot_endpoint: str,
 const char WIFI_SSID[] = "{wifi_ssid}";
 const char WIFI_PASSWORD[] = "{wifi_password}";
 const char AWS_IOT_ENDPOINT[] = "{iot_endpoint}";
+const char AWS_IOT_CREDENTIALS_ENDPOINT[] = "{iot_credentials_endpoint}";
 
 const char BANNER[] = R"WELCOME({BANNER}
 )WELCOME";
@@ -158,6 +170,9 @@ def main():
         print("  - AWS IoT endpoint")
         iot_endpoint = get_iot_endpoint(iot_client)
 
+        print("  - AWS IoT credentials endpoint")
+        iot_credentials_endpoint = get_iot_credentials_endpoint(iot_client)
+
     except Exception as e:
         print(f"\nFailed to fetch parameters: {e}")
         sys.exit(1)
@@ -176,6 +191,7 @@ def main():
         wifi_ssid=wifi_ssid,
         wifi_password=wifi_password,
         iot_endpoint=iot_endpoint,
+        iot_credentials_endpoint=iot_credentials_endpoint,
         root_ca=root_ca,
         cert_pem=cert_pem.strip(),
         priv_key=priv_key.strip()
@@ -189,11 +205,12 @@ def main():
     print("=" * 60)
     print("  Secrets generated successfully!")
     print("=" * 60)
-    print(f"  WiFi SSID:     {wifi_ssid}")
-    print(f"  IoT Endpoint:  {iot_endpoint}")
-    print(f"  Certificate:   {len(cert_pem)} bytes")
-    print(f"  Private Key:   {len(priv_key)} bytes")
-    print(f"  Root CA:       {len(root_ca)} bytes")
+    print(f"  WiFi SSID:           {wifi_ssid}")
+    print(f"  IoT Endpoint:        {iot_endpoint}")
+    print(f"  Credentials Endpoint:{iot_credentials_endpoint}")
+    print(f"  Certificate:         {len(cert_pem)} bytes")
+    print(f"  Private Key:         {len(priv_key)} bytes")
+    print(f"  Root CA:             {len(root_ca)} bytes")
     print()
     print(f"Output written to: {secrets_file}")
     print()

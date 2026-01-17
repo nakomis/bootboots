@@ -22,8 +22,9 @@ export class IotDeviceStack extends cdk.Stack {
     });
 
     const bbRole = new iam.Role(this, "BootBootsIamRole", {
+      roleName: "BootBootsThingIamRole",
       description: "Used by BootBoots device to access Non-Iot AWS resoruces",
-      assumedBy: new iam.ServicePrincipal("iot.amazonaws.com")
+      assumedBy: new iam.ServicePrincipal("credentials.iot.amazonaws.com")
     });
 
     const bbPolicy = new iam.Policy(this, "BootBootsIamPolicy", {
@@ -31,11 +32,11 @@ export class IotDeviceStack extends cdk.Stack {
       roles: [bbRole]
     });
 
-    // Allow the IoT device to PUT on any resource of the BootBoots API
+    // Allow the IoT device to invoke any method on the BootBoots API
     bbPolicy.addStatements(new iam.PolicyStatement({
       actions: ["execute-api:Invoke"],
       effect: iam.Effect.ALLOW,
-      resources: [props!.api.arnForExecuteApi('PUT', '/*', '*')]
+      resources: [props!.api.arnForExecuteApi('*', '/*', '*')]
     }));
 
     const bbRoleAlias = new iot.CfnRoleAlias(this, 'BootBootsRoleAlias', {
