@@ -1,10 +1,32 @@
-# Welcome to your CDK TypeScript project
+# BootBoots Infrastructure
 
-This is a blank project for CDK development with TypeScript.
+CDK infrastructure for the BootBoots IoT device.
 
-The `cdk.json` file tells the CDK Toolkit how to execute your app.
+## Prerequisites
 
-## Useful commands
+- Node.js and npm/yarn
+- AWS CLI configured with `nakom.is-sandbox` profile
+
+## Deployment
+
+Deploy the IoT stack:
+
+```bash
+npx cdk deploy IotDeviceStack
+```
+
+The `ThingWithCert` construct automatically:
+- Creates the IoT Thing (`BootBootsThing`)
+- Generates and registers a certificate
+- Stores credentials in SSM Parameter Store with the `BootsBoots` prefix
+
+## SSM Parameters
+
+After deployment, the following parameters are available in SSM:
+- `/BootsBoots/cert_pem` - Certificate PEM
+- `/BootsBoots/priv_key` - Private key
+
+## CDK Commands
 
 * `npm run build`   compile typescript to js
 * `npm run watch`   watch for changes and compile

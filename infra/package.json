@@ -22,6 +22,7 @@
   "dependencies": {
     "@aws-lambda-powertools/logger": "^2.27.0",
     "aws-cdk-lib": "2.201.0",
+    "cdk-iot-core-certificates-v3": "^0.0.14",
     "constructs": "^10.0.0"
   }
 }
