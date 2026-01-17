@@ -113,6 +113,28 @@ cd bootloader && pio run -e esp32s3cam
 cd ../catcam && pio run -e esp32s3cam
 ```
 
+## OTA Deployment (Preferred Method)
+
+The easiest way to deploy new firmware is via Bluetooth OTA from the web interface:
+
+```bash
+cd /Users/martinmu_1/repos/nakomis/bootboots/embedded/catcam/cpp/catcam
+
+# Set AWS credentials for S3 upload
+export AWS_PROFILE=nakom.is-sandbox
+
+# Build, bump version, and upload to S3
+python3 scripts/build_and_upload.py
+```
+
+This script:
+1. Bumps the version number in `include/version.h`
+2. Builds the firmware for ESP32-S3
+3. Uploads to S3 bucket `bootboots-firmware-updates`
+4. Lambda automatically updates the manifest
+
+Then use the web interface at localhost:3000 to trigger the OTA update via Bluetooth.
+
 ## Flash Commands
 
 ### Full Flash (both bootloader and catcam)

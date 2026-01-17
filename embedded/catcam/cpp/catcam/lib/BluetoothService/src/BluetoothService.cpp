@@ -6,7 +6,9 @@ extern SystemState systemState;
 BootBootsBluetoothService::BootBootsBluetoothService()
     : pServer(nullptr), pService(nullptr), pStatusCharacteristic(nullptr),
       pLogsCharacteristic(nullptr), pCommandCharacteristic(nullptr),
-      deviceConnected(false), pendingConnectLog(false) {
+      deviceConnected(false), pendingConnectLog(false), _hasPendingCommand(false),
+      _pendingDisconnect(false) {
+    memset(_pendingCommandBuffer, 0, MAX_PENDING_CMD_SIZE);
 }
 
 void BootBootsBluetoothService::init(const char* deviceName) {
@@ -128,6 +130,29 @@ void BootBootsBluetoothService::handle() {
         pendingConnectLog = false;
         SDLogger::getInstance().infof("Bluetooth client connected");
     }
+
+    // Process deferred disconnect (from onDisconnect callback)
+    if (_pendingDisconnect) {
+        _pendingDisconnect = false;
+        SDLogger::getInstance().infof("BluetoothService client disconnected");
+        delay(500);
+        if (pServer) {
+            pServer->startAdvertising();
+        }
+        SDLogger::getInstance().infof("Bluetooth advertising restarted");
+    }
+
+    // Process deferred command (from onWrite callback)
+    if (_hasPendingCommand) {
+        _hasPendingCommand = false;
+
+        // Copy to local String now that we're in main loop context with full stack
+        String command = String(_pendingCommandBuffer);
+        _pendingCommandBuffer[0] = '\0';
+
+        SDLogger::getInstance().infof("Bluetooth command received: %s", command.c_str());
+        processCommand(command);
+    }
 }
 
 void BootBootsBluetoothService::onConnect(BLEServer* pServer) {
@@ -138,44 +163,34 @@ void BootBootsBluetoothService::onConnect(BLEServer* pServer) {
 
 void BootBootsBluetoothService::onDisconnect(BLEServer* pServer) {
     deviceConnected = false;
-    SDLogger::getInstance().infof("BluetoothService client disconnected");
-    
-    // Restart advertising
-    delay(500);
-    pServer->startAdvertising();
-    SDLogger::getInstance().infof("Bluetooth advertising restarted");
+    // Defer logging and advertising restart to handle() - BLE callback has limited stack (BTC_TASK)
+    _pendingDisconnect = true;
 }
 
 void BootBootsBluetoothService::onWrite(BLECharacteristic* pCharacteristic) {
-    LOG_DF("Bluetooth characteristic written");
-    LOG_DF("Characteristic UUID: %s", pCharacteristic->getUUID().toString().c_str());
+    // Defer command processing to handle() to avoid stack overflow in BLE callback (BTC_TASK has ~3.5KB stack)
     if (pCharacteristic == pCommandCharacteristic) {
-        String command = pCharacteristic->getValue().c_str();
-        SDLogger::getInstance().infof("Bluetooth command received: %s", command.c_str());
-        processCommand(command);
+        uint8_t* data = pCharacteristic->getData();
+        size_t len = pCharacteristic->getLength();
+
+        if (data && len > 0 && len < MAX_PENDING_CMD_SIZE - 1) {
+            memcpy(_pendingCommandBuffer, data, len);
+            _pendingCommandBuffer[len] = '\0';
+            _hasPendingCommand = true;
+        }
     }
 }
 
 void BootBootsBluetoothService::onRead(BLECharacteristic* pCharacteristic) {
+    // IMPORTANT: This runs in BTC_TASK with limited stack (~3.5KB)
+    // Do NOT log or perform heavy operations here!
     if (pCharacteristic == pStatusCharacteristic) {
+        // Just set the cached status - no logging
         pCharacteristic->setValue(currentStatusJson.c_str());
-        SDLogger::getInstance().infof("Bluetooth status read requested");
     } else if (pCharacteristic == pLogsCharacteristic) {
-        // Request fewer lines to stay within BLE MTU limits (typically 512 bytes)
-        String logData = getLatestLogEntries(10);
-
-        // Truncate if still too large (BLE characteristic max is ~512 bytes)
-        if (logData.length() > 500) {
-            logData = logData.substring(0, 500);
-            // Close JSON array if truncated
-            int lastComma = logData.lastIndexOf(',');
-            if (lastComma > 0) {
-                logData = logData.substring(0, lastComma) + "]";
-            }
-        }
-
-        pCharacteristic->setValue(logData.c_str());
-        SDLogger::getInstance().infof("Bluetooth logs read requested (%d bytes)", logData.length());
+        // Return cached logs data (logs are now retrieved via command mechanism)
+        // Don't read from SD card here - too heavy for BLE callback
+        pCharacteristic->setValue(currentLogsData.c_str());
     }
 }
 

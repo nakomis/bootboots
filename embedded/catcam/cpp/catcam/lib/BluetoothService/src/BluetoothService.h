@@ -48,6 +48,12 @@ private:
     volatile bool pendingConnectLog;  // Deferred logging to avoid stack overflow in BLE callback
     String currentStatusJson;
     String currentLogsData;
+
+    // Deferred command processing (avoid stack overflow in BLE callback)
+    static const int MAX_PENDING_CMD_SIZE = 512;
+    char _pendingCommandBuffer[MAX_PENDING_CMD_SIZE];
+    volatile bool _hasPendingCommand;
+    volatile bool _pendingDisconnect;  // Deferred disconnect handling
     
     // Helper methods
     String formatSystemStatusJson(const SystemState& state);

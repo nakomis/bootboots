@@ -397,17 +397,6 @@ void SDLogger::processRecentLogEntries(int maxLines, std::function<void(const St
         if (!file) {
             processor("error - Failed to open log file");
             return false;
-        } else {
-            file.close();
-            processor("Hello");
-            delay(5000);
-            processor("World");
-            delay(500);
-            processor("Foo");
-            delay(50);
-            processor("Bar");
-            processor("Baz");
-            return true;
         }
 
         if (maxLines == -1) {
