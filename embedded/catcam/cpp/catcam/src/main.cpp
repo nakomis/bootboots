@@ -480,21 +480,21 @@ void capturePhotoLoop() {
 
         SDLogger::getInstance().infof("=== Photo %d of 20 (press BOOT to exit) ===", iteration);
 
-        // Step 1: Flash red LED (accelerating) - check for button press
+        // Step 1: Flash red LED (starts slow, gets faster) - 5 seconds
         SDLogger::getInstance().debugf("Red LED countdown...");
-        if (flashLedAccelerating(255, 0, 0, 50, 250, 2500)) {
+        if (flashLedAccelerating(255, 0, 0, 500, 250, 2500)) {
             break;  // Button was pressed
         }
 
-        // Step 2: Flash blue LED (accelerating) - check for button press
+        // Step 2: Flash blue LED (starts slow, gets faster) - 5 seconds
         SDLogger::getInstance().debugf("Blue LED countdown...");
-        if (flashLedAccelerating(0, 0, 255, 250, 500, 2500)) {
+        if (flashLedAccelerating(0, 0, 255, 250, 50, 2500)) {
             break;  // Button was pressed
         }
 
-        // Step 3: Set green LED on for photo capture
+        // Step 3: Set bright WHITE for photo capture
 #ifdef ESP32S3_CAM
-        rgbLed.setBrightness(100);  // 0-255, moderate brightness
+        rgbLed.setBrightness(255);  // Maximum brightness for photo
 #endif
         setLedColor(255, 255, 255);
 
@@ -528,44 +528,42 @@ void capturePhotoLoop() {
         String response = httpClient.postImage(image, API_HOST, API_PATH, awsAuth);
 
         // Parse response and log cat percentages
-        DynamicJsonDocument doc(1024);
+        // Format: {"success": true, "data": {"probabilities": [...]}, "mostLikelyCat": {"name": "Tau", "confidence": 0.71, "index": 4}}
+        DynamicJsonDocument doc(2048);
         DeserializationError jsonError = deserializeJson(doc, response);
+
+        // Cat names matching model output indices
+        const char* CAT_NAMES[] = {"Boots", "Chi", "Kappa", "Mu", "Tau", "NoCat"};
 
         if (jsonError) {
             SDLogger::getInstance().warnf("Failed to parse response JSON: %s", jsonError.c_str());
             SDLogger::getInstance().infof("Raw response: %s", response.c_str());
         }
-        else {
-            // Extract cat percentages from response
-            // Expected format: {"boots": 0.85, "laces": 0.12, "no_cat": 0.03} or similar
-            String resultLog = "Cat detection results: ";
-            String winner = "";
-            float winnerScore = -1.0;
+        else if (doc["success"] == true) {
+            // Get winner from mostLikelyCat object at root level
+            JsonObject mostLikelyCat = doc["mostLikelyCat"];
+            const char* winnerName = mostLikelyCat["name"] | "Unknown";
+            float winnerConfidence = mostLikelyCat["confidence"] | 0.0f;
 
-            JsonObject root = doc.as<JsonObject>();
-            for (JsonPair kv : root) {
-                const char* catName = kv.key().c_str();
-                float score = kv.value().as<float>();
-
-                // Build log string
-                char scoreStr[32];
-                snprintf(scoreStr, sizeof(scoreStr), "%s=%.1f%% ", catName, score * 100.0);
-                resultLog += scoreStr;
-
-                // Track winner
-                if (score > winnerScore) {
-                    winnerScore = score;
-                    winner = catName;
+            // Build results string from probabilities array in data
+            String resultLog = "";
+            JsonObject data = doc["data"];
+            if (data.containsKey("probabilities") && data["probabilities"].is<JsonArray>()) {
+                JsonArray probabilities = data["probabilities"];
+                for (size_t i = 0; i < probabilities.size() && i < 6; i++) {
+                    float score = probabilities[i].as<float>();
+                    char scoreStr[32];
+                    snprintf(scoreStr, sizeof(scoreStr), "%s=%.1f%% ", CAT_NAMES[i], score * 100.0);
+                    resultLog += scoreStr;
                 }
             }
 
-            if (winner.length() > 0) {
-                SDLogger::getInstance().infof("%s | Winner: %s (%.1f%%)",
-                    resultLog.c_str(), winner.c_str(), winnerScore * 100.0);
-            }
-            else {
-                SDLogger::getInstance().infof("Response: %s", response.c_str());
-            }
+            SDLogger::getInstance().infof("%s | Winner: %s (%.1f%%)",
+                resultLog.c_str(), winnerName, winnerConfidence * 100.0);
+        }
+        else {
+            // Log the raw response if format is unexpected
+            SDLogger::getInstance().warnf("Unexpected response format: %s", response.c_str());
         }
 
         // Release image buffer
