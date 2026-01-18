@@ -7,6 +7,8 @@
 #include <BLEUtils.h>
 #include <BLE2902.h>
 #include <ArduinoJson.h>
+#include <SD_MMC.h>
+#include <vector>
 #include "../../SDLogger/src/SDLogger.h"
 #include "../../../include/SystemState.h"
 
@@ -60,6 +62,11 @@ private:
     String getLatestLogEntries(int maxEntries = 50);
     void processCommand(const String& command);
     void sendResponse(const String& response);
+
+    // Image transfer methods
+    std::vector<String> listImages();
+    void sendImageList();
+    void sendImage(const String& filename);
 };
 
 #endif

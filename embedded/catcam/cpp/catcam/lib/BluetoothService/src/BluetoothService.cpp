@@ -1,4 +1,5 @@
 #include "BluetoothService.h"
+#include <algorithm>
 
 // External reference to systemState defined in main.cpp
 extern SystemState systemState;
@@ -254,6 +255,23 @@ void BootBootsBluetoothService::processCommand(const String& command) {
         serializeJson(response, responseStr);
         SDLogger::getInstance().infof("Ping received, sending pong");
         sendResponse(responseStr);
+    } else if (cmd == "list_images") {
+        SDLogger::getInstance().infof("Image list request via command");
+        sendImageList();
+    } else if (cmd == "get_image") {
+        String filename = doc["filename"] | "";
+        if (filename.length() > 0) {
+            SDLogger::getInstance().infof("Image request via command: %s", filename.c_str());
+            sendImage(filename);
+        } else {
+            SDLogger::getInstance().warnf("get_image command missing filename");
+            DynamicJsonDocument errorDoc(128);
+            errorDoc["type"] = "error";
+            errorDoc["message"] = "Missing filename parameter";
+            String errorJson;
+            serializeJson(errorDoc, errorJson);
+            sendResponse(errorJson);
+        }
     } else {
         SDLogger::getInstance().warnf("Unknown command: %s", cmd.c_str());
     }
@@ -264,4 +282,158 @@ void BootBootsBluetoothService::sendResponse(const String& response) {
         pCommandCharacteristic->setValue(response.c_str());
         pCommandCharacteristic->notify();
     }
+}
+
+std::vector<String> BootBootsBluetoothService::listImages() {
+    std::vector<String> imageFiles;
+
+    File dir = SD_MMC.open("/images");
+    if (!dir || !dir.isDirectory()) {
+        SDLogger::getInstance().warnf("Failed to open /images directory");
+        return imageFiles;
+    }
+
+    File entry;
+    while ((entry = dir.openNextFile())) {
+        String name = entry.name();
+        if (name.endsWith(".jpg")) {
+            imageFiles.push_back(name);
+        }
+        entry.close();
+    }
+    dir.close();
+
+    // Sort alphabetically (newest last due to timestamp naming)
+    std::sort(imageFiles.begin(), imageFiles.end());
+
+    return imageFiles;
+}
+
+void BootBootsBluetoothService::sendImageList() {
+    std::vector<String> images = listImages();
+
+    DynamicJsonDocument doc(2048);
+    doc["type"] = "image_list";
+    JsonArray list = doc.createNestedArray("images");
+
+    for (const String& img : images) {
+        list.add(img);
+    }
+
+    doc["count"] = images.size();
+
+    String jsonStr;
+    serializeJson(doc, jsonStr);
+    sendResponse(jsonStr);
+
+    SDLogger::getInstance().infof("Sent image list: %d images", images.size());
+}
+
+void BootBootsBluetoothService::sendImage(const String& filename) {
+    // Construct full path
+    String filepath = "/images/" + filename;
+
+    File file = SD_MMC.open(filepath.c_str(), FILE_READ);
+    if (!file) {
+        SDLogger::getInstance().errorf("Failed to open image file: %s", filepath.c_str());
+        DynamicJsonDocument errorDoc(128);
+        errorDoc["type"] = "error";
+        errorDoc["message"] = "File not found";
+        String errorJson;
+        serializeJson(errorDoc, errorJson);
+        sendResponse(errorJson);
+        return;
+    }
+
+    size_t fileSize = file.size();
+    SDLogger::getInstance().infof("Sending image: %s (%d bytes)", filename.c_str(), fileSize);
+
+    // Send start notification
+    DynamicJsonDocument startDoc(256);
+    startDoc["type"] = "image_start";
+    startDoc["filename"] = filename;
+    startDoc["size"] = fileSize;
+    String startJson;
+    serializeJson(startDoc, startJson);
+    sendResponse(startJson);
+    delay(50);
+
+    // Send image data in chunks (base64 encoded)
+    // BLE MTU is typically 512 bytes, so use ~400 bytes of base64 per chunk (~300 bytes raw)
+    const size_t RAW_CHUNK_SIZE = 300;
+    uint8_t buffer[RAW_CHUNK_SIZE];
+    int chunkIndex = 0;
+    size_t totalChunks = (fileSize + RAW_CHUNK_SIZE - 1) / RAW_CHUNK_SIZE;
+
+    while (file.available()) {
+        size_t bytesRead = file.read(buffer, RAW_CHUNK_SIZE);
+
+        // Base64 encode the chunk
+        size_t encodedLen = ((bytesRead + 2) / 3) * 4 + 1;
+        char* encoded = new char[encodedLen];
+
+        // Simple base64 encoding
+        static const char base64_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        size_t i = 0, j = 0;
+        uint8_t arr3[3], arr4[4];
+        int k = 0;
+
+        for (size_t n = 0; n < bytesRead; n++) {
+            arr3[i++] = buffer[n];
+            if (i == 3) {
+                arr4[0] = (arr3[0] & 0xfc) >> 2;
+                arr4[1] = ((arr3[0] & 0x03) << 4) + ((arr3[1] & 0xf0) >> 4);
+                arr4[2] = ((arr3[1] & 0x0f) << 2) + ((arr3[2] & 0xc0) >> 6);
+                arr4[3] = arr3[2] & 0x3f;
+                for (i = 0; i < 4; i++) {
+                    encoded[k++] = base64_chars[arr4[i]];
+                }
+                i = 0;
+            }
+        }
+
+        if (i > 0) {
+            for (size_t n = i; n < 3; n++) arr3[n] = 0;
+            arr4[0] = (arr3[0] & 0xfc) >> 2;
+            arr4[1] = ((arr3[0] & 0x03) << 4) + ((arr3[1] & 0xf0) >> 4);
+            arr4[2] = ((arr3[1] & 0x0f) << 2) + ((arr3[2] & 0xc0) >> 6);
+            for (size_t n = 0; n < i + 1; n++) {
+                encoded[k++] = base64_chars[arr4[n]];
+            }
+            while (i++ < 3) {
+                encoded[k++] = '=';
+            }
+        }
+        encoded[k] = '\0';
+
+        // Send chunk
+        DynamicJsonDocument chunkDoc(600);
+        chunkDoc["type"] = "image_chunk";
+        chunkDoc["chunk"] = chunkIndex;
+        chunkDoc["total"] = totalChunks;
+        chunkDoc["data"] = encoded;
+
+        String chunkJson;
+        serializeJson(chunkDoc, chunkJson);
+        sendResponse(chunkJson);
+
+        delete[] encoded;
+        chunkIndex++;
+
+        // Small delay between chunks
+        delay(30);
+    }
+
+    file.close();
+
+    // Send completion notification
+    DynamicJsonDocument endDoc(128);
+    endDoc["type"] = "image_complete";
+    endDoc["filename"] = filename;
+    endDoc["chunks"] = chunkIndex;
+    String endJson;
+    serializeJson(endDoc, endJson);
+    sendResponse(endJson);
+
+    SDLogger::getInstance().infof("Image transfer complete: %d chunks sent", chunkIndex);
 }

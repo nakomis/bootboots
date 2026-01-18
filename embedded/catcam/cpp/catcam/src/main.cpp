@@ -6,6 +6,9 @@
 #include <esp_ota_ops.h>
 #include <esp_partition.h>
 #include <ArduinoJson.h>
+#include <time.h>
+#include <vector>
+#include <algorithm>
 
 #include "BluetoothService.h"
 #include "BluetoothOTA.h"
@@ -48,11 +51,12 @@ Adafruit_NeoPixel rgbLed(NUM_LEDS, RGB_LED_PIN, NEO_GRB + NEO_KHZ800);
 
 #define PCF8574_ADDRESS 0x20    // I2C address for PCF8574
 
-// BOOT button for user input (can exit photo loop early)
+// BOOT button for user input (triggers photo capture)
 #define BOOT_BUTTON_PIN 0       // GPIO0 - BOOT button (LOW when pressed)
 
-// Global flag to exit photo loop
-volatile bool exitPhotoLoop = false;
+// Image storage settings
+#define IMAGES_DIR "/images"
+#define MAX_IMAGES_TO_KEEP 20
 
 // Global system components
 SDLogger* sdLogger = nullptr;
@@ -70,11 +74,17 @@ const char* API_HOST = "api.bootboots.sandbox.nakomis.com";
 const char* API_PATH = "/infer";
 
 // Function declarations
-void capturePhotoLoop();
+void initCameraAndLed();
+void captureAndPostPhoto();
 void setLedColor(uint8_t r, uint8_t g, uint8_t b);
 void ledOff();
 bool flashLedAccelerating(uint8_t r, uint8_t g, uint8_t b, unsigned long startInterval, unsigned long endInterval, unsigned long durationMs);
 bool isBootButtonPressed();
+String getTimestampFilename();
+bool saveImageToSD(const String& basename, NamedImage* image);
+bool saveResponseToSD(const String& basename, const String& response);
+void cleanupOldImages();
+void initImagesDirectory();
 
 // System state instance
 SystemState systemState;
@@ -152,6 +162,19 @@ void setup() {
 }
 
 void loop() {
+    // Check for BOOT button press to capture photo
+    static bool lastButtonState = false;
+    bool buttonPressed = isBootButtonPressed();
+
+    // Detect rising edge (button just pressed) with debounce
+    if (buttonPressed && !lastButtonState) {
+        delay(50);  // Debounce
+        if (isBootButtonPressed()) {  // Confirm still pressed
+            SDLogger::getInstance().infof("BOOT button pressed - capturing photo");
+            captureAndPostPhoto();
+        }
+    }
+    lastButtonState = buttonPressed;
 
     // Handle Bluetooth service (deferred operations)
     if (bluetoothService) {
@@ -180,15 +203,15 @@ void loop() {
         }
     }
 
-    delay(1000);
+    delay(100);  // Shorter delay for responsive button handling
 }
 
 void initializeHardware() {
     SDLogger::getInstance().infof("Initializing hardware...");
 
-    // Initialize BOOT button for user input (exit photo loop)
+    // Initialize BOOT button for user input (triggers photo capture)
     pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
-    SDLogger::getInstance().infof("BOOT button initialized on GPIO%d (press to exit photo loop)", BOOT_BUTTON_PIN);
+    SDLogger::getInstance().infof("BOOT button initialized on GPIO%d (press to capture photo)", BOOT_BUTTON_PIN);
 
     // Enable internal pull-ups on I2C pins before initializing I2C
     pinMode(I2C_SDA, INPUT_PULLUP);
@@ -210,6 +233,8 @@ void initializeComponents() {
     if (SDLogger::getInstance().isInitialized()) {
         systemState.sdCardReady = true;
         SDLogger::getInstance().infof("SD Logger initialized successfully");
+        // Initialize images directory for storing captured photos
+        initImagesDirectory();
     }
     else {
         systemState.sdCardReady = false;
@@ -249,8 +274,8 @@ void initializeComponents() {
         awsAuth = new AWSAuth("eu-west-2");
         if (awsAuth->initialize(AWS_CERT_CA, AWS_CERT_CRT, AWS_CERT_PRIVATE, AWS_IOT_CREDENTIALS_ENDPOINT)) {
             SDLogger::getInstance().infof("AWS Auth initialized successfully");
-            // Start the photo capture loop
-            capturePhotoLoop();
+            // Initialize camera and LED for photo capture
+            initCameraAndLed();
         }
         else {
             SDLogger::getInstance().errorf("Failed to initialize AWS Auth");
@@ -368,6 +393,154 @@ bool isBootButtonPressed() {
     return digitalRead(BOOT_BUTTON_PIN) == LOW;
 }
 
+// Generate a timestamp filename in format: 2026-01-18T11-28-33-179Z
+String getTimestampFilename() {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    time_t now = tv.tv_sec;
+    struct tm timeinfo;
+    gmtime_r(&now, &timeinfo);
+
+    char timestamp[32];
+    int millis_part = tv.tv_usec / 1000;
+    snprintf(timestamp, sizeof(timestamp), "%04d-%02d-%02dT%02d-%02d-%02d-%03dZ",
+        timeinfo.tm_year + 1900,
+        timeinfo.tm_mon + 1,
+        timeinfo.tm_mday,
+        timeinfo.tm_hour,
+        timeinfo.tm_min,
+        timeinfo.tm_sec,
+        millis_part);
+
+    return String(timestamp);
+}
+
+// Initialize the images directory on SD card
+void initImagesDirectory() {
+    if (!SD_MMC.exists(IMAGES_DIR)) {
+        if (SD_MMC.mkdir(IMAGES_DIR)) {
+            SDLogger::getInstance().infof("Created images directory: %s", IMAGES_DIR);
+        } else {
+            SDLogger::getInstance().errorf("Failed to create images directory: %s", IMAGES_DIR);
+        }
+    } else {
+        SDLogger::getInstance().debugf("Images directory exists: %s", IMAGES_DIR);
+    }
+}
+
+// Save image to SD card
+bool saveImageToSD(const String& basename, NamedImage* image) {
+    if (!image || !image->image || image->size == 0) {
+        SDLogger::getInstance().errorf("Invalid image data");
+        return false;
+    }
+
+    String filepath = String(IMAGES_DIR) + "/" + basename + ".jpg";
+    File file = SD_MMC.open(filepath.c_str(), FILE_WRITE);
+    if (!file) {
+        SDLogger::getInstance().errorf("Failed to open file for writing: %s", filepath.c_str());
+        return false;
+    }
+
+    size_t written = file.write(image->image, image->size);
+    file.close();
+
+    if (written != image->size) {
+        SDLogger::getInstance().errorf("Failed to write complete image: %d of %d bytes", written, image->size);
+        return false;
+    }
+
+    SDLogger::getInstance().infof("Saved image: %s (%d bytes)", filepath.c_str(), image->size);
+    return true;
+}
+
+// Save response text to SD card
+bool saveResponseToSD(const String& basename, const String& response) {
+    String filepath = String(IMAGES_DIR) + "/" + basename + ".txt";
+    File file = SD_MMC.open(filepath.c_str(), FILE_WRITE);
+    if (!file) {
+        SDLogger::getInstance().errorf("Failed to open file for writing: %s", filepath.c_str());
+        return false;
+    }
+
+    size_t written = file.print(response);
+    file.close();
+
+    if (written == 0 && response.length() > 0) {
+        SDLogger::getInstance().errorf("Failed to write response to file");
+        return false;
+    }
+
+    SDLogger::getInstance().infof("Saved response: %s", filepath.c_str());
+    return true;
+}
+
+// Clean up old images, keeping only the most recent MAX_IMAGES_TO_KEEP pairs
+void cleanupOldImages() {
+    // Safety check: don't delete if time sync failed (year in 1900s)
+    time_t now;
+    time(&now);
+    struct tm timeinfo;
+    gmtime_r(&now, &timeinfo);
+
+    if (timeinfo.tm_year + 1900 < 2000) {
+        SDLogger::getInstance().warnf("Time sync appears failed (year=%d), skipping cleanup", timeinfo.tm_year + 1900);
+        return;
+    }
+
+    // Collect all .jpg files in the images directory
+    std::vector<String> imageFiles;
+
+    File dir = SD_MMC.open(IMAGES_DIR);
+    if (!dir || !dir.isDirectory()) {
+        SDLogger::getInstance().errorf("Failed to open images directory for cleanup");
+        return;
+    }
+
+    File entry;
+    while ((entry = dir.openNextFile())) {
+        String name = entry.name();
+        if (name.endsWith(".jpg")) {
+            imageFiles.push_back(name);
+        }
+        entry.close();
+    }
+    dir.close();
+
+    // If we have more than MAX_IMAGES_TO_KEEP, delete the oldest ones
+    if (imageFiles.size() <= MAX_IMAGES_TO_KEEP) {
+        SDLogger::getInstance().debugf("Image count (%d) within limit (%d), no cleanup needed",
+            imageFiles.size(), MAX_IMAGES_TO_KEEP);
+        return;
+    }
+
+    // Sort alphabetically (timestamp format ensures chronological order)
+    std::sort(imageFiles.begin(), imageFiles.end());
+
+    // Delete the oldest files (those at the beginning of the sorted list)
+    int filesToDelete = imageFiles.size() - MAX_IMAGES_TO_KEEP;
+    SDLogger::getInstance().infof("Cleaning up %d old image pairs", filesToDelete);
+
+    for (int i = 0; i < filesToDelete; i++) {
+        String jpgPath = String(IMAGES_DIR) + "/" + imageFiles[i];
+        String txtPath = jpgPath.substring(0, jpgPath.length() - 4) + ".txt";
+
+        if (SD_MMC.remove(jpgPath.c_str())) {
+            SDLogger::getInstance().debugf("Deleted: %s", jpgPath.c_str());
+        } else {
+            SDLogger::getInstance().warnf("Failed to delete: %s", jpgPath.c_str());
+        }
+
+        if (SD_MMC.exists(txtPath.c_str())) {
+            if (SD_MMC.remove(txtPath.c_str())) {
+                SDLogger::getInstance().debugf("Deleted: %s", txtPath.c_str());
+            } else {
+                SDLogger::getInstance().warnf("Failed to delete: %s", txtPath.c_str());
+            }
+        }
+    }
+}
+
 // Flash LED with accelerating frequency over the duration
 // Returns true if BOOT button was pressed (exit requested)
 bool flashLedAccelerating(uint8_t r, uint8_t g, uint8_t b, unsigned long startInterval, unsigned long endInterval, unsigned long durationMs) {
@@ -384,11 +557,10 @@ bool flashLedAccelerating(uint8_t r, uint8_t g, uint8_t b, unsigned long startIn
     while (elapsed < durationMs) {
         elapsed = millis() - startTime;
 
-        // Check for BOOT button press to exit early
+        // Check for BOOT button press to exit countdown early
         if (isBootButtonPressed()) {
             ledOff();
-            exitPhotoLoop = true;
-            SDLogger::getInstance().infof("BOOT button pressed - exiting photo loop");
+            SDLogger::getInstance().debugf("BOOT button pressed during countdown");
             return true;
         }
 
@@ -428,8 +600,8 @@ bool flashLedAccelerating(uint8_t r, uint8_t g, uint8_t b, unsigned long startIn
     return false;
 }
 
-void capturePhotoLoop() {
-    SDLogger::getInstance().infof("=== Starting Photo Capture Loop (20 iterations) ===");
+void initCameraAndLed() {
+    SDLogger::getInstance().infof("=== Initializing Camera and LED ===");
 
 #ifdef ESP32S3_CAM
     // Initialize RGB LED
@@ -463,122 +635,122 @@ void capturePhotoLoop() {
     rgbLed.setBrightness(100);
 #endif
 
-    // Initialize camera once for all iterations
+    // Initialize camera
     camera = new Camera();
     camera->init();
     delay(500);  // Give camera time to stabilize
 
-    // Reset exit flag at start of loop
-    exitPhotoLoop = false;
+    SDLogger::getInstance().infof("=== Camera and LED Ready - Press BOOT to capture photo ===");
+}
 
-    for (int iteration = 1; iteration <= 20; iteration++) {
-        // Check if exit was requested
-        if (exitPhotoLoop) {
-            SDLogger::getInstance().infof("Exiting photo loop early (after %d photos)", iteration - 1);
-            break;
-        }
-
-        SDLogger::getInstance().infof("=== Photo %d of 20 (press BOOT to exit) ===", iteration);
-
-        // Step 1: Flash red LED (starts slow, gets faster) - 5 seconds
-        SDLogger::getInstance().debugf("Red LED countdown...");
-        if (flashLedAccelerating(255, 0, 0, 500, 250, 2500)) {
-            break;  // Button was pressed
-        }
-
-        // Step 2: Flash blue LED (starts slow, gets faster) - 5 seconds
-        SDLogger::getInstance().debugf("Blue LED countdown...");
-        if (flashLedAccelerating(0, 0, 255, 250, 50, 2500)) {
-            break;  // Button was pressed
-        }
-
-        // Step 3: Set bright WHITE for photo capture
-#ifdef ESP32S3_CAM
-        rgbLed.setBrightness(255);  // Maximum brightness for photo
-#endif
-        setLedColor(255, 255, 255);
-
-        // Capture image
-        NamedImage* image = camera->getImage();
-        if (!image || !image->image || image->size == 0) {
-            SDLogger::getInstance().errorf("Failed to capture image");
-            ledOff();
-            continue;
-        }
-
-#ifdef ESP32S3_CAM
-        rgbLed.setBrightness(50);  // 0-255, moderate brightness
-#endif
-        setLedColor(0, 255, 0);
-
-        SDLogger::getInstance().infof("Captured image: %s (%d bytes)", image->filename.c_str(), image->size);
-
-        // Get AWS credentials (refresh if needed)
-        if (!awsAuth->areCredentialsValid()) {
-            SDLogger::getInstance().infof("Refreshing AWS credentials...");
-            if (!awsAuth->getCredentialsWithRoleAlias(AWS_ROLE_ALIAS)) {
-                SDLogger::getInstance().errorf("Failed to get AWS credentials");
-                ledOff();
-                continue;
-            }
-        }
-
-        // Post image to inference endpoint
-        CatCamHttpClient httpClient;
-        String response = httpClient.postImage(image, API_HOST, API_PATH, awsAuth);
-
-        // Parse response and log cat percentages
-        // Format: {"success": true, "data": {"probabilities": [...]}, "mostLikelyCat": {"name": "Tau", "confidence": 0.71, "index": 4}}
-        DynamicJsonDocument doc(2048);
-        DeserializationError jsonError = deserializeJson(doc, response);
-
-        // Cat names matching model output indices
-        const char* CAT_NAMES[] = {"Boots", "Chi", "Kappa", "Mu", "Tau", "NoCat"};
-
-        if (jsonError) {
-            SDLogger::getInstance().warnf("Failed to parse response JSON: %s", jsonError.c_str());
-            SDLogger::getInstance().infof("Raw response: %s", response.c_str());
-        }
-        else if (doc["success"] == true) {
-            // Get winner from mostLikelyCat object at root level
-            JsonObject mostLikelyCat = doc["mostLikelyCat"];
-            const char* winnerName = mostLikelyCat["name"] | "Unknown";
-            float winnerConfidence = mostLikelyCat["confidence"] | 0.0f;
-
-            // Build results string from probabilities array in data
-            String resultLog = "";
-            JsonObject data = doc["data"];
-            if (data.containsKey("probabilities") && data["probabilities"].is<JsonArray>()) {
-                JsonArray probabilities = data["probabilities"];
-                for (size_t i = 0; i < probabilities.size() && i < 6; i++) {
-                    float score = probabilities[i].as<float>();
-                    char scoreStr[32];
-                    snprintf(scoreStr, sizeof(scoreStr), "%s=%.1f%% ", CAT_NAMES[i], score * 100.0);
-                    resultLog += scoreStr;
-                }
-            }
-
-            SDLogger::getInstance().infof("%s | Winner: %s (%.1f%%)",
-                resultLog.c_str(), winnerName, winnerConfidence * 100.0);
-        }
-        else {
-            // Log the raw response if format is unexpected
-            SDLogger::getInstance().warnf("Unexpected response format: %s", response.c_str());
-        }
-
-        // Release image buffer
-        camera->releaseImageBuffer(image);
-
-        // Step 4: Turn LED off
-        ledOff();
-
-        SDLogger::getInstance().infof("=== Photo %d complete ===", iteration);
+void captureAndPostPhoto() {
+    if (!camera) {
+        SDLogger::getInstance().errorf("Camera not initialized");
+        return;
     }
 
-    // Cleanup camera
-    camera->deInit();
-    delete camera;
-    camera = nullptr;
+    SDLogger::getInstance().infof("=== Capturing Photo ===");
 
-    SDLogger::getInstance().infof("=== Photo Capture Loop Complete ===");
+    // Step 1: Flash red LED (starts slow, gets faster)
+    SDLogger::getInstance().debugf("Red LED countdown...");
+    flashLedAccelerating(255, 0, 0, 500, 250, 2500);
+
+    // Step 2: Flash blue LED (starts slow, gets faster)
+    SDLogger::getInstance().debugf("Blue LED countdown...");
+    flashLedAccelerating(0, 0, 255, 250, 50, 2500);
+
+    // Step 3: Set bright WHITE for photo capture
+#ifdef ESP32S3_CAM
+    rgbLed.setBrightness(255);  // Maximum brightness for photo
+#endif
+    setLedColor(255, 255, 255);
+
+    // Capture image
+    NamedImage* image = camera->getImage();
+    if (!image || !image->image || image->size == 0) {
+        SDLogger::getInstance().errorf("Failed to capture image");
+        ledOff();
+        return;
+    }
+
+    // Generate timestamp-based filename for this capture
+    String basename = getTimestampFilename();
+
+#ifdef ESP32S3_CAM
+    rgbLed.setBrightness(50);  // 0-255, moderate brightness
+#endif
+    setLedColor(0, 255, 0);
+
+    SDLogger::getInstance().infof("Captured image: %s (%d bytes)", basename.c_str(), image->size);
+
+    // Save image to SD card
+    saveImageToSD(basename, image);
+
+    // Get AWS credentials (refresh if needed)
+    if (!awsAuth->areCredentialsValid()) {
+        SDLogger::getInstance().infof("Refreshing AWS credentials...");
+        if (!awsAuth->getCredentialsWithRoleAlias(AWS_ROLE_ALIAS)) {
+            SDLogger::getInstance().errorf("Failed to get AWS credentials");
+            camera->releaseImageBuffer(image);
+            ledOff();
+            return;
+        }
+    }
+
+    // Post image to inference endpoint
+    CatCamHttpClient httpClient;
+    String response = httpClient.postImage(image, API_HOST, API_PATH, awsAuth);
+
+    // Save server response to SD card
+    saveResponseToSD(basename, response);
+
+    // Parse response and log cat percentages
+    // Format: {"success": true, "data": {"probabilities": [...]}, "mostLikelyCat": {"name": "Tau", "confidence": 0.71, "index": 4}}
+    DynamicJsonDocument doc(2048);
+    DeserializationError jsonError = deserializeJson(doc, response);
+
+    // Cat names matching model output indices
+    const char* CAT_NAMES[] = {"Boots", "Chi", "Kappa", "Mu", "Tau", "NoCat"};
+
+    if (jsonError) {
+        SDLogger::getInstance().warnf("Failed to parse response JSON: %s", jsonError.c_str());
+        SDLogger::getInstance().infof("Raw response: %s", response.c_str());
+    }
+    else if (doc["success"] == true) {
+        // Get winner from mostLikelyCat object at root level
+        JsonObject mostLikelyCat = doc["mostLikelyCat"];
+        const char* winnerName = mostLikelyCat["name"] | "Unknown";
+        float winnerConfidence = mostLikelyCat["confidence"] | 0.0f;
+
+        // Build results string from probabilities array in data
+        String resultLog = "";
+        JsonObject data = doc["data"];
+        if (data.containsKey("probabilities") && data["probabilities"].is<JsonArray>()) {
+            JsonArray probabilities = data["probabilities"];
+            for (size_t i = 0; i < probabilities.size() && i < 6; i++) {
+                float score = probabilities[i].as<float>();
+                char scoreStr[32];
+                snprintf(scoreStr, sizeof(scoreStr), "%s=%.1f%% ", CAT_NAMES[i], score * 100.0);
+                resultLog += scoreStr;
+            }
+        }
+
+        SDLogger::getInstance().infof("%s | Winner: %s (%.1f%%)",
+            resultLog.c_str(), winnerName, winnerConfidence * 100.0);
+    }
+    else {
+        // Log the raw response if format is unexpected
+        SDLogger::getInstance().warnf("Unexpected response format: %s", response.c_str());
+    }
+
+    // Release image buffer
+    camera->releaseImageBuffer(image);
+
+    // Clean up old images (keep only the most recent MAX_IMAGES_TO_KEEP)
+    cleanupOldImages();
+
+    // Step 4: Turn LED off
+    ledOff();
+
+    SDLogger::getInstance().infof("=== Photo Capture Complete ===");
 }
