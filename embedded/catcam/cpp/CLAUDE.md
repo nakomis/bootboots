@@ -10,13 +10,29 @@ Both use the **Arduino framework** for simplicity and library compatibility.
 
 ## Supported Boards
 
-### ESP32-S3 WROOM N16R8 CAM (Primary Target)
-- 16MB Flash, 8MB PSRAM
-- Dual USB-C ports: UART (serial monitor) and OTG (flashing)
-- Build environment: `esp32s3cam`
+### ESP32-S3 WROOM N16R8 CAM with OV5640 (Primary Target)
+
+**Full Name:** ESP32-S3 WROOM N16R8 CAM Development Board WiFi + Bluetooth Module OV5640 Camera
+
+| Feature | Specification |
+|---------|---------------|
+| **Chipset** | ESP32-S3 (dual-core 32-bit Xtensa LX7 @ 240MHz) |
+| **Flash Memory** | 16MB (QSPI) |
+| **PSRAM** | 8MB (Octal SPI) |
+| **Wireless** | Wi-Fi 802.11 b/g/n (2.4 GHz), Bluetooth 5 (LE) |
+| **Camera** | OV5640 (5MP, autofocus capable) |
+| **USB** | Dual USB-C: UART (serial monitor) + OTG (flashing/native USB) |
+| **Storage** | microSD card slot (SDMMC) |
+| **LED** | WS2812 RGB addressable LED (GPIO 48) |
+| **Operating Voltage** | 3.3V logic, 5V input via USB-C |
+| **AI Capabilities** | Vector instructions for neural network processing |
+| **Build environment** | `esp32s3cam` |
+
+**Note:** GPIO35, GPIO36, GPIO37 are reserved for Octal PSRAM - do not use for other purposes.
 
 ### Original ESP32-CAM AI-Thinker (Legacy)
 - 4MB Flash, 4MB PSRAM
+- OV2640 camera (2MP)
 - Single micro-USB port
 - Build environment: `esp32cam`
 
@@ -54,6 +70,8 @@ Offset      Size       Name
 ## Pin Configurations
 
 ### ESP32-S3 CAM Board
+
+#### Peripherals
 ```cpp
 // SD Card (SDMMC 1-bit mode)
 SD_MMC_CLK  = GPIO 39
@@ -68,8 +86,64 @@ UART_RX     = GPIO 44
 I2C_SDA     = GPIO 4
 I2C_SCL     = GPIO 5
 
-// LED
-LED_PIN     = GPIO 48
+// RGB LED (WS2812 addressable NeoPixel)
+RGB_LED_PIN = GPIO 48
+```
+
+#### RGB LED (WS2812) Usage
+
+The onboard LED is a WS2812 addressable RGB LED, not a simple GPIO LED. Use the Adafruit NeoPixel or FastLED library:
+
+```cpp
+#include <Adafruit_NeoPixel.h>
+
+#define RGB_LED_PIN 48
+#define NUM_LEDS 1
+
+Adafruit_NeoPixel pixel(NUM_LEDS, RGB_LED_PIN, NEO_GRB + NEO_KHZ800);
+
+void setup() {
+  pixel.begin();
+  pixel.setBrightness(50);  // 0-255
+}
+
+void setColor(uint8_t r, uint8_t g, uint8_t b) {
+  pixel.setPixelColor(0, pixel.Color(r, g, b));
+  pixel.show();
+}
+
+// Examples:
+// setColor(255, 0, 0);    // Red
+// setColor(0, 255, 0);    // Green
+// setColor(0, 0, 255);    // Blue
+// setColor(0, 0, 0);      // Off
+```
+
+#### OV5640 Camera Pinout
+```cpp
+// Camera control
+CAM_PWDN    = -1 (not used)
+CAM_RESET   = -1 (not used)
+CAM_XCLK    = GPIO 15
+
+// Camera I2C (SCCB) - shared with board I2C
+CAM_SIOD    = GPIO 4  (SDA)
+CAM_SIOC    = GPIO 5  (SCL)
+
+// Camera data bus (Y2-Y9 = D0-D7)
+CAM_Y2      = GPIO 11
+CAM_Y3      = GPIO 9
+CAM_Y4      = GPIO 8
+CAM_Y5      = GPIO 10
+CAM_Y6      = GPIO 12
+CAM_Y7      = GPIO 18
+CAM_Y8      = GPIO 17
+CAM_Y9      = GPIO 16
+
+// Camera sync
+CAM_VSYNC   = GPIO 6
+CAM_HREF    = GPIO 7
+CAM_PCLK    = GPIO 13
 ```
 
 ### Original ESP32-CAM (AI-Thinker)
@@ -77,7 +151,7 @@ LED_PIN     = GPIO 48
 // SD Card (SDMMC 4-bit mode, conflicts with some GPIOs)
 // I2C shares UART0 pins (GPIO 1/3) - requires disabling serial
 
-// LED
+// LED (simple GPIO, active LOW)
 LED_PIN     = GPIO 33
 ```
 

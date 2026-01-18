@@ -5,6 +5,7 @@
 #include <SDLogger.h>
 #include <esp_ota_ops.h>
 #include <esp_partition.h>
+#include <ArduinoJson.h>
 
 #include "BluetoothService.h"
 #include "BluetoothOTA.h"
@@ -18,6 +19,13 @@
 #include "version.h"
 #include "secrets.h"
 #include <HTTPClient.h>
+
+#ifdef ESP32S3_CAM
+#include <Adafruit_NeoPixel.h>
+#define RGB_LED_PIN 48
+#define NUM_LEDS 1
+Adafruit_NeoPixel rgbLed(NUM_LEDS, RGB_LED_PIN, NEO_GRB + NEO_KHZ800);
+#endif
 
 #include "main.h"
 
@@ -40,6 +48,12 @@
 
 #define PCF8574_ADDRESS 0x20    // I2C address for PCF8574
 
+// BOOT button for user input (can exit photo loop early)
+#define BOOT_BUTTON_PIN 0       // GPIO0 - BOOT button (LOW when pressed)
+
+// Global flag to exit photo loop
+volatile bool exitPhotoLoop = false;
+
 // Global system components
 SDLogger* sdLogger = nullptr;
 WifiConnect* wifiConnect = nullptr;
@@ -56,7 +70,11 @@ const char* API_HOST = "api.bootboots.sandbox.nakomis.com";
 const char* API_PATH = "/infer";
 
 // Function declarations
-void testAWSAuth();
+void capturePhotoLoop();
+void setLedColor(uint8_t r, uint8_t g, uint8_t b);
+void ledOff();
+bool flashLedAccelerating(uint8_t r, uint8_t g, uint8_t b, unsigned long startInterval, unsigned long endInterval, unsigned long durationMs);
+bool isBootButtonPressed();
 
 // System state instance
 SystemState systemState;
@@ -84,11 +102,13 @@ void setup() {
             esp_err_t err = esp_ota_set_boot_partition(factory);
             if (err == ESP_OK) {
                 // Serial.println("[CATCAM] Set boot partition to factory for next reboot");
-            } else {
+            }
+            else {
                 // Serial.printf("[CATCAM] WARNING: Failed to set boot partition: %s\n", esp_err_to_name(err));
             }
         }
-    } else {
+    }
+    else {
         // Serial.println("[CATCAM] WARNING: Factory partition not found - bootloader won't run on reboot");
     }
 
@@ -166,6 +186,10 @@ void loop() {
 void initializeHardware() {
     SDLogger::getInstance().infof("Initializing hardware...");
 
+    // Initialize BOOT button for user input (exit photo loop)
+    pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
+    SDLogger::getInstance().infof("BOOT button initialized on GPIO%d (press to exit photo loop)", BOOT_BUTTON_PIN);
+
     // Enable internal pull-ups on I2C pins before initializing I2C
     pinMode(I2C_SDA, INPUT_PULLUP);
     pinMode(I2C_SCL, INPUT_PULLUP);
@@ -186,7 +210,8 @@ void initializeComponents() {
     if (SDLogger::getInstance().isInitialized()) {
         systemState.sdCardReady = true;
         SDLogger::getInstance().infof("SD Logger initialized successfully");
-    } else {
+    }
+    else {
         systemState.sdCardReady = false;
         // FIXME: Uncomment when implemented
         // handleSystemError("SD_INIT", "Failed to initialize SD Logger");
@@ -203,7 +228,8 @@ void initializeComponents() {
         if (systemState.sdCardReady) {
             SDLogger::getInstance().infof("PCF8574 Manager initialized - 8 GPIO pins available");
         }
-    } else {
+    }
+    else {
         systemState.pcf8574Ready = false;
         SDLogger::getInstance().warnf("WARNING: PCF8574 Manager initialization failed");
         SDLogger::getInstance().warnf("Check I2C connections on GPIO%d (SDA) and GPIO%d (SCL)", I2C_SDA, I2C_SCL);
@@ -219,16 +245,18 @@ void initializeComponents() {
             SDLogger::getInstance().infof("WiFi connected successfully");
         }
 
-        // Initialize AWS Auth and test it
+        // Initialize AWS Auth
         awsAuth = new AWSAuth("eu-west-2");
         if (awsAuth->initialize(AWS_CERT_CA, AWS_CERT_CRT, AWS_CERT_PRIVATE, AWS_IOT_CREDENTIALS_ENDPOINT)) {
             SDLogger::getInstance().infof("AWS Auth initialized successfully");
-            // Run AWS Auth test
-            testAWSAuth();
-        } else {
+            // Start the photo capture loop
+            capturePhotoLoop();
+        }
+        else {
             SDLogger::getInstance().errorf("Failed to initialize AWS Auth");
         }
-    } else {
+    }
+    else {
         SDLogger::getInstance().warnf("WARNING: WiFi connection failed");
         systemState.wifiConnected = false;
     }
@@ -262,7 +290,8 @@ void initializeComponents() {
         if (systemState.sdCardReady) {
             SDLogger::getInstance().infof("Bluetooth OTA enabled - remote updates via web interface");
         }
-    } else {
+    }
+    else {
         SDLogger::getInstance().errorf("Failed to initialize Bluetooth OTA service");
         delete bluetoothOTA;
         bluetoothOTA = nullptr;
@@ -282,7 +311,8 @@ void updateSystemStatus() {
         if (systemState.sdCardReady) {
             SDLogger::getInstance().warnf("WiFi connection lost");
         }
-    } else if (!systemState.wifiConnected && WiFi.status() == WL_CONNECTED) {
+    }
+    else if (!systemState.wifiConnected && WiFi.status() == WL_CONNECTED) {
         systemState.wifiConnected = true;
         SDLogger::getInstance().infof("WiFi connection restored");
         if (systemState.sdCardReady) {
@@ -321,53 +351,236 @@ void handleSystemError(const char* component, const char* error) {
     // blinkStatusLED(5, 200); // 5 fast blinks for error
 }
 
-void testAWSAuth() {
-    SDLogger::getInstance().infof("=== Testing AWS Auth ===");
+// RGB LED Helper Functions
+void setLedColor(uint8_t r, uint8_t g, uint8_t b) {
+#ifdef ESP32S3_CAM
+    rgbLed.setPixelColor(0, rgbLed.Color(r, g, b));
+    rgbLed.show();
+#endif
+}
 
-    // Step 1: Get temporary credentials using the role alias
-    SDLogger::getInstance().infof("Step 1: Getting temporary credentials via role alias: %s", AWS_ROLE_ALIAS);
-    if (!awsAuth->getCredentialsWithRoleAlias(AWS_ROLE_ALIAS)) {
-        SDLogger::getInstance().errorf("Failed to get AWS credentials");
-        return;
+void ledOff() {
+    setLedColor(0, 0, 0);
+}
+
+// Check if BOOT button is pressed (returns true if pressed)
+bool isBootButtonPressed() {
+    return digitalRead(BOOT_BUTTON_PIN) == LOW;
+}
+
+// Flash LED with accelerating frequency over the duration
+// Returns true if BOOT button was pressed (exit requested)
+bool flashLedAccelerating(uint8_t r, uint8_t g, uint8_t b, unsigned long startInterval, unsigned long endInterval, unsigned long durationMs) {
+    unsigned long startTime = millis();
+    unsigned long elapsed = 0;
+    bool ledOn = false;
+    int toggleCount = 0;
+
+    SDLogger::getInstance().debugf("Flash LED: color=(%d,%d,%d) start=%lu end=%lu duration=%lu",
+        r, g, b, startInterval, endInterval, durationMs);
+
+    unsigned long lastToggle = startTime;
+
+    while (elapsed < durationMs) {
+        elapsed = millis() - startTime;
+
+        // Check for BOOT button press to exit early
+        if (isBootButtonPressed()) {
+            ledOff();
+            exitPhotoLoop = true;
+            SDLogger::getInstance().infof("BOOT button pressed - exiting photo loop");
+            return true;
+        }
+
+        // Calculate current interval - interpolate from startInterval to endInterval
+        float progress = (float)elapsed / (float)durationMs;
+        unsigned long currentInterval = startInterval + (unsigned long)(progress * (float)(endInterval - startInterval));
+
+        // Clamp interval to reasonable values
+        if (currentInterval < 30) currentInterval = 30;
+        if (currentInterval > 1000) currentInterval = 1000;
+
+        if (millis() - lastToggle >= currentInterval) {
+            ledOn = !ledOn;
+            toggleCount++;
+            if (ledOn) {
+                setLedColor(r, g, b);
+            }
+            else {
+                ledOff();
+            }
+            lastToggle = millis();
+        }
+
+        // Handle Bluetooth during the flash sequence
+        if (bluetoothService) {
+            bluetoothService->handle();
+        }
+        if (bluetoothOTA) {
+            bluetoothOTA->handle();
+        }
+
+        delay(10);  // Small delay to prevent tight loop
     }
 
-    SDLogger::getInstance().infof("Credentials obtained successfully!");
+    SDLogger::getInstance().debugf("Flash complete: %d toggles", toggleCount);
+    ledOff();
+    return false;
+}
 
-    // Step 2: Initialize camera and take a photo
-    SDLogger::getInstance().infof("Step 2: Initializing camera and capturing image");
+void capturePhotoLoop() {
+    SDLogger::getInstance().infof("=== Starting Photo Capture Loop (20 iterations) ===");
 
-    camera = new Camera();
-    camera->init();
+#ifdef ESP32S3_CAM
+    // Initialize RGB LED
+    SDLogger::getInstance().infof("Initializing RGB LED on GPIO %d", RGB_LED_PIN);
+    rgbLed.begin();
+    rgbLed.setBrightness(255);  // Full brightness for testing
+    rgbLed.show();
 
-    // Give camera time to stabilize
+    // LED test sequence - verify hardware works
+    SDLogger::getInstance().infof("LED test: RED");
+    rgbLed.setPixelColor(0, rgbLed.Color(255, 0, 0));
+    rgbLed.show();
     delay(500);
 
-    NamedImage* image = camera->getImage();
-    if (!image || !image->image || image->size == 0) {
-        SDLogger::getInstance().errorf("Failed to capture image");
-        if (camera) {
-            camera->deInit();
-            delete camera;
-            camera = nullptr;
+    SDLogger::getInstance().infof("LED test: GREEN");
+    rgbLed.setPixelColor(0, rgbLed.Color(0, 255, 0));
+    rgbLed.show();
+    delay(500);
+
+    SDLogger::getInstance().infof("LED test: BLUE");
+    rgbLed.setPixelColor(0, rgbLed.Color(0, 0, 255));
+    rgbLed.show();
+    delay(500);
+
+    SDLogger::getInstance().infof("LED test: OFF");
+    rgbLed.setPixelColor(0, 0);
+    rgbLed.show();
+    delay(250);
+
+    // Set working brightness
+    rgbLed.setBrightness(100);
+#endif
+
+    // Initialize camera once for all iterations
+    camera = new Camera();
+    camera->init();
+    delay(500);  // Give camera time to stabilize
+
+    // Reset exit flag at start of loop
+    exitPhotoLoop = false;
+
+    for (int iteration = 1; iteration <= 20; iteration++) {
+        // Check if exit was requested
+        if (exitPhotoLoop) {
+            SDLogger::getInstance().infof("Exiting photo loop early (after %d photos)", iteration - 1);
+            break;
         }
-        return;
+
+        SDLogger::getInstance().infof("=== Photo %d of 20 (press BOOT to exit) ===", iteration);
+
+        // Step 1: Flash red LED (accelerating) - check for button press
+        SDLogger::getInstance().debugf("Red LED countdown...");
+        if (flashLedAccelerating(255, 0, 0, 50, 250, 2500)) {
+            break;  // Button was pressed
+        }
+
+        // Step 2: Flash blue LED (accelerating) - check for button press
+        SDLogger::getInstance().debugf("Blue LED countdown...");
+        if (flashLedAccelerating(0, 0, 255, 250, 500, 2500)) {
+            break;  // Button was pressed
+        }
+
+        // Step 3: Set green LED on for photo capture
+#ifdef ESP32S3_CAM
+        rgbLed.setBrightness(100);  // 0-255, moderate brightness
+#endif
+        setLedColor(255, 255, 255);
+
+        // Capture image
+        NamedImage* image = camera->getImage();
+        if (!image || !image->image || image->size == 0) {
+            SDLogger::getInstance().errorf("Failed to capture image");
+            ledOff();
+            continue;
+        }
+
+#ifdef ESP32S3_CAM
+        rgbLed.setBrightness(50);  // 0-255, moderate brightness
+#endif
+        setLedColor(0, 255, 0);
+
+        SDLogger::getInstance().infof("Captured image: %s (%d bytes)", image->filename.c_str(), image->size);
+
+        // Get AWS credentials (refresh if needed)
+        if (!awsAuth->areCredentialsValid()) {
+            SDLogger::getInstance().infof("Refreshing AWS credentials...");
+            if (!awsAuth->getCredentialsWithRoleAlias(AWS_ROLE_ALIAS)) {
+                SDLogger::getInstance().errorf("Failed to get AWS credentials");
+                ledOff();
+                continue;
+            }
+        }
+
+        // Post image to inference endpoint
+        CatCamHttpClient httpClient;
+        String response = httpClient.postImage(image, API_HOST, API_PATH, awsAuth);
+
+        // Parse response and log cat percentages
+        DynamicJsonDocument doc(1024);
+        DeserializationError jsonError = deserializeJson(doc, response);
+
+        if (jsonError) {
+            SDLogger::getInstance().warnf("Failed to parse response JSON: %s", jsonError.c_str());
+            SDLogger::getInstance().infof("Raw response: %s", response.c_str());
+        }
+        else {
+            // Extract cat percentages from response
+            // Expected format: {"boots": 0.85, "laces": 0.12, "no_cat": 0.03} or similar
+            String resultLog = "Cat detection results: ";
+            String winner = "";
+            float winnerScore = -1.0;
+
+            JsonObject root = doc.as<JsonObject>();
+            for (JsonPair kv : root) {
+                const char* catName = kv.key().c_str();
+                float score = kv.value().as<float>();
+
+                // Build log string
+                char scoreStr[32];
+                snprintf(scoreStr, sizeof(scoreStr), "%s=%.1f%% ", catName, score * 100.0);
+                resultLog += scoreStr;
+
+                // Track winner
+                if (score > winnerScore) {
+                    winnerScore = score;
+                    winner = catName;
+                }
+            }
+
+            if (winner.length() > 0) {
+                SDLogger::getInstance().infof("%s | Winner: %s (%.1f%%)",
+                    resultLog.c_str(), winner.c_str(), winnerScore * 100.0);
+            }
+            else {
+                SDLogger::getInstance().infof("Response: %s", response.c_str());
+            }
+        }
+
+        // Release image buffer
+        camera->releaseImageBuffer(image);
+
+        // Step 4: Turn LED off
+        ledOff();
+
+        SDLogger::getInstance().infof("=== Photo %d complete ===", iteration);
     }
 
-    SDLogger::getInstance().infof("Captured image: %s (%d bytes)", image->filename.c_str(), image->size);
-
-    // Step 3: Post image to infer endpoint
-    SDLogger::getInstance().infof("Step 3: Posting image to https://%s%s", API_HOST, API_PATH);
-
-    CatCamHttpClient httpClient;
-    String response = httpClient.postImage(image, API_HOST, API_PATH, awsAuth);
-
-    SDLogger::getInstance().infof("Response: %s", response.c_str());
-
-    // Cleanup
-    camera->releaseImageBuffer(image);
+    // Cleanup camera
     camera->deInit();
     delete camera;
     camera = nullptr;
 
-    SDLogger::getInstance().infof("=== AWS Auth Test Complete ===");
+    SDLogger::getInstance().infof("=== Photo Capture Loop Complete ===");
 }
