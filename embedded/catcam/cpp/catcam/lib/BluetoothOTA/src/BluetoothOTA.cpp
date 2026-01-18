@@ -2,6 +2,27 @@
 #include <ArduinoJson.h>
 #include "../../../include/version.h"
 
+// Static instance for progress callbacks
+static BluetoothOTA* _bleOtaInstance = nullptr;
+
+// Static progress callback that forwards to the instance
+static void otaProgressCallback(int progress, size_t downloaded, size_t total) {
+    if (_bleOtaInstance && _bleOtaInstance->isConnected()) {
+        // Send progress update via BLE - limit updates to every 5%
+        static int lastReportedProgress = -1;
+        if (progress != lastReportedProgress && (progress % 5 == 0 || progress == 100)) {
+            char msg[96];
+            if (progress == 100) {
+                snprintf(msg, sizeof(msg), "Download complete! Rebooting to flash firmware...");
+            } else {
+                snprintf(msg, sizeof(msg), "Downloading: %d%% (%d/%d bytes)", progress, (int)downloaded, (int)total);
+            }
+            _bleOtaInstance->sendStatusUpdate("progress", msg, progress);
+            lastReportedProgress = progress;
+        }
+    }
+}
+
 BluetoothOTA::BluetoothOTA() {
     _pServer = nullptr;
     _pService = nullptr;
@@ -21,6 +42,9 @@ BluetoothOTA::BluetoothOTA() {
     _totalChunks = 0;
     _receivedChunks = 0;
     _chunkVersion = "";
+
+    // Store instance for static callbacks
+    _bleOtaInstance = this;
 }
 
 BluetoothOTA::~BluetoothOTA() {
@@ -244,7 +268,10 @@ void BluetoothOTA::handle() {
 }
 
 bool BluetoothOTA::isConnected() {
-    return _deviceConnected && _pServer && _pServer->getConnectedCount() > 0;
+    // When using shared server (initWithExistingServer), _deviceConnected may not be set
+    // because the server callbacks are on the main service, not this one.
+    // So we primarily check getConnectedCount() which works regardless of callback setup.
+    return _pServer && _pServer->getConnectedCount() > 0;
 }
 
 void BluetoothOTA::sendStatusUpdate(const String& status, const String& message, int progress) {
@@ -402,7 +429,10 @@ void BluetoothOTA::processOTAUpdate(const OTACommand& command) {
 
     SDLogger::getInstance().infof("Free heap after stopping BLE: %d bytes", ESP.getFreeHeap());
 
-    // Set up progress callback
+    // Set up progress callback to send BLE notifications during download
+    _otaUpdate->setProgressCallback(otaProgressCallback);
+
+    // Set up completion callback
     _otaUpdate->setUpdateCallback([](bool success, const char* error) {
         // This callback will be called when the update completes
         // Note: We can't access 'this' in a static callback, so we'll handle status in the main loop

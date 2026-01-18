@@ -18,6 +18,7 @@ OTAUpdate::OTAUpdate() {
     _progress = 0;
     _status = "Not initialized";
     _updateCallback = nullptr;
+    _progressCallback = nullptr;
     _httpClient = new HTTPClient();
     _client = nullptr;  // Will be allocated when needed for HTTP
     _secureClient = new WiFiClientSecure();
@@ -118,6 +119,10 @@ bool OTAUpdate::isUpdating() {
 
 void OTAUpdate::setUpdateCallback(void (*callback)(bool success, const char* error)) {
     _updateCallback = callback;
+}
+
+void OTAUpdate::setProgressCallback(void (*callback)(int progress, size_t downloaded, size_t total)) {
+    _progressCallback = callback;
 }
 
 void OTAUpdate::setPassword(const char* password) {
@@ -652,6 +657,11 @@ bool OTAUpdate::downloadToSD(const char* firmwareURL) {
                 _downloadedSize = written;
                 _progress = (written * 100) / firmwareSize;
 
+                // Call progress callback for BLE notifications
+                if (_progressCallback) {
+                    _progressCallback(_progress, written, firmwareSize);
+                }
+
                 // Log progress every 10%
                 if (_progress >= lastProgress + 10) {
                     // Serial.printf("Download progress: %d%% (%d/%d bytes)\n", _progress, written, firmwareSize);
@@ -695,6 +705,12 @@ bool OTAUpdate::downloadToSD(const char* firmwareURL) {
     prefs.end();
     // Serial.println("[OTA] NVS flags set successfully");
     Serial.flush();
+
+    // Send final progress update before reboot
+    _progress = 100;
+    if (_progressCallback) {
+        _progressCallback(100, firmwareSize, firmwareSize);
+    }
 
     // Serial.println("[OTA] OTA download complete - rebooting to bootloader for flash...");
     SDLogger::getInstance().infof("OTA download complete, rebooting to bootloader");

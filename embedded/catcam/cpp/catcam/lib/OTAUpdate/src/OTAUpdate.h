@@ -22,7 +22,8 @@ public:
     void handle();
     bool isUpdating();
     void setUpdateCallback(void (*callback)(bool success, const char* error));
-    
+    void setProgressCallback(void (*callback)(int progress, size_t downloaded, size_t total));
+
     // HTTP OTA update from URL (e.g., S3 signed URL)
     bool updateFromURL(const char* firmwareURL);
     void cancelUpdate();
@@ -49,6 +50,7 @@ private:
     int _progress;
     String _status;
     void (*_updateCallback)(bool success, const char* error);
+    void (*_progressCallback)(int progress, size_t downloaded, size_t total);
     
     // HTTP OTA members
     HTTPClient* _httpClient;

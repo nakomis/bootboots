@@ -4,6 +4,10 @@
 // External reference to systemState defined in main.cpp
 extern SystemState systemState;
 
+// External LED control functions from main.cpp
+extern void setLedColor(uint8_t r, uint8_t g, uint8_t b);
+extern void ledOff();
+
 BootBootsBluetoothService::BootBootsBluetoothService()
     : pServer(nullptr), pService(nullptr), pStatusCharacteristic(nullptr),
       pLogsCharacteristic(nullptr), pCommandCharacteristic(nullptr),
@@ -364,8 +368,16 @@ void BootBootsBluetoothService::sendImage(const String& filename) {
     uint8_t buffer[RAW_CHUNK_SIZE];
     int chunkIndex = 0;
     size_t totalChunks = (fileSize + RAW_CHUNK_SIZE - 1) / RAW_CHUNK_SIZE;
+    bool ledGreen = true;  // Toggle between green and blue
 
     while (file.available()) {
+        // Toggle LED between green and blue for each chunk
+        if (ledGreen) {
+            setLedColor(0, 255, 0);  // Green
+        } else {
+            setLedColor(0, 0, 255);  // Blue
+        }
+        ledGreen = !ledGreen;
         size_t bytesRead = file.read(buffer, RAW_CHUNK_SIZE);
 
         // Base64 encode the chunk
@@ -425,6 +437,9 @@ void BootBootsBluetoothService::sendImage(const String& filename) {
     }
 
     file.close();
+
+    // Turn off LED after transfer
+    ledOff();
 
     // Send completion notification
     DynamicJsonDocument endDoc(128);
