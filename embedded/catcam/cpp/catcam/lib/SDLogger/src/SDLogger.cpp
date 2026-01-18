@@ -98,7 +98,7 @@ void SDLogger::critical(const char* message) {
 void SDLogger::debugf(const char* format, ...) {
     va_list args;
     va_start(args, format);
-    char buffer[512];
+    char buffer[2048];
     vsnprintf(buffer, sizeof(buffer), format, args);
     va_end(args);
     debug(buffer);
@@ -107,7 +107,7 @@ void SDLogger::debugf(const char* format, ...) {
 void SDLogger::infof(const char* format, ...) {
     va_list args;
     va_start(args, format);
-    char buffer[512];
+    char buffer[2048];
     vsnprintf(buffer, sizeof(buffer), format, args);
     va_end(args);
     info(buffer);
@@ -116,7 +116,7 @@ void SDLogger::infof(const char* format, ...) {
 void SDLogger::warnf(const char* format, ...) {
     va_list args;
     va_start(args, format);
-    char buffer[512];
+    char buffer[2048];
     vsnprintf(buffer, sizeof(buffer), format, args);
     va_end(args);
     warn(buffer);
@@ -125,7 +125,7 @@ void SDLogger::warnf(const char* format, ...) {
 void SDLogger::errorf(const char* format, ...) {
     va_list args;
     va_start(args, format);
-    char buffer[512];
+    char buffer[2048];
     vsnprintf(buffer, sizeof(buffer), format, args);
     va_end(args);
     error(buffer);
@@ -134,7 +134,7 @@ void SDLogger::errorf(const char* format, ...) {
 void SDLogger::criticalf(const char* format, ...) {
     va_list args;
     va_start(args, format);
-    char buffer[512];
+    char buffer[2048];
     vsnprintf(buffer, sizeof(buffer), format, args);
     va_end(args);
     critical(buffer);
@@ -157,7 +157,7 @@ void SDLogger::log(LogLevel level, const char* message) {
 void SDLogger::logf(LogLevel level, const char* format, ...) {
     va_list args;
     va_start(args, format);
-    char buffer[512];
+    char buffer[2048];
     vsnprintf(buffer, sizeof(buffer), format, args);
     va_end(args);
     log(level, buffer);

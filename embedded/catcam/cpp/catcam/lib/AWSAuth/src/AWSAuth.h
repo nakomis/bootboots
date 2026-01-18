@@ -21,6 +21,7 @@ struct SigV4Headers {
     String securityToken;
     String contentType;
     String host;
+    String payloadHash;  // SHA256 hash of the payload (for X-Amz-Content-Sha256 header)
     bool isValid;
 };
 
@@ -35,10 +36,19 @@ public:
     // Get temporary AWS credentials using IoT Credentials Provider
     bool getCredentialsWithRoleAlias(const char* roleAlias);
 
-    // Create SigV4 signed headers for API Gateway request
+    // Create SigV4 signed headers for API Gateway request (for string payloads)
     SigV4Headers createSigV4Headers(const String& method, const String& uri,
                                    const String& host, const String& payload = "",
                                    const String& contentType = "application/json");
+
+    // Create SigV4 signed headers for binary payloads (e.g., images)
+    SigV4Headers createSigV4HeadersForBinary(const String& method, const String& uri,
+                                             const String& host, const uint8_t* payload,
+                                             size_t payloadSize,
+                                             const String& contentType = "application/octet-stream");
+
+    // Calculate SHA256 hash of binary data (returns lowercase hex string)
+    String sha256HashBinary(const uint8_t* data, size_t len);
 
     // Get current credentials
     AWSCredentials getCurrentCredentials() const { return credentials; }
@@ -80,6 +90,11 @@ private:
     String getISOTimestamp();
     String getDateStamp();
     String bytesToHex(const uint8_t* bytes, size_t len);
+
+    // Internal method that takes pre-computed payload hash
+    SigV4Headers createSigV4HeadersInternal(const String& method, const String& uri,
+                                            const String& host, const String& payloadHash,
+                                            const String& contentType);
 };
 
 #endif

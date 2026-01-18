@@ -131,6 +131,25 @@ bool AWSAuth::refreshCredentialsIfNeeded(const char* roleAlias) {
 SigV4Headers AWSAuth::createSigV4Headers(const String& method, const String& uri,
                                          const String& host, const String& payload,
                                          const String& contentType) {
+    // For string payloads, calculate the SHA256 hash
+    String payloadHash = sha256Hash(payload);
+    return createSigV4HeadersInternal(method, uri, host, payloadHash, contentType);
+}
+
+SigV4Headers AWSAuth::createSigV4HeadersForBinary(const String& method, const String& uri,
+                                                   const String& host, const uint8_t* payload,
+                                                   size_t payloadSize,
+                                                   const String& contentType) {
+    // For binary payloads, calculate the SHA256 hash of the binary data
+    SDLogger::getInstance().infof("AWSAuth: Hashing binary payload of %d bytes", payloadSize);
+    String payloadHash = sha256HashBinary(payload, payloadSize);
+    SDLogger::getInstance().infof("AWSAuth: Payload hash: %s", payloadHash.c_str());
+    return createSigV4HeadersInternal(method, uri, host, payloadHash, contentType);
+}
+
+SigV4Headers AWSAuth::createSigV4HeadersInternal(const String& method, const String& uri,
+                                                  const String& host, const String& payloadHash,
+                                                  const String& contentType) {
     SigV4Headers headers;
     headers.isValid = false;
 
@@ -145,21 +164,20 @@ SigV4Headers AWSAuth::createSigV4Headers(const String& method, const String& uri
 
     SDLogger::getInstance().debugf("AWSAuth: Creating SigV4 signature for %s %s", method.c_str(), uri.c_str());
 
-    // Create payload hash
-    String payloadHash = sha256Hash(payload);
-
     // Create canonical headers (must be sorted alphabetically by header name)
     String canonicalHeaders = "content-type:" + contentType + "\n" +
-                             "host:" + host + "\n" +
-                             "x-amz-date:" + amzDate + "\n" +
-                             "x-amz-security-token:" + credentials.sessionToken + "\n";
+                              "host:" + host + "\n" +
+                              "x-amz-date:" + amzDate + "\n" +
+                              "x-amz-security-token:" + credentials.sessionToken + "\n";
     String signedHeaders = "content-type;host;x-amz-date;x-amz-security-token";
 
     // Create canonical request
+    SDLogger::getInstance().debugf("AWSAuth: canonicalHeaders length: %d", canonicalHeaders.length());
+
     String canonicalRequest = createCanonicalRequest(method, uri, "", canonicalHeaders,
                                                     signedHeaders, payloadHash);
 
-    SDLogger::getInstance().debugf("AWSAuth: Canonical Request:\n%s", canonicalRequest.c_str());
+    SDLogger::getInstance().debugf("AWSAuth: Canonical Request Hash: %s", sha256Hash(canonicalRequest).c_str());
 
     // Create string to sign
     String algorithm = "AWS4-HMAC-SHA256";
@@ -188,8 +206,10 @@ SigV4Headers AWSAuth::createSigV4Headers(const String& method, const String& uri
     headers.securityToken = credentials.sessionToken;
     headers.contentType = contentType;
     headers.host = host;
+    headers.payloadHash = payloadHash;  // Store the payload hash for the HTTP header
     headers.isValid = true;
 
+    SDLogger::getInstance().debugf("AWSAuth: Authorization: %s", headers.authorization.c_str());
     SDLogger::getInstance().debugf("AWSAuth: SigV4 headers created successfully");
 
     return headers;
@@ -261,12 +281,20 @@ String AWSAuth::sha256Hash(const String& data) {
     return bytesToHex(output, 32);
 }
 
+String AWSAuth::sha256HashBinary(const uint8_t* data, size_t len) {
+    uint8_t output[32];
+    const mbedtls_md_info_t* md_info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+    mbedtls_md(md_info, data, len, output);
+    return bytesToHex(output, 32);
+}
+
 String AWSAuth::bytesToHex(const uint8_t* bytes, size_t len) {
     String result = "";
     result.reserve(len * 2);
+    const char hexChars[] = "0123456789abcdef";  // AWS SigV4 requires lowercase hex
     for (size_t i = 0; i < len; i++) {
-        if (bytes[i] < 16) result += "0";
-        result += String(bytes[i], HEX);
+        result += hexChars[(bytes[i] >> 4) & 0x0F];
+        result += hexChars[bytes[i] & 0x0F];
     }
     return result;
 }

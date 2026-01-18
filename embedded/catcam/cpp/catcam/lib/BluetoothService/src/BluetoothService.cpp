@@ -235,9 +235,6 @@ void BootBootsBluetoothService::processCommand(const String& command) {
 
             // Small delay between chunks to avoid overwhelming BLE
             delay(50);
-
-            chunkDoc["data"] = "MHChuck";
-            sendResponse(chunkJson);
         });
 
         // Send completion message

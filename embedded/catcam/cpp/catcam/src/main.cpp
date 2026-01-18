@@ -13,6 +13,8 @@
 #include "WifiConnect.h"
 #include "OTAUpdate.h"
 #include "AWSAuth.h"
+#include "Camera.h"
+#include "CatCamHttpClient.h"
 #include "version.h"
 #include "secrets.h"
 #include <HTTPClient.h>
@@ -46,11 +48,12 @@ BluetoothOTA* bluetoothOTA = nullptr;
 OTAUpdate* otaUpdate = nullptr;
 PCF8574Manager* pcfManager = nullptr;
 AWSAuth* awsAuth = nullptr;
+Camera* camera = nullptr;
 
 // AWS Auth configuration
 const char* AWS_ROLE_ALIAS = "BootBootsRoleAlias";
 const char* API_HOST = "api.bootboots.sandbox.nakomis.com";
-const char* API_PATH = "/authCheck";
+const char* API_PATH = "/infer";
 
 // Function declarations
 void testAWSAuth();
@@ -330,51 +333,41 @@ void testAWSAuth() {
 
     SDLogger::getInstance().infof("Credentials obtained successfully!");
 
-    // Step 2: Make a signed POST request to authCheck endpoint
-    SDLogger::getInstance().infof("Step 2: Making signed POST request to https://%s%s", API_HOST, API_PATH);
+    // Step 2: Initialize camera and take a photo
+    SDLogger::getInstance().infof("Step 2: Initializing camera and capturing image");
 
-    String payload = "{}";  // Empty JSON payload
+    camera = new Camera();
+    camera->init();
 
-    // Create SigV4 signed headers
-    SigV4Headers headers = awsAuth->createSigV4Headers("POST", API_PATH, API_HOST, payload);
+    // Give camera time to stabilize
+    delay(500);
 
-    if (!headers.isValid) {
-        SDLogger::getInstance().errorf("Failed to create SigV4 headers");
+    NamedImage* image = camera->getImage();
+    if (!image || !image->image || image->size == 0) {
+        SDLogger::getInstance().errorf("Failed to capture image");
+        if (camera) {
+            camera->deInit();
+            delete camera;
+            camera = nullptr;
+        }
         return;
     }
 
-    // Make the actual HTTP request
-    WiFiClientSecure client;
-    client.setInsecure();  // For testing - in production, set proper CA cert
+    SDLogger::getInstance().infof("Captured image: %s (%d bytes)", image->filename.c_str(), image->size);
 
-    HTTPClient http;
-    String url = "https://" + String(API_HOST) + String(API_PATH);
-    http.begin(client, url);
+    // Step 3: Post image to infer endpoint
+    SDLogger::getInstance().infof("Step 3: Posting image to https://%s%s", API_HOST, API_PATH);
 
-    // Add all required headers
-    http.addHeader("Content-Type", headers.contentType);
-    http.addHeader("Host", headers.host);
-    http.addHeader("X-Amz-Date", headers.date);
-    http.addHeader("X-Amz-Security-Token", headers.securityToken);
-    http.addHeader("Authorization", headers.authorization);
+    CatCamHttpClient httpClient;
+    String response = httpClient.postImage(image, API_HOST, API_PATH, awsAuth);
 
-    SDLogger::getInstance().debugf("Authorization: %s", headers.authorization.c_str());
+    SDLogger::getInstance().infof("Response: %s", response.c_str());
 
-    int httpResponseCode = http.POST(payload);
-
-    SDLogger::getInstance().infof("HTTP Response Code: %d", httpResponseCode);
-
-    if (httpResponseCode == 200) {
-        SDLogger::getInstance().infof("SUCCESS! authCheck returned 200");
-        String response = http.getString();
-        SDLogger::getInstance().infof("Response: %s", response.c_str());
-    } else {
-        SDLogger::getInstance().errorf("FAILED! Expected 200, got %d", httpResponseCode);
-        String response = http.getString();
-        SDLogger::getInstance().errorf("Response: %s", response.c_str());
-    }
-
-    http.end();
+    // Cleanup
+    camera->releaseImageBuffer(image);
+    camera->deInit();
+    delete camera;
+    camera = nullptr;
 
     SDLogger::getInstance().infof("=== AWS Auth Test Complete ===");
 }

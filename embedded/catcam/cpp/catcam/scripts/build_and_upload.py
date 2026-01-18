@@ -81,21 +81,21 @@ class FirmwareBuilder:
 
         print(f"✅ Updated version to {version}")
 
-    def build_firmware(self):
+    def build_firmware(self, environment="esp32s3cam"):
         """Build firmware using PlatformIO"""
-        print("🔨 Building firmware...")
+        print(f"🔨 Building firmware for {environment}...")
 
         # Change to project directory
         os.chdir(self.project_root)
 
         # Clean previous build
-        result = subprocess.run(["pio", "run", "--target", "clean"],
+        result = subprocess.run(["pio", "run", "-e", environment, "--target", "clean"],
                               capture_output=True, text=True)
         if result.returncode != 0:
             print(f"⚠️  Clean warning: {result.stderr}")
 
         # Build firmware
-        result = subprocess.run(["pio", "run"], capture_output=True, text=True)
+        result = subprocess.run(["pio", "run", "-e", environment], capture_output=True, text=True)
         if result.returncode != 0:
             print(f"❌ Build failed: {result.stderr}")
             return False
@@ -103,30 +103,23 @@ class FirmwareBuilder:
         print("✅ Build successful!")
         return True
 
-    def find_firmware_file(self):
-        """Find the built firmware file"""
-        # Look for .pio/build/*/firmware.bin
-        build_dir = self.project_root / ".pio" / "build"
+    def find_firmware_file(self, environment="esp32s3cam"):
+        """Find the built firmware file for the specified environment"""
+        firmware_file = self.project_root / ".pio" / "build" / environment / "firmware.bin"
 
-        if not build_dir.exists():
-            raise FileNotFoundError("Build directory does not exist")
+        if not firmware_file.exists():
+            raise FileNotFoundError(f"Could not find firmware.bin for {environment}")
 
-        for env_dir in build_dir.iterdir():
-            if env_dir.is_dir():
-                firmware_file = env_dir / "firmware.bin"
-                if firmware_file.exists():
-                    return firmware_file
-
-        raise FileNotFoundError("Could not find firmware.bin file")
+        return firmware_file
 
     def get_firmware_size(self, firmware_file):
         """Get firmware file size in bytes"""
         return os.path.getsize(firmware_file)
 
-    def upload_to_s3(self, version):
+    def upload_to_s3(self, version, environment="esp32s3cam"):
         """Upload firmware to S3 bucket"""
         try:
-            firmware_file = self.find_firmware_file()
+            firmware_file = self.find_firmware_file(environment)
             firmware_size = self.get_firmware_size(firmware_file)
 
             # Initialize S3 client
@@ -182,6 +175,8 @@ Examples:
                        help='Skip version bump, use current version')
     parser.add_argument('--build-only', action='store_true',
                        help='Only build, do not upload to S3')
+    parser.add_argument('-e', '--environment', default='esp32s3cam',
+                       help='PlatformIO environment to build (default: esp32s3cam)')
 
     args = parser.parse_args()
 
@@ -219,7 +214,7 @@ Examples:
     print()
 
     # Build firmware
-    if not builder.build_firmware():
+    if not builder.build_firmware(args.environment):
         print()
         print("❌ Build failed! Fix errors and try again.")
         sys.exit(1)
@@ -229,7 +224,7 @@ Examples:
     # Upload to S3 if not build-only
     if not args.build_only:
         print("📡 Uploading to S3...")
-        if builder.upload_to_s3(version):
+        if builder.upload_to_s3(version, args.environment):
             print()
             print("=" * 60)
             print(f"✅ Firmware v{version} successfully built and uploaded!")
@@ -249,7 +244,7 @@ Examples:
         print(f"✅ Firmware v{version} built successfully")
         print("=" * 60)
         print("   (Upload skipped - build-only mode)")
-        firmware_file = builder.find_firmware_file()
+        firmware_file = builder.find_firmware_file(args.environment)
         print(f"   Firmware: {firmware_file}")
 
 if __name__ == "__main__":
