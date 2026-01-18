@@ -31,6 +31,13 @@ export class ApiGatewayStack extends cdk.Stack {
         removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
+    // Create log group for API Gateway access logs
+    const apiGatewayLogGroup = new logs.LogGroup(this, 'BootBootsApiGatewayLogGroup', {
+        logGroupName: '/aws/apigateway/BootBootsInferApi',
+        retention: logs.RetentionDays.ONE_MONTH,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
     const inferLambda = new NodejsFunction(this, 'BootBootsInferLambdaFunction', {
         functionName: 'BootBoots',
         runtime: cdk.aws_lambda.Runtime.NODEJS_22_X,
@@ -70,6 +77,24 @@ export class ApiGatewayStack extends cdk.Stack {
       },
       // Disable the default endpoint to force usage of custom domain
       disableExecuteApiEndpoint: true,
+      cloudWatchRole: true,
+      deployOptions: {
+        accessLogDestination: new apigateway.LogGroupLogDestination(apiGatewayLogGroup),
+        accessLogFormat: apigateway.AccessLogFormat.jsonWithStandardFields({
+          caller: true,
+          httpMethod: true,
+          ip: true,
+          protocol: true,
+          requestTime: true,
+          resourcePath: true,
+          responseLength: true,
+          status: true,
+          user: true,
+        }),
+        loggingLevel: apigateway.MethodLoggingLevel.INFO,
+        dataTraceEnabled: true,
+        metricsEnabled: true,
+      },
     });
 
     // Create the /infer resource
@@ -81,10 +106,10 @@ export class ApiGatewayStack extends cdk.Stack {
       description: 'API key for BootBoots inference endpoint',
     });
 
-    // Add POST method to /infer with API key requirement
+    // Add POST method to /infer with IAM auth (no API key required for IoT devices)
     inferResource.addMethod('POST', new apigateway.LambdaIntegration(inferLambda), {
       authorizationType: apigateway.AuthorizationType.IAM,
-      apiKeyRequired: true,
+      apiKeyRequired: false,
       methodResponses: [
         {
           statusCode: '200',
