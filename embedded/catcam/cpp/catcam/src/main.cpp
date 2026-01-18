@@ -21,14 +21,8 @@
 #include "CatCamHttpClient.h"
 #include "version.h"
 #include "secrets.h"
+#include "NeoPixel.h"
 #include <HTTPClient.h>
-
-#ifdef ESP32S3_CAM
-#include <Adafruit_NeoPixel.h>
-#define RGB_LED_PIN 48
-#define NUM_LEDS 1
-Adafruit_NeoPixel rgbLed(NUM_LEDS, RGB_LED_PIN, NEO_GRB + NEO_KHZ800);
-#endif
 
 #include "main.h"
 
@@ -151,7 +145,7 @@ void setup() {
 
     // Log system startup
     if (systemState.sdCardReady) {
-        SDLogger::getInstance().infof("BootBoots system initialized successfully");
+        SDLogger::getInstance().infof("%s system v%s (%s) initialized successfully", PROJECT_NAME, FIRMWARE_VERSION, BUILD_TIMESTAMP);
         SDLogger::getInstance().infof("System Status - Camera: %s, WiFi: %s, I2C: %s, PCF8574: %s, Atomizer: %s",
             systemState.cameraReady ? "OK" : "FAIL",
             systemState.wifiConnected ? "OK" : "FAIL",
@@ -379,8 +373,7 @@ void handleSystemError(const char* component, const char* error) {
 // RGB LED Helper Functions
 void setLedColor(uint8_t r, uint8_t g, uint8_t b) {
 #ifdef ESP32S3_CAM
-    rgbLed.setPixelColor(0, rgbLed.Color(r, g, b));
-    rgbLed.show();
+    NeoPixel::instance().setLedColor(r, g, b);
 #endif
 }
 
@@ -420,10 +413,12 @@ void initImagesDirectory() {
     if (!SD_MMC.exists(IMAGES_DIR)) {
         if (SD_MMC.mkdir(IMAGES_DIR)) {
             SDLogger::getInstance().infof("Created images directory: %s", IMAGES_DIR);
-        } else {
+        }
+        else {
             SDLogger::getInstance().errorf("Failed to create images directory: %s", IMAGES_DIR);
         }
-    } else {
+    }
+    else {
         SDLogger::getInstance().debugf("Images directory exists: %s", IMAGES_DIR);
     }
 }
@@ -527,14 +522,16 @@ void cleanupOldImages() {
 
         if (SD_MMC.remove(jpgPath.c_str())) {
             SDLogger::getInstance().debugf("Deleted: %s", jpgPath.c_str());
-        } else {
+        }
+        else {
             SDLogger::getInstance().warnf("Failed to delete: %s", jpgPath.c_str());
         }
 
         if (SD_MMC.exists(txtPath.c_str())) {
             if (SD_MMC.remove(txtPath.c_str())) {
                 SDLogger::getInstance().debugf("Deleted: %s", txtPath.c_str());
-            } else {
+            }
+            else {
                 SDLogger::getInstance().warnf("Failed to delete: %s", txtPath.c_str());
             }
         }
@@ -606,33 +603,25 @@ void initCameraAndLed() {
 #ifdef ESP32S3_CAM
     // Initialize RGB LED
     SDLogger::getInstance().infof("Initializing RGB LED on GPIO %d", RGB_LED_PIN);
-    rgbLed.begin();
-    rgbLed.setBrightness(255);  // Full brightness for testing
-    rgbLed.show();
+    NeoPixel::instance().setBrightness(255);
 
     // LED test sequence - verify hardware works
-    SDLogger::getInstance().infof("LED test: RED");
-    rgbLed.setPixelColor(0, rgbLed.Color(255, 0, 0));
-    rgbLed.show();
-    delay(500);
+    for (int i = 0; i < 3; i++) {
+        NeoPixel::instance().setLedColor(255, 0, 0);
+        delay(100);
 
-    SDLogger::getInstance().infof("LED test: GREEN");
-    rgbLed.setPixelColor(0, rgbLed.Color(0, 255, 0));
-    rgbLed.show();
-    delay(500);
+        NeoPixel::instance().setLedColor(0, 255, 0);
+        delay(100);
 
-    SDLogger::getInstance().infof("LED test: BLUE");
-    rgbLed.setPixelColor(0, rgbLed.Color(0, 0, 255));
-    rgbLed.show();
-    delay(500);
+        NeoPixel::instance().setLedColor(0, 0, 255);
+        delay(100);
+    }
 
-    SDLogger::getInstance().infof("LED test: OFF");
-    rgbLed.setPixelColor(0, 0);
-    rgbLed.show();
+    NeoPixel::instance().setLedColor(0, 0, 0);
     delay(250);
 
     // Set working brightness
-    rgbLed.setBrightness(100);
+    NeoPixel::instance().setBrightness((uint8_t)100);
 #endif
 
     // Initialize camera
@@ -661,7 +650,7 @@ void captureAndPostPhoto() {
 
     // Step 3: Set bright WHITE for photo capture
 #ifdef ESP32S3_CAM
-    rgbLed.setBrightness(255);  // Maximum brightness for photo
+    NeoPixel::instance().setBrightness((uint8_t)0);  // Maximum brightness for photo
 #endif
     setLedColor(255, 255, 255);
 
@@ -677,7 +666,7 @@ void captureAndPostPhoto() {
     String basename = getTimestampFilename();
 
 #ifdef ESP32S3_CAM
-    rgbLed.setBrightness(50);  // 0-255, moderate brightness
+    NeoPixel::instance().setBrightness(50);  // 0-255, moderate brightness
 #endif
     setLedColor(0, 255, 0);
 
@@ -710,7 +699,7 @@ void captureAndPostPhoto() {
     DeserializationError jsonError = deserializeJson(doc, response);
 
     // Cat names matching model output indices
-    const char* CAT_NAMES[] = {"Boots", "Chi", "Kappa", "Mu", "Tau", "NoCat"};
+    const char* CAT_NAMES[] = { "Boots", "Chi", "Kappa", "Mu", "Tau", "NoCat" };
 
     if (jsonError) {
         SDLogger::getInstance().warnf("Failed to parse response JSON: %s", jsonError.c_str());

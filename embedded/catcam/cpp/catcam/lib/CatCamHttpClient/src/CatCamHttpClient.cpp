@@ -7,6 +7,7 @@
 
 CatCamHttpClient::CatCamHttpClient()
 {
+
 }
 
 String CatCamHttpClient::postImage(NamedImage* namedImage, const char* host, const char* path, AWSAuth* awsAuth) {
@@ -29,8 +30,8 @@ String CatCamHttpClient::postImage(NamedImage* namedImage, const char* host, con
 
     // Create the SigV4 headers with the actual binary payload hash
     SigV4Headers headers = awsAuth->createSigV4HeadersForBinary("POST", path, host,
-                                                                  namedImage->image, imageSize,
-                                                                  contentType);
+        namedImage->image, imageSize,
+        contentType);
 
     if (!headers.isValid) {
         SDLogger::getInstance().errorf("CatCamHttpClient: Failed to create SigV4 headers");
@@ -148,7 +149,8 @@ String CatCamHttpClient::postImage(NamedImage* namedImage, const char* host, con
             }
         }
         SDLogger::getInstance().debugf("CatCamHttpClient: Read %d bytes of body", response.length());
-    } else {
+    }
+    else {
         // Fallback: read whatever is available
         delay(100); // Give time for data to arrive
         while (client.available()) {
@@ -183,16 +185,19 @@ String CatCamHttpClient::postImage(NamedImage* namedImage, const char* host, con
                 SDLogger::getInstance().infof("CatCamHttpClient: Body[%d-%d]: %s", i, min(i + chunkSize, (int)cleanResponse.length()), chunk.c_str());
                 delay(10);  // Small delay to ensure log transmission
             }
-        } else {
+        }
+        else {
             SDLogger::getInstance().infof("CatCamHttpClient: No response body received");
         }
-    } else {
+    }
+    else {
         SDLogger::getInstance().debugf("CatCamHttpClient: Response: %s", response.c_str());
     }
 
     if (statusCode == 200) {
         return response;
-    } else {
+    }
+    else {
         return "{\"error\": \"HTTP " + String(statusCode) + "\", \"response\": \"" + response + "\"}";
     }
 }

@@ -15,6 +15,8 @@ public:
     // Post an image to the specified URL with SigV4 authentication
     String postImage(NamedImage* namedImage, const char* host, const char* path, AWSAuth* awsAuth);
 
+    std::function<void(int, int)> sendUpdate;
+
 private:
     static const int TIMEOUT_MS = 30000; // 30 second timeout
 };
