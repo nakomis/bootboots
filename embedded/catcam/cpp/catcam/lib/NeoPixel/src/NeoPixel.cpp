@@ -10,8 +10,8 @@ NeoPixel& NeoPixel::instance()
 
 // Private constructor
 NeoPixel::NeoPixel()
+    : rgbLed(NUM_LEDS, RGB_LED_PIN, NEO_GRB + NEO_KHZ800)
 {
-    Adafruit_NeoPixel rgbLed(NUM_LEDS, RGB_LED_PIN, NEO_GRB + NEO_KHZ800);
     rgbLed.begin();
 }
 

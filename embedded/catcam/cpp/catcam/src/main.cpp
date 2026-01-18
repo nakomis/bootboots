@@ -650,7 +650,7 @@ void captureAndPostPhoto() {
 
     // Step 3: Set bright WHITE for photo capture
 #ifdef ESP32S3_CAM
-    NeoPixel::instance().setBrightness((uint8_t)0);  // Maximum brightness for photo
+    NeoPixel::instance().setBrightness(255);  // Maximum brightness for photo
 #endif
     setLedColor(255, 255, 255);
 
