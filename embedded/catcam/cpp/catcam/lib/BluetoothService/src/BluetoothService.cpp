@@ -8,6 +8,9 @@ extern SystemState systemState;
 extern void setLedColor(uint8_t r, uint8_t g, uint8_t b);
 extern void ledOff();
 
+// External photo capture function from main.cpp
+extern void captureAndPostPhoto();
+
 BootBootsBluetoothService::BootBootsBluetoothService()
     : pServer(nullptr), pService(nullptr), pStatusCharacteristic(nullptr),
       pLogsCharacteristic(nullptr), pCommandCharacteristic(nullptr),
@@ -276,6 +279,26 @@ void BootBootsBluetoothService::processCommand(const String& command) {
             serializeJson(errorDoc, errorJson);
             sendResponse(errorJson);
         }
+    } else if (cmd == "take_photo") {
+        SDLogger::getInstance().infof("Take photo request via Bluetooth");
+        // Send acknowledgment first
+        DynamicJsonDocument ackDoc(128);
+        ackDoc["type"] = "photo_started";
+        ackDoc["message"] = "Capturing photo...";
+        String ackJson;
+        serializeJson(ackDoc, ackJson);
+        sendResponse(ackJson);
+
+        // Capture the photo
+        captureAndPostPhoto();
+
+        // Send completion
+        DynamicJsonDocument completeDoc(128);
+        completeDoc["type"] = "photo_complete";
+        completeDoc["message"] = "Photo captured and saved";
+        String completeJson;
+        serializeJson(completeDoc, completeJson);
+        sendResponse(completeJson);
     } else {
         SDLogger::getInstance().warnf("Unknown command: %s", cmd.c_str());
     }
