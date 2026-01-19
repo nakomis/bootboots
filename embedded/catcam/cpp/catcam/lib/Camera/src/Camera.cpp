@@ -88,12 +88,13 @@ void Camera::init() {
 NamedImage* Camera::getImage() {
     // Flush stale frames from the buffer pool
     // With fb_count=2, old frames may be sitting in the queue
-    for (int i = 0; i < 3; i++) {
+    // At ~15fps, each frame takes ~66ms, so we need longer delays
+    for (int i = 0; i < 4; i++) {
         camera_fb_t* stale = esp_camera_fb_get();
         if (stale) {
             esp_camera_fb_return(stale);
         }
-        delay(10);  // Brief delay to allow new frame capture
+        delay(100);  // Wait for fresh frame capture
     }
 
     // Now capture the actual frame

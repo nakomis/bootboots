@@ -8,8 +8,8 @@ Testing various camera settings to improve low-light performance on the ESP32-S3
 |---|---------|--------|--------|--------|
 | 1 | Gain Ceiling | 0 → 6 (max) | ✅ Done | No improvement |
 | 2 | Night Mode (AEC2) | 0 → 1 (enable) | ✅ Done | No improvement |
-| 3 | AE Level | 0 → +2 | ⏳ Pending | - |
-| 4 | Exposure Value | 300 → 800 | ⏳ Pending | - |
+| 3 | AE Level | 0 → +2 | ✅ Done | No improvement |
+| 4 | Exposure Value | 300 → 800 | 🔄 Testing | - |
 | 5 | Manual Gain | 0 → 15 | ⏳ Pending | - |
 | 6 | Frame Size | UXGA → XGA | ⏳ Pending | - |
 | 7 | JPEG Quality | 10 → 6 | ⏳ Pending | - |
@@ -39,7 +39,7 @@ Enables the OV5640's built-in night mode which automatically reduces frame rate 
 
 Biases auto-exposure toward brighter images.
 
-**Result:** Pending
+**Result:** No improvement observed.
 
 ---
 
