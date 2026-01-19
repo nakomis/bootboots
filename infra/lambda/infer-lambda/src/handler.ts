@@ -218,7 +218,9 @@ export async function handler(event: APIGatewayProxyEvent, _context: Context): P
             }
 
             // Generate timestamp for consistent naming
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            // FIXME: We should pass the filename in from the device. The body is binary, so
+            // we'll probably need to pass it in the form [fixed width<filename-buffer>][dynamic width<body>]
+            const timestamp = new Date().toISOString();
 
             // Save image to S3 bucket
             let s3ImageKey: string | null = null;

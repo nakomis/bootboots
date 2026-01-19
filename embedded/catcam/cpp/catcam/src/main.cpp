@@ -386,7 +386,7 @@ bool isBootButtonPressed() {
     return digitalRead(BOOT_BUTTON_PIN) == LOW;
 }
 
-// Generate a timestamp filename in format: 2026-01-18T11-28-33-179Z
+// Generate a timestamp filename in format: 2026-01-18T11_28_33.179Z
 String getTimestampFilename() {
     struct timeval tv;
     gettimeofday(&tv, NULL);
@@ -396,7 +396,7 @@ String getTimestampFilename() {
 
     char timestamp[32];
     int millis_part = tv.tv_usec / 1000;
-    snprintf(timestamp, sizeof(timestamp), "%04d-%02d-%02dT%02d-%02d-%02d-%03dZ",
+    snprintf(timestamp, sizeof(timestamp), "%04d-%02d-%02dT%02d_%02d_%02d.%03dZ",
         timeinfo.tm_year + 1900,
         timeinfo.tm_mon + 1,
         timeinfo.tm_mday,
