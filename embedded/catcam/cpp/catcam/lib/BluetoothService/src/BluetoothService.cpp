@@ -338,22 +338,35 @@ std::vector<String> BootBootsBluetoothService::listImages() {
 
 void BootBootsBluetoothService::sendImageList() {
     std::vector<String> images = listImages();
+    size_t totalImages = images.size();
 
-    DynamicJsonDocument doc(2048);
-    doc["type"] = "image_list";
-    JsonArray list = doc.createNestedArray("images");
+    SDLogger::getInstance().infof("Sending image list: %d images", totalImages);
 
-    for (const String& img : images) {
-        list.add(img);
+    // Send each image filename as a separate chunk
+    for (size_t i = 0; i < totalImages; i++) {
+        DynamicJsonDocument chunkDoc(256);
+        chunkDoc["type"] = "image_list_chunk";
+        chunkDoc["chunk"] = i;
+        chunkDoc["total"] = totalImages;
+        chunkDoc["filename"] = images[i];
+
+        String chunkJson;
+        serializeJson(chunkDoc, chunkJson);
+        sendResponse(chunkJson);
+
+        delay(30);  // Small delay between chunks
     }
 
-    doc["count"] = images.size();
+    // Send completion message
+    DynamicJsonDocument completeDoc(128);
+    completeDoc["type"] = "image_list_complete";
+    completeDoc["count"] = totalImages;
 
-    String jsonStr;
-    serializeJson(doc, jsonStr);
-    sendResponse(jsonStr);
+    String completeJson;
+    serializeJson(completeDoc, completeJson);
+    sendResponse(completeJson);
 
-    SDLogger::getInstance().infof("Sent image list: %d images", images.size());
+    SDLogger::getInstance().infof("Image list transfer complete: %d images", totalImages);
 }
 
 void BootBootsBluetoothService::sendImage(const String& filename) {
