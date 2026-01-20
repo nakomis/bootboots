@@ -69,7 +69,7 @@ const char* API_PATH = "/infer";
 
 // Function declarations
 void initCameraAndLed();
-void captureAndPostPhoto();
+String captureAndPostPhoto();
 void setLedColor(uint8_t r, uint8_t g, uint8_t b);
 void ledOff();
 bool flashLedAccelerating(uint8_t r, uint8_t g, uint8_t b, unsigned long startInterval, unsigned long endInterval, unsigned long durationMs);
@@ -632,10 +632,10 @@ void initCameraAndLed() {
     SDLogger::getInstance().infof("=== Camera and LED Ready - Press BOOT to capture photo ===");
 }
 
-void captureAndPostPhoto() {
+String captureAndPostPhoto() {
     if (!camera) {
         SDLogger::getInstance().errorf("Camera not initialized");
-        return;
+        return "";
     }
 
     SDLogger::getInstance().infof("=== Capturing Photo ===");
@@ -659,7 +659,7 @@ void captureAndPostPhoto() {
     if (!image || !image->image || image->size == 0) {
         SDLogger::getInstance().errorf("Failed to capture image");
         ledOff();
-        return;
+        return "";
     }
 
     // Generate timestamp-based filename for this capture
@@ -682,7 +682,7 @@ void captureAndPostPhoto() {
             SDLogger::getInstance().errorf("Failed to get AWS credentials");
             camera->releaseImageBuffer(image);
             ledOff();
-            return;
+            return "";
         }
     }
 
@@ -742,4 +742,7 @@ void captureAndPostPhoto() {
     ledOff();
 
     SDLogger::getInstance().infof("=== Photo Capture Complete ===");
+
+    // Return the filename (with .jpg extension)
+    return basename + ".jpg";
 }

@@ -66,9 +66,9 @@ void Camera::init() {
         s->set_aec2(s, 0);           // 0 = disable, 1 = enable
         s->set_ae_level(s, 0);       // -2 to 2
         s->set_aec_value(s, 300);    // 0 to 1200
-        s->set_gain_ctrl(s, 1);      // 0 = disable, 1 = enable
-        s->set_agc_gain(s, 0);       // 0 to 30
-        s->set_gainceiling(s, (gainceiling_t)0); // 0 to 6
+        s->set_gain_ctrl(s, 0);      // 0 = disable, 1 = enable - auto gain enabled
+        s->set_agc_gain(s, 15);      // 0 to 30 - base gain for low light
+        s->set_gainceiling(s, (gainceiling_t)0); // 0 to 6 - max gain ceiling
         s->set_bpc(s, 0);            // 0 = disable, 1 = enable
         s->set_wpc(s, 1);            // 0 = disable, 1 = enable
         s->set_raw_gma(s, 1);        // 0 = disable, 1 = enable

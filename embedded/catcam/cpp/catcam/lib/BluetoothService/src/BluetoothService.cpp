@@ -8,8 +8,8 @@ extern SystemState systemState;
 extern void setLedColor(uint8_t r, uint8_t g, uint8_t b);
 extern void ledOff();
 
-// External photo capture function from main.cpp
-extern void captureAndPostPhoto();
+// External photo capture function from main.cpp (returns new filename)
+extern String captureAndPostPhoto();
 
 BootBootsBluetoothService::BootBootsBluetoothService()
     : pServer(nullptr), pService(nullptr), pStatusCharacteristic(nullptr),
@@ -279,6 +279,20 @@ void BootBootsBluetoothService::processCommand(const String& command) {
             serializeJson(errorDoc, errorJson);
             sendResponse(errorJson);
         }
+    } else if (cmd == "get_image_metadata") {
+        String filename = doc["filename"] | "";
+        if (filename.length() > 0) {
+            SDLogger::getInstance().infof("Metadata request via command: %s", filename.c_str());
+            sendImageMetadata(filename);
+        } else {
+            SDLogger::getInstance().warnf("get_image_metadata command missing filename");
+            DynamicJsonDocument errorDoc(128);
+            errorDoc["type"] = "error";
+            errorDoc["message"] = "Missing filename parameter";
+            String errorJson;
+            serializeJson(errorDoc, errorJson);
+            sendResponse(errorJson);
+        }
     } else if (cmd == "take_photo") {
         SDLogger::getInstance().infof("Take photo request via Bluetooth");
         // Send acknowledgment first
@@ -289,13 +303,14 @@ void BootBootsBluetoothService::processCommand(const String& command) {
         serializeJson(ackDoc, ackJson);
         sendResponse(ackJson);
 
-        // Capture the photo
-        captureAndPostPhoto();
+        // Capture the photo (returns new filename)
+        String newFilename = captureAndPostPhoto();
 
-        // Send completion
-        DynamicJsonDocument completeDoc(128);
+        // Send completion with filename
+        DynamicJsonDocument completeDoc(256);
         completeDoc["type"] = "photo_complete";
         completeDoc["message"] = "Photo captured and saved";
+        completeDoc["filename"] = newFilename;
         String completeJson;
         serializeJson(completeDoc, completeJson);
         sendResponse(completeJson);
@@ -487,4 +502,49 @@ void BootBootsBluetoothService::sendImage(const String& filename) {
     sendResponse(endJson);
 
     SDLogger::getInstance().infof("Image transfer complete: %d chunks sent", chunkIndex);
+}
+
+void BootBootsBluetoothService::sendImageMetadata(const String& filename) {
+    // Construct the .txt file path from the .jpg filename
+    String txtFilename = filename;
+    if (txtFilename.endsWith(".jpg")) {
+        txtFilename = txtFilename.substring(0, txtFilename.length() - 4) + ".txt";
+    } else {
+        txtFilename = txtFilename + ".txt";
+    }
+
+    String filepath = "/images/" + txtFilename;
+
+    File file = SD_MMC.open(filepath.c_str(), FILE_READ);
+    if (!file) {
+        SDLogger::getInstance().warnf("Metadata file not found: %s", filepath.c_str());
+        DynamicJsonDocument errorDoc(256);
+        errorDoc["type"] = "metadata_result";
+        errorDoc["filename"] = filename;
+        errorDoc["found"] = false;
+        errorDoc["content"] = "";
+        String errorJson;
+        serializeJson(errorDoc, errorJson);
+        sendResponse(errorJson);
+        return;
+    }
+
+    // Read the entire .txt file (should be small JSON)
+    String content = file.readString();
+    file.close();
+
+    SDLogger::getInstance().infof("Sending metadata for: %s (%d bytes)", filename.c_str(), content.length());
+
+    // Send the metadata content
+    DynamicJsonDocument resultDoc(1024);
+    resultDoc["type"] = "metadata_result";
+    resultDoc["filename"] = filename;
+    resultDoc["found"] = true;
+    resultDoc["content"] = content;
+
+    String resultJson;
+    serializeJson(resultDoc, resultJson);
+    sendResponse(resultJson);
+
+    SDLogger::getInstance().infof("Metadata transfer complete for: %s", filename.c_str());
 }

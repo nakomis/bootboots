@@ -319,6 +319,75 @@ WiFi credentials are in `catcam/include/secrets.h` (gitignored):
 #define WIFI_PASSWORD "your_password"
 ```
 
+## Bluetooth Image Handling Architecture
+
+### Device Side (BluetoothService)
+
+**File:** `catcam/lib/BluetoothService/src/BluetoothService.cpp`
+
+The device stores images in `/images/` directory with timestamp-based filenames:
+- `2026-01-18T11_28_33.179Z.jpg` - JPEG image from camera
+- `2026-01-18T11_28_33.179Z.txt` - AI inference result (JSON)
+
+**Supported BLE Commands:**
+
+| Command | Request | Response |
+|---------|---------|----------|
+| `list_images` | `{"command": "list_images"}` | Chunked: `image_list_chunk` → `image_list_complete` |
+| `get_image` | `{"command": "get_image", "filename": "...jpg"}` | Chunked: `image_start` → `image_chunk` (base64) → `image_complete` |
+| `get_image_metadata` | `{"command": "get_image_metadata", "filename": "...jpg"}` | `metadata_result` with `.txt` contents |
+| `take_photo` | `{"command": "take_photo"}` | `photo_started` → (capture + AI inference) → `photo_complete` with new filename |
+
+**Chunking Protocol:**
+- BLE MTU is ~512 bytes, so data is sent in chunks
+- Image chunks: 300 bytes raw → ~400 bytes base64 per notification
+- 30ms delay between chunks to avoid overwhelming BLE stack
+- LED toggles green/blue during transfer for visual feedback
+
+### Web App Side (Bluetooth.tsx)
+
+**File:** `/Users/martinmu_1/repos/nakomis/sandboxsite/sandbox-app/src/components/pages/Bluetooth.tsx`
+
+**State Management:**
+- `imageList: string[]` - Available image filenames from device
+- `selectedImage: string` - Currently selected filename
+- `currentImage: string | null` - Base64 data URL of displayed image
+- `currentMetadata: string | null` - AI inference result from `.txt` file
+- `imageCache: LRUCache<string, ImageAndResult>` - Caches up to 20 images with metadata
+
+**ImageAndResult Type:**
+```typescript
+interface ImageAndResult {
+    imageData: string;      // base64 data URL
+    metadata: string | null; // .txt file contents (AI inference JSON)
+}
+```
+
+**Data Flow:**
+1. User clicks "Get Images" → `list_images` command → dropdown populated
+2. User selects image → check cache first, then `get_image` + `get_image_metadata` commands
+3. User clicks "Take Photo" → `take_photo` command → auto-refresh list and select new image
+
+### AI Inference Result Format (.txt files)
+
+```json
+{
+    "success": true,
+    "data": {
+        "probabilities": [0.05, 0.10, 0.15, 0.20, 0.40, 0.10]
+    },
+    "mostLikelyCat": {
+        "name": "Tau",
+        "confidence": 0.40,
+        "index": 4
+    }
+}
+```
+
+### Image Cleanup
+
+Device maintains max 20 image pairs (`.jpg` + `.txt`). When limit exceeded, oldest pairs are deleted automatically during photo capture.
+
 ## Git Branches
 
 - `main` - Stable release

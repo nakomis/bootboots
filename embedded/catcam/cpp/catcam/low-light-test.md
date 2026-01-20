@@ -9,8 +9,8 @@ Testing various camera settings to improve low-light performance on the ESP32-S3
 | 1 | Gain Ceiling | 0 → 6 (max) | ✅ Done | No improvement |
 | 2 | Night Mode (AEC2) | 0 → 1 (enable) | ✅ Done | No improvement |
 | 3 | AE Level | 0 → +2 | ✅ Done | No improvement |
-| 4 | Exposure Value | 300 → 800 | 🔄 Testing | - |
-| 5 | Manual Gain | 0 → 15 | ⏳ Pending | - |
+| 4 | Exposure Value | 300 → 800 | ✅ Done | Slightly better, not good |
+| 5 | Manual Gain | 0 → 15 | 🔄 Testing | - |
 | 6 | Frame Size | UXGA → XGA | ⏳ Pending | - |
 | 7 | JPEG Quality | 10 → 6 | ⏳ Pending | - |
 
@@ -48,7 +48,7 @@ Biases auto-exposure toward brighter images.
 
 Higher base exposure time (though auto-exposure may override).
 
-**Result:** Pending
+**Result:** Slightly better, but not good.
 
 ---
 

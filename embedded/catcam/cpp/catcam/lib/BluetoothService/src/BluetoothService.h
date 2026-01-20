@@ -67,6 +67,7 @@ private:
     std::vector<String> listImages();
     void sendImageList();
     void sendImage(const String& filename);
+    void sendImageMetadata(const String& filename);
 };
 
 #endif
