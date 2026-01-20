@@ -303,9 +303,11 @@ cpp/
 │   └── lib/
 │       ├── BluetoothOTA/
 │       ├── BluetoothService/
+│       ├── Camera/
 │       ├── OTAUpdate/
 │       ├── PCF8574Manager/
 │       ├── SDLogger/
+│       ├── VideoRecorder/
 │       └── WifiConnect/
 │
 └── CLAUDE.md                          # This file
@@ -387,6 +389,93 @@ interface ImageAndResult {
 ### Image Cleanup
 
 Device maintains max 20 image pairs (`.jpg` + `.txt`). When limit exceeded, oldest pairs are deleted automatically during photo capture.
+
+## VideoRecorder Library
+
+The VideoRecorder library captures MJPEG video and saves it as AVI files to the SD card.
+
+**File:** `catcam/lib/VideoRecorder/src/VideoRecorder.h`
+
+### Usage Example
+
+```cpp
+#include "VideoRecorder.h"
+
+VideoRecorder recorder;
+
+void setup() {
+    // Camera must be initialized first
+    camera->init();
+
+    // Initialize video recorder
+    recorder.init();
+}
+
+void recordVideo() {
+    // Record with default settings (10 seconds, VGA 640x480, 10fps)
+    VideoResult result = recorder.record();
+
+    if (result.success) {
+        Serial.printf("Video saved: %s (%d frames, %d bytes)\n",
+            result.filename.c_str(), result.totalFrames, result.fileSize);
+    } else {
+        Serial.printf("Recording failed: %s\n", result.errorMessage.c_str());
+    }
+}
+
+void recordCustomVideo() {
+    // Record with custom settings
+    VideoConfig config;
+    config.frameSize = FRAMESIZE_SVGA;  // 800x600
+    config.quality = 15;                 // JPEG quality
+    config.fps = 15;                     // 15 frames per second
+    config.durationSeconds = 5;          // 5 second video
+    config.outputDir = "/videos";
+
+    VideoResult result = recorder.record(config);
+}
+
+void recordWithProgress() {
+    // Record with progress callback
+    VideoConfig config = VideoRecorder::getDefaultConfig();
+
+    VideoResult result = recorder.recordWithProgress(config,
+        [](uint32_t current, uint32_t total, uint32_t elapsedMs) {
+            Serial.printf("Recording: frame %d/%d (%.1fs)\n",
+                current, total, elapsedMs / 1000.0);
+        }
+    );
+}
+```
+
+### Configuration Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `frameSize` | `FRAMESIZE_VGA` (640x480) | Camera resolution |
+| `quality` | 12 | JPEG quality (0-63, lower = better) |
+| `fps` | 10 | Target frames per second |
+| `durationSeconds` | 10 | Recording duration |
+| `outputDir` | "/videos" | Output directory on SD card |
+
+### Supported Frame Sizes
+
+| Frame Size | Resolution | Notes |
+|------------|------------|-------|
+| `FRAMESIZE_QVGA` | 320x240 | Smallest, fastest |
+| `FRAMESIZE_CIF` | 400x296 | |
+| `FRAMESIZE_VGA` | 640x480 | **Recommended for video** |
+| `FRAMESIZE_SVGA` | 800x600 | Good balance |
+| `FRAMESIZE_XGA` | 1024x768 | Higher quality |
+| `FRAMESIZE_HD` | 1280x720 | HD video |
+
+### Technical Details
+
+- **Format:** AVI container with MJPEG codec
+- **Max Duration:** 30 seconds at 10fps (limited by frame index buffer)
+- **Storage:** Videos saved to `/videos/video_{timestamp}.avi`
+- **Camera Settings:** Temporarily changes camera settings during recording, restores original settings after
+- **Playback:** Compatible with VLC, Windows Media Player, and most video players
 
 ## Git Branches
 
