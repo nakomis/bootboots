@@ -171,4 +171,4 @@ The deterrence system includes multiple safety layers to prevent false activatio
 
 ## License
 
-Copyright 2025 BootBoots. All rights reserved.
+This project is released under [CC0 1.0 Universal](LICENSE) - public domain dedication.
