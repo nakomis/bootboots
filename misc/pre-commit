@@ -1,0 +1,14 @@
+#!/bin/bash
+
+FILES=$(git diff --cached --name-status)
+
+if [[ $FILES =~ .drawio ]]; then
+    echo 
+    echo --- Auto-generating SVG files for achitecture ---
+    /Applications/draw.io.app/Contents/MacOS/draw.io -x ./docs/architecture/architecture-deterrence.drawio -f svg -s 1 ./docs/architecture/architecture-deterrence.svg
+    /Applications/draw.io.app/Contents/MacOS/draw.io -x ./docs/architecture/architecture-training.drawio -f svg -s 1 ./docs/architecture/architecture-training.svg
+    git add docs/architecture/architecture-deterrence.svg ./docs/architecture/architecture-training.svg
+    echo
+fi
+
+exit 0
