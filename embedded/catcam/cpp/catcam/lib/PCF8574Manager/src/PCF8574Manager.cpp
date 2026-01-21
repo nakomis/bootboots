@@ -8,7 +8,7 @@ PCF8574Manager::PCF8574Manager(uint8_t i2cAddress)
 
 bool PCF8574Manager::init(int sdaPin, int sclPin) {
     // Initialize I2C with custom pins (UART0 pins)
-    Wire.begin(sdaPin, sclPin);
+    // Wire.begin(sdaPin, sclPin);
     Wire.setClock(100000); // 100kHz for reliability
     
     SDLogger::getInstance().infof("PCF8574Manager initializing on I2C address 0x%02X (SDA: %d, SCL: %d)", 

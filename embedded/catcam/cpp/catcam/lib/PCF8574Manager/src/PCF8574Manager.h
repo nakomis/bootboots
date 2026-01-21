@@ -18,7 +18,7 @@ public:
     static constexpr uint8_t SPARE_PIN_6 = 6;       // P6 - Future expansion
     static constexpr uint8_t SPARE_PIN_7 = 7;       // P7 - Future expansion
 
-    PCF8574Manager(uint8_t i2cAddress = 0x20);
+    PCF8574Manager(uint8_t i2cAddress = 0x27);
     bool init(int sdaPin, int sclPin);
     
     // Safe pin control with validation
