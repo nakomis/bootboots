@@ -1,6 +1,6 @@
 # BootBoots - Autonomous Cat Territory Management System
 
-An IoT system using ESP32 camera devices with AI-powered cat recognition and humane deterrent mechanisms. The system identifies specific cats and can activate deterrents to manage cat territory boundaries.
+An IoT system using an ESP32-S3 CAM device with AI-powered cat recognition and a humane deterrent mechanism. The system identifies specific cats and can activate deterrents to manage cat territory boundaries.
 
 ## Table of Contents
 
