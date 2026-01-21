@@ -97,6 +97,9 @@ I2C_SCL     = GPIO 5
 
 // RGB LED (WS2812 addressable NeoPixel)
 RGB_LED_PIN = GPIO 48
+
+// BOOT button (user input)
+BOOT_BUTTON = GPIO 0   // LOW when pressed - triggers video recording
 ```
 
 #### RGB LED (WS2812) Usage
@@ -389,6 +392,18 @@ interface ImageAndResult {
 ### Image Cleanup
 
 Device maintains max 20 image pairs (`.jpg` + `.txt`). When limit exceeded, oldest pairs are deleted automatically during photo capture.
+
+## BOOT Button Behavior
+
+Pressing the BOOT button (GPIO 0) triggers a 10-second video recording:
+
+1. **Red LED countdown** - Accelerating flashes (500ms → 250ms over 2.5s)
+2. **Blue LED countdown** - Accelerating flashes (250ms → 50ms over 2.5s)
+3. **White LED ON** - Stays on during recording (max brightness)
+4. **Recording** - 10 seconds at VGA (640x480), 10fps
+5. **LED feedback** - Green flash = success, Red flash = failure
+
+Videos are saved to `/videos/video_{timestamp}.avi` on the SD card.
 
 ## VideoRecorder Library
 

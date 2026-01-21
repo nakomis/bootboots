@@ -19,6 +19,7 @@
 #include "AWSAuth.h"
 #include "Camera.h"
 #include "CatCamHttpClient.h"
+#include "VideoRecorder.h"
 #include "version.h"
 #include "secrets.h"
 #include "NeoPixel.h"
@@ -61,6 +62,7 @@ OTAUpdate* otaUpdate = nullptr;
 PCF8574Manager* pcfManager = nullptr;
 AWSAuth* awsAuth = nullptr;
 Camera* camera = nullptr;
+VideoRecorder* videoRecorder = nullptr;
 
 // AWS Auth configuration
 const char* AWS_ROLE_ALIAS = "BootBootsRoleAlias";
@@ -70,6 +72,7 @@ const char* API_PATH = "/infer";
 // Function declarations
 void initCameraAndLed();
 String captureAndPostPhoto();
+void recordVideo();
 void setLedColor(uint8_t r, uint8_t g, uint8_t b);
 void ledOff();
 bool flashLedAccelerating(uint8_t r, uint8_t g, uint8_t b, unsigned long startInterval, unsigned long endInterval, unsigned long durationMs);
@@ -156,7 +159,7 @@ void setup() {
 }
 
 void loop() {
-    // Check for BOOT button press to capture photo
+    // Check for BOOT button press to record video
     static bool lastButtonState = false;
     bool buttonPressed = isBootButtonPressed();
 
@@ -164,8 +167,8 @@ void loop() {
     if (buttonPressed && !lastButtonState) {
         delay(50);  // Debounce
         if (isBootButtonPressed()) {  // Confirm still pressed
-            SDLogger::getInstance().infof("BOOT button pressed - capturing photo");
-            captureAndPostPhoto();
+            SDLogger::getInstance().infof("BOOT button pressed - recording video");
+            recordVideo();
         }
     }
     lastButtonState = buttonPressed;
@@ -629,7 +632,15 @@ void initCameraAndLed() {
     camera->init();
     delay(500);  // Give camera time to stabilize
 
-    SDLogger::getInstance().infof("=== Camera and LED Ready - Press BOOT to capture photo ===");
+    // Initialize video recorder
+    videoRecorder = new VideoRecorder();
+    if (videoRecorder->init()) {
+        SDLogger::getInstance().infof("Video Recorder initialized successfully");
+    } else {
+        SDLogger::getInstance().warnf("Video Recorder initialization failed");
+    }
+
+    SDLogger::getInstance().infof("=== Camera and LED Ready - Press BOOT to record video ===");
 }
 
 String captureAndPostPhoto() {
@@ -745,4 +756,82 @@ String captureAndPostPhoto() {
 
     // Return the filename (with .jpg extension)
     return basename + ".jpg";
+}
+
+void recordVideo() {
+    if (!videoRecorder) {
+        SDLogger::getInstance().errorf("Video recorder not initialized");
+        return;
+    }
+
+    if (videoRecorder->isRecording()) {
+        SDLogger::getInstance().warnf("Video recording already in progress");
+        return;
+    }
+
+    SDLogger::getInstance().infof("=== Starting Video Recording ===");
+
+    // Step 1: Flash red LED (starts slow, gets faster) - same as photo capture
+    SDLogger::getInstance().debugf("Red LED countdown...");
+    flashLedAccelerating(255, 0, 0, 500, 250, 2500);
+
+    // Step 2: Flash blue LED (starts slow, gets faster) - same as photo capture
+    SDLogger::getInstance().debugf("Blue LED countdown...");
+    flashLedAccelerating(0, 0, 255, 250, 50, 2500);
+
+    // Step 3: Set WHITE LED on during recording
+#ifdef ESP32S3_CAM
+    NeoPixel::instance().setBrightness(255);  // Maximum brightness for recording
+#endif
+    setLedColor(255, 255, 255);
+
+    // Configure and start recording
+    VideoConfig config = VideoRecorder::getDefaultConfig();
+    config.frameSize = FRAMESIZE_VGA;      // 640x480 for good balance
+    config.quality = 12;                    // Good quality
+    config.fps = 10;                        // 10 frames per second
+    config.durationSeconds = 10;            // 10 second video
+    config.outputDir = "/videos";
+
+    SDLogger::getInstance().infof("Recording %d seconds of video at %d fps...",
+        config.durationSeconds, config.fps);
+
+    // Record with progress callback to update LED
+    VideoResult result = videoRecorder->recordWithProgress(config,
+        [](uint32_t currentFrame, uint32_t totalFrames, uint32_t elapsedMs) {
+            // Keep LED white during recording, pulse brightness every second
+            static uint32_t lastSecond = 0;
+            uint32_t currentSecond = elapsedMs / 1000;
+            if (currentSecond != lastSecond) {
+                lastSecond = currentSecond;
+                SDLogger::getInstance().debugf("Recording: frame %d/%d (%.1fs)",
+                    currentFrame, totalFrames, elapsedMs / 1000.0f);
+            }
+        }
+    );
+
+    // Step 4: Turn LED off after recording
+    ledOff();
+#ifdef ESP32S3_CAM
+    NeoPixel::instance().setBrightness(100);  // Restore normal brightness
+#endif
+
+    if (result.success) {
+        // Brief green flash to indicate success
+        setLedColor(0, 255, 0);
+        delay(500);
+        ledOff();
+
+        SDLogger::getInstance().infof("=== Video Recording Complete ===");
+        SDLogger::getInstance().infof("Saved: %s (%d frames, %d bytes, %d ms)",
+            result.filename.c_str(), result.totalFrames, result.fileSize, result.durationMs);
+    } else {
+        // Brief red flash to indicate failure
+        setLedColor(255, 0, 0);
+        delay(500);
+        ledOff();
+
+        SDLogger::getInstance().errorf("=== Video Recording Failed ===");
+        SDLogger::getInstance().errorf("Error: %s", result.errorMessage.c_str());
+    }
 }
