@@ -20,6 +20,7 @@
 #include "VideoRecorder.h"
 #include "ImageStorage.h"
 #include "LedController.h"
+#include "CaptureController.h"
 #include "version.h"
 #include "secrets.h"
 #include <HTTPClient.h>
@@ -64,6 +65,7 @@ Camera* camera = nullptr;
 VideoRecorder* videoRecorder = nullptr;
 ImageStorage* imageStorage = nullptr;
 LedController ledController;
+CaptureController* captureController = nullptr;
 
 // AWS Auth configuration
 const char* AWS_ROLE_ALIAS = "BootBootsRoleAlias";
@@ -71,10 +73,10 @@ const char* API_HOST = "api.bootboots.sandbox.nakomis.com";
 const char* API_PATH = "/infer";
 
 // Function declarations
-void initCameraAndLed();
-String captureAndPostPhoto();
-void recordVideo();
 bool isBootButtonPressed();
+
+// Wrapper for BluetoothService extern - delegates to CaptureController
+String captureAndPostPhoto();
 
 // System state instance
 SystemState systemState;
@@ -161,7 +163,9 @@ void loop() {
         delay(50);  // Debounce
         if (isBootButtonPressed()) {  // Confirm still pressed
             SDLogger::getInstance().infof("BOOT button pressed - recording video");
-            recordVideo();
+            if (captureController) {
+                captureController->recordVideo();
+            }
         }
     }
     lastButtonState = buttonPressed;
@@ -269,8 +273,26 @@ void initializeComponents() {
         awsAuth = new AWSAuth("eu-west-2");
         if (awsAuth->initialize(AWS_CERT_CA, AWS_CERT_CRT, AWS_CERT_PRIVATE, AWS_IOT_CREDENTIALS_ENDPOINT)) {
             SDLogger::getInstance().infof("AWS Auth initialized successfully");
-            // Initialize camera and LED for photo capture
-            initCameraAndLed();
+
+            // Create camera and video recorder instances
+            camera = new Camera();
+            videoRecorder = new VideoRecorder();
+
+            // Initialize CaptureController with all dependencies
+            captureController = new CaptureController(camera, videoRecorder, &ledController, imageStorage, awsAuth);
+            captureController->setAWSConfig(AWS_ROLE_ALIAS, API_HOST, API_PATH);
+            captureController->init();
+
+            // Set callbacks for background task handling during LED animations
+            captureController->setCallbacks(
+                []() { return isBootButtonPressed(); },
+                []() {
+                    if (bluetoothService) bluetoothService->handle();
+                    if (bluetoothOTA) bluetoothOTA->handle();
+                }
+            );
+
+            SDLogger::getInstance().infof("=== Press BOOT to record video ===");
         }
         else {
             SDLogger::getInstance().errorf("Failed to initialize AWS Auth");
@@ -377,216 +399,11 @@ bool isBootButtonPressed() {
     return digitalRead(BOOT_BUTTON_PIN) == LOW;
 }
 
-void initCameraAndLed() {
-    SDLogger::getInstance().infof("=== Initializing Camera and LED ===");
-
-    // Initialize LED controller and run test sequence
-    ledController.init(100);  // Default brightness 100
-    ledController.runTestSequence(3, 100);
-
-    // Initialize camera
-    camera = new Camera();
-    camera->init();
-    delay(500);  // Give camera time to stabilize
-
-    // Initialize video recorder
-    videoRecorder = new VideoRecorder();
-    if (videoRecorder->init()) {
-        SDLogger::getInstance().infof("Video Recorder initialized successfully");
-    } else {
-        SDLogger::getInstance().warnf("Video Recorder initialization failed");
-    }
-
-    SDLogger::getInstance().infof("=== Camera and LED Ready - Press BOOT to record video ===");
-}
-
+// Wrapper function for BluetoothService extern - delegates to CaptureController
 String captureAndPostPhoto() {
-    if (!camera) {
-        SDLogger::getInstance().errorf("Camera not initialized");
-        return "";
+    if (captureController) {
+        return captureController->capturePhoto();
     }
-
-    SDLogger::getInstance().infof("=== Capturing Photo ===");
-
-    // Callbacks for LED animations
-    auto cancelCheck = []() { return isBootButtonPressed(); };
-    auto loopCallback = []() {
-        if (bluetoothService) bluetoothService->handle();
-        if (bluetoothOTA) bluetoothOTA->handle();
-    };
-
-    // Step 1: Flash red LED (starts slow, gets faster)
-    SDLogger::getInstance().debugf("Red LED countdown...");
-    ledController.flashAccelerating(255, 0, 0, 500, 250, 2500, cancelCheck, loopCallback);
-
-    // Step 2: Flash blue LED (starts slow, gets faster)
-    SDLogger::getInstance().debugf("Blue LED countdown...");
-    ledController.flashAccelerating(0, 0, 255, 250, 50, 2500, cancelCheck, loopCallback);
-
-    // Step 3: Set bright WHITE for photo capture
-    ledController.setBrightness(255);  // Maximum brightness for photo
-    ledController.setColor(255, 255, 255);
-
-    // Capture image
-    NamedImage* image = camera->getImage();
-    if (!image || !image->image || image->size == 0) {
-        SDLogger::getInstance().errorf("Failed to capture image");
-        ledController.off();
-        return "";
-    }
-
-    // Generate timestamp-based filename for this capture
-    String basename = imageStorage->generateFilename();
-
-    ledController.setBrightness(50);  // Moderate brightness
-    ledController.setColor(0, 255, 0);
-
-    SDLogger::getInstance().infof("Captured image: %s (%d bytes)", basename.c_str(), image->size);
-
-    // Save image to SD card
-    imageStorage->saveImage(basename, image);
-
-    // Get AWS credentials (refresh if needed)
-    if (!awsAuth->areCredentialsValid()) {
-        SDLogger::getInstance().infof("Refreshing AWS credentials...");
-        if (!awsAuth->getCredentialsWithRoleAlias(AWS_ROLE_ALIAS)) {
-            SDLogger::getInstance().errorf("Failed to get AWS credentials");
-            camera->releaseImageBuffer(image);
-            ledController.off();
-            return "";
-        }
-    }
-
-    // Post image to inference endpoint
-    CatCamHttpClient httpClient;
-    String response = httpClient.postImage(image, API_HOST, API_PATH, awsAuth);
-
-    // Save server response to SD card
-    imageStorage->saveResponse(basename, response);
-
-    // Parse response and log cat percentages
-    // Format: {"success": true, "data": {"probabilities": [...]}, "mostLikelyCat": {"name": "Tau", "confidence": 0.71, "index": 4}}
-    DynamicJsonDocument doc(2048);
-    DeserializationError jsonError = deserializeJson(doc, response);
-
-    // Cat names matching model output indices
-    const char* CAT_NAMES[] = { "Boots", "Chi", "Kappa", "Mu", "Tau", "NoCat" };
-
-    if (jsonError) {
-        SDLogger::getInstance().warnf("Failed to parse response JSON: %s", jsonError.c_str());
-        SDLogger::getInstance().infof("Raw response: %s", response.c_str());
-    }
-    else if (doc["success"] == true) {
-        // Get winner from mostLikelyCat object at root level
-        JsonObject mostLikelyCat = doc["mostLikelyCat"];
-        const char* winnerName = mostLikelyCat["name"] | "Unknown";
-        float winnerConfidence = mostLikelyCat["confidence"] | 0.0f;
-
-        // Build results string from probabilities array in data
-        String resultLog = "";
-        JsonObject data = doc["data"];
-        if (data.containsKey("probabilities") && data["probabilities"].is<JsonArray>()) {
-            JsonArray probabilities = data["probabilities"];
-            for (size_t i = 0; i < probabilities.size() && i < 6; i++) {
-                float score = probabilities[i].as<float>();
-                char scoreStr[32];
-                snprintf(scoreStr, sizeof(scoreStr), "%s=%.1f%% ", CAT_NAMES[i], score * 100.0);
-                resultLog += scoreStr;
-            }
-        }
-
-        SDLogger::getInstance().infof("%s | Winner: %s (%.1f%%)",
-            resultLog.c_str(), winnerName, winnerConfidence * 100.0);
-    }
-    else {
-        // Log the raw response if format is unexpected
-        SDLogger::getInstance().warnf("Unexpected response format: %s", response.c_str());
-    }
-
-    // Release image buffer
-    camera->releaseImageBuffer(image);
-
-    // Clean up old images (keep only the most recent MAX_IMAGES_TO_KEEP)
-    imageStorage->cleanupOldImages();
-
-    // Step 4: Turn LED off
-    ledController.off();
-
-    SDLogger::getInstance().infof("=== Photo Capture Complete ===");
-
-    // Return the filename (with .jpg extension)
-    return basename + ".jpg";
-}
-
-void recordVideo() {
-    if (!videoRecorder) {
-        SDLogger::getInstance().errorf("Video recorder not initialized");
-        return;
-    }
-
-    if (videoRecorder->isRecording()) {
-        SDLogger::getInstance().warnf("Video recording already in progress");
-        return;
-    }
-
-    SDLogger::getInstance().infof("=== Starting Video Recording ===");
-
-    // Callbacks for LED animations
-    auto cancelCheck = []() { return isBootButtonPressed(); };
-    auto loopCallback = []() {
-        if (bluetoothService) bluetoothService->handle();
-        if (bluetoothOTA) bluetoothOTA->handle();
-    };
-
-    // Step 1: Flash red LED (starts slow, gets faster) - same as photo capture
-    SDLogger::getInstance().debugf("Red LED countdown...");
-    ledController.flashAccelerating(255, 0, 0, 500, 250, 2500, cancelCheck, loopCallback);
-
-    // Step 2: Flash blue LED (starts slow, gets faster) - same as photo capture
-    SDLogger::getInstance().debugf("Blue LED countdown...");
-    ledController.flashAccelerating(0, 0, 255, 250, 50, 2500, cancelCheck, loopCallback);
-
-    // Step 3: Set WHITE LED on during recording
-    ledController.setBrightness(255);  // Maximum brightness for recording
-    ledController.setColor(255, 255, 255);
-
-    // Configure and start recording
-    VideoConfig config = VideoRecorder::getDefaultConfig();
-    config.frameSize = FRAMESIZE_VGA;      // 640x480 for good balance
-    config.quality = 12;                    // Good quality
-    config.fps = 10;                        // 10 frames per second
-    config.durationSeconds = 10;            // 10 second video
-    config.outputDir = "/videos";
-
-    SDLogger::getInstance().infof("Recording %d seconds of video at %d fps...",
-        config.durationSeconds, config.fps);
-
-    // Record with progress callback to update LED
-    VideoResult result = videoRecorder->recordWithProgress(config,
-        [](uint32_t currentFrame, uint32_t totalFrames, uint32_t elapsedMs) {
-            // Keep LED white during recording, pulse brightness every second
-            static uint32_t lastSecond = 0;
-            uint32_t currentSecond = elapsedMs / 1000;
-            if (currentSecond != lastSecond) {
-                lastSecond = currentSecond;
-                SDLogger::getInstance().debugf("Recording: frame %d/%d (%.1fs)",
-                    currentFrame, totalFrames, elapsedMs / 1000.0f);
-            }
-        }
-    );
-
-    // Step 4: Turn LED off after recording and restore normal brightness
-    ledController.off();
-    ledController.setBrightness(100);
-
-    if (result.success) {
-        ledController.flashSuccess();
-        SDLogger::getInstance().infof("=== Video Recording Complete ===");
-        SDLogger::getInstance().infof("Saved: %s (%d frames, %d bytes, %d ms)",
-            result.filename.c_str(), result.totalFrames, result.fileSize, result.durationMs);
-    } else {
-        ledController.flashError();
-        SDLogger::getInstance().errorf("=== Video Recording Failed ===");
-        SDLogger::getInstance().errorf("Error: %s", result.errorMessage.c_str());
-    }
+    SDLogger::getInstance().errorf("CaptureController not initialized");
+    return "";
 }
