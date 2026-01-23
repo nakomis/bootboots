@@ -5,69 +5,98 @@
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <WiFiClientSecure.h>
-#include <ArduinoOTA.h>
-#include <ESPmDNS.h>
-#include <Update.h>
 #include <Preferences.h>
 #include "../../SDLogger/src/SDLogger.h"
 
 // Forward declaration
 class HTTPClient;
 
+/**
+ * OTAUpdate - Handles firmware updates via SD card download
+ *
+ * The update process is two-stage:
+ * 1. downloadToSD() downloads firmware to SD card and sets NVS flags
+ * 2. Device reboots, bootloader reads NVS flags and flashes from SD card
+ */
 class OTAUpdate {
 public:
     OTAUpdate();
     ~OTAUpdate();
+
+    /**
+     * Initialize the OTA update service
+     * @param hostname Device hostname (for logging)
+     * @param password Unused, kept for API compatibility
+     */
     void init(const char* hostname = "BootBoots-CatCam", const char* password = nullptr);
+
+    /**
+     * Handle any pending OTA operations (currently no-op)
+     */
     void handle();
+
+    /**
+     * Check if an update is currently in progress
+     */
     bool isUpdating();
+
+    /**
+     * Set callback for update completion
+     */
     void setUpdateCallback(void (*callback)(bool success, const char* error));
+
+    /**
+     * Set callback for download progress
+     */
     void setProgressCallback(void (*callback)(int progress, size_t downloaded, size_t total));
 
-    // HTTP OTA update from URL (e.g., S3 signed URL)
-    bool updateFromURL(const char* firmwareURL);
+    /**
+     * Cancel an in-progress update
+     */
     void cancelUpdate();
 
-    // Bootloader-based OTA: Download to SD card, bootloader flashes on reboot
+    /**
+     * Download firmware to SD card for bootloader to flash
+     * Sets NVS flags and reboots when complete
+     * @param firmwareURL URL to download firmware from (HTTP or HTTPS)
+     * @return true if download started successfully (will reboot on completion)
+     */
     bool downloadToSD(const char* firmwareURL);
-    static bool flashFromSD();  // Deprecated: bootloader handles flashing
+
+    /**
+     * Check if there's a pending update in NVS flags
+     */
     static bool hasPendingUpdate();
 
-    // Security features
-    void setPassword(const char* password);
-    void enableSecureMode(bool enable = true);
+    /**
+     * Clean up any leftover OTA files/flags (bootloader handles actual flashing)
+     */
+    static bool cleanupPendingUpdate();
 
-    // Status reporting
+    /**
+     * Get current status message
+     */
     String getStatus();
+
+    /**
+     * Get current progress percentage (0-100)
+     */
     int getProgress();
-    
+
 private:
     bool _initialized;
     bool _updating;
-    bool _secureMode;
     String _hostname;
-    String _password;
     int _progress;
     String _status;
     void (*_updateCallback)(bool success, const char* error);
     void (*_progressCallback)(int progress, size_t downloaded, size_t total);
-    
-    // HTTP OTA members
+
+    // HTTP client members
     HTTPClient* _httpClient;
-    WiFiClient* _client;           // For HTTP connections
-    WiFiClientSecure* _secureClient; // For HTTPS connections
-    bool _httpUpdateInProgress;
+    WiFiClientSecure* _secureClient;
     size_t _totalSize;
     size_t _downloadedSize;
-    
-    // OTA event handlers
-    static void onStart();
-    static void onEnd();
-    static void onProgress(unsigned int progress, unsigned int total);
-    static void onError(ota_error_t error);
-    
-    // Static instance for callbacks
-    static OTAUpdate* _instance;
 };
 
 #endif
