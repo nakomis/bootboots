@@ -21,6 +21,7 @@
 #include "ImageStorage.h"
 #include "LedController.h"
 #include "CaptureController.h"
+#include "InputManager.h"
 #include "version.h"
 #include "secrets.h"
 #include <HTTPClient.h>
@@ -66,6 +67,7 @@ VideoRecorder* videoRecorder = nullptr;
 ImageStorage* imageStorage = nullptr;
 LedController ledController;
 CaptureController* captureController = nullptr;
+InputManager inputManager;
 
 // AWS Auth configuration
 const char* AWS_ROLE_ALIAS = "BootBootsRoleAlias";
@@ -154,21 +156,16 @@ void setup() {
 }
 
 void loop() {
-    // Check for BOOT button press to record video
-    static bool lastButtonState = false;
-    bool buttonPressed = isBootButtonPressed();
+    // Update input manager (polls button state)
+    inputManager.update();
 
-    // Detect rising edge (button just pressed) with debounce
-    if (buttonPressed && !lastButtonState) {
-        delay(50);  // Debounce
-        if (isBootButtonPressed()) {  // Confirm still pressed
-            SDLogger::getInstance().infof("BOOT button pressed - recording video");
-            if (captureController) {
-                captureController->recordVideo();
-            }
+    // Check for BOOT button press to record video
+    if (inputManager.wasBootButtonJustPressed()) {
+        SDLogger::getInstance().infof("BOOT button pressed - recording video");
+        if (captureController) {
+            captureController->recordVideo();
         }
     }
-    lastButtonState = buttonPressed;
 
     // Handle Bluetooth service (deferred operations)
     if (bluetoothService) {
@@ -203,9 +200,9 @@ void loop() {
 void initializeHardware() {
     SDLogger::getInstance().infof("Initializing hardware...");
 
-    // Initialize BOOT button for user input (triggers photo capture)
-    pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
-    SDLogger::getInstance().infof("BOOT button initialized on GPIO%d (press to capture photo)", BOOT_BUTTON_PIN);
+    // Initialize input manager for BOOT button
+    inputManager.init(BOOT_BUTTON_PIN, 50);  // 50ms debounce
+    SDLogger::getInstance().infof("Input manager initialized (BOOT button on GPIO%d)", BOOT_BUTTON_PIN);
 
     // Enable internal pull-ups on I2C pins before initializing I2C
     pinMode(I2C_SDA, INPUT_PULLUP);
@@ -394,9 +391,10 @@ void handleSystemError(const char* component, const char* error) {
     // blinkStatusLED(5, 200); // 5 fast blinks for error
 }
 
-// Check if BOOT button is pressed (returns true if pressed)
+// Check if BOOT button is pressed (delegates to InputManager)
+// Used as callback by CaptureController for cancel checks
 bool isBootButtonPressed() {
-    return digitalRead(BOOT_BUTTON_PIN) == LOW;
+    return inputManager.isBootButtonPressed();
 }
 
 // Wrapper function for BluetoothService extern - delegates to CaptureController
