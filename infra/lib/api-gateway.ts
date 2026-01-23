@@ -8,6 +8,7 @@ import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as targets from 'aws-cdk-lib/aws-route53-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as s3n from 'aws-cdk-lib/aws-s3-notifications';
 
 export class ApiGatewayStack extends cdk.Stack {
   public api: apigateway.RestApi; 
@@ -65,14 +66,66 @@ export class ApiGatewayStack extends cdk.Stack {
     // Grant S3 write permissions to the Lambda function
     imagesBucket.grantWrite(inferLambda);
 
+    // Create log group for video notification Lambda
+    const videoNotificationLogGroup = new logs.LogGroup(this, 'BootBootsVideoNotificationLogGroup', {
+        logGroupName: '/aws/lambda/BootBootsVideoNotification',
+        retention: logs.RetentionDays.ONE_MONTH,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    // Create the video notification Lambda (triggered by S3)
+    const videoNotificationLambda = new NodejsFunction(this, 'BootBootsVideoNotificationFunction', {
+        functionName: 'BootBootsVideoNotification',
+        runtime: cdk.aws_lambda.Runtime.NODEJS_22_X,
+        entry: `${__dirname}/../lambda/video-notification/src/handler.ts`,
+        logGroup: videoNotificationLogGroup,
+        timeout: cdk.Duration.seconds(30),
+        memorySize: 256,
+        environment: {
+            NOTIFICATION_EMAIL: 'bootboots@nakomis.com',
+            SENDER_EMAIL: 'bootboots@nakomis.com',
+        },
+        bundling: {
+            minify: true,
+            sourceMap: false,
+            target: 'node22',
+        },
+    });
+
+    // Grant the video notification Lambda permission to read from S3 (for generating signed URLs)
+    imagesBucket.grantRead(videoNotificationLambda);
+
+    // Grant SES permissions to the video notification Lambda
+    videoNotificationLambda.addToRolePolicy(new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+        resources: ['*'], // SES doesn't support resource-level permissions for SendEmail
+    }));
+
+    // Add S3 event notification for catcam-videos/ prefix
+    imagesBucket.addEventNotification(
+        s3.EventType.OBJECT_CREATED,
+        new s3n.LambdaDestination(videoNotificationLambda),
+        { prefix: 'catcam-videos/' }
+    );
+
+    // Create IAM role for API Gateway to access S3
+    const apiGatewayS3Role = new iam.Role(this, 'ApiGatewayS3Role', {
+        assumedBy: new iam.ServicePrincipal('apigateway.amazonaws.com'),
+        description: 'Role for API Gateway to write videos to S3',
+    });
+
+    // Grant the role permission to put objects in the catcam-videos prefix
+    imagesBucket.grantPut(apiGatewayS3Role, 'catcam-videos/*');
+
     // Create the API Gateway
     this.api = new apigateway.RestApi(this, 'BootBootsInferApi', {
       restApiName: 'BootBootsInference API',
       description: 'BootBoots Inference API Gateway with POST /infer endpoint',
-      binaryMediaTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/octet-stream'],
+      binaryMediaTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/octet-stream', 'video/x-msvideo', 'video/avi'],
       defaultCorsPreflightOptions: {
         allowOrigins: apigateway.Cors.ALL_ORIGINS,
-        allowMethods: ['POST', 'OPTIONS'],
+        allowMethods: ['POST', 'PUT', 'OPTIONS'],
         allowHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
       },
       // Disable the default endpoint to force usage of custom domain
@@ -149,6 +202,85 @@ export class ApiGatewayStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'AuthCheckApiArn', {
       value: `arn:aws:execute-api:${this.region}:${this.account}:${this.api.restApiId}/*/POST/authCheck`,
       description: 'ARN for the authCheck endpoint (for IAM policies)',
+    });
+
+    // Create the /upload-video/{filename} resource with S3 integration
+    const uploadVideoResource = this.api.root.addResource('upload-video');
+    const filenameResource = uploadVideoResource.addResource('{filename}');
+
+    // S3 integration for PUT /upload-video/{filename}
+    const s3Integration = new apigateway.AwsIntegration({
+      service: 's3',
+      integrationHttpMethod: 'PUT',
+      path: `${imagesBucket.bucketName}/catcam-videos/{filename}`,
+      options: {
+        credentialsRole: apiGatewayS3Role,
+        integrationResponses: [
+          {
+            statusCode: '200',
+            responseParameters: {
+              'method.response.header.Content-Type': 'integration.response.header.Content-Type',
+            },
+            responseTemplates: {
+              'application/json': JSON.stringify({
+                success: true,
+                message: 'Video uploaded successfully'
+              }),
+            },
+          },
+          {
+            statusCode: '400',
+            selectionPattern: '4\\d{2}',
+            responseTemplates: {
+              'application/json': JSON.stringify({
+                error: 'Bad request'
+              }),
+            },
+          },
+          {
+            statusCode: '500',
+            selectionPattern: '5\\d{2}',
+            responseTemplates: {
+              'application/json': JSON.stringify({
+                error: 'Internal server error'
+              }),
+            },
+          },
+        ],
+        requestParameters: {
+          'integration.request.path.filename': 'method.request.path.filename',
+          'integration.request.header.Content-Type': 'method.request.header.Content-Type',
+        },
+      },
+    });
+
+    filenameResource.addMethod('PUT', s3Integration, {
+      authorizationType: apigateway.AuthorizationType.IAM,
+      apiKeyRequired: false,
+      requestParameters: {
+        'method.request.path.filename': true,
+        'method.request.header.Content-Type': true,
+      },
+      methodResponses: [
+        {
+          statusCode: '200',
+          responseParameters: {
+            'method.response.header.Content-Type': true,
+          },
+        },
+        {
+          statusCode: '400',
+        },
+        {
+          statusCode: '500',
+        },
+      ],
+    });
+
+    // Output the upload-video endpoint URL
+    new cdk.CfnOutput(this, 'UploadVideoEndpointUrl', {
+      value: `https://api.bootboots.sandbox.nakomis.com/upload-video/{filename}`,
+      description: 'URL for the /upload-video/{filename} PUT endpoint',
     });
 
     // Create usage plan with 500 requests per day quota

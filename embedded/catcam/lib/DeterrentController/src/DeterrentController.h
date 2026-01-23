@@ -5,6 +5,7 @@
 // Forward declarations
 class PCF8574Manager;
 class CaptureController;
+class AWSAuth;
 struct SystemState;
 struct DetectionResult;
 
@@ -28,8 +29,15 @@ public:
      * Constructor
      * @param pcfManager Pointer to PCF8574Manager for mister control
      * @param captureController Pointer to CaptureController for video recording
+     * @param awsAuth Pointer to AWSAuth for video upload authentication
      */
-    DeterrentController(PCF8574Manager* pcfManager, CaptureController* captureController);
+    DeterrentController(PCF8574Manager* pcfManager, CaptureController* captureController, AWSAuth* awsAuth);
+
+    /**
+     * Configure the video upload API endpoint
+     * @param apiHost API Gateway host (e.g., "api.bootboots.sandbox.nakomis.com")
+     */
+    void setUploadConfig(const char* apiHost);
 
     /**
      * Check if deterrent should be activated based on detection result
@@ -60,5 +68,16 @@ public:
 private:
     PCF8574Manager* _pcfManager;
     CaptureController* _captureController;
+    AWSAuth* _awsAuth;
     bool _isActive;
+
+    // Upload configuration
+    const char* _apiHost = nullptr;
+
+    /**
+     * Upload a video file to the cloud
+     * @param filepath Full path to the video file on SD card
+     * @return true if upload succeeded
+     */
+    bool uploadVideo(const String& filepath);
 };

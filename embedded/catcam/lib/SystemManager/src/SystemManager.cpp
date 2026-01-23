@@ -197,14 +197,16 @@ bool SystemManager::initComponents(const Config& config, SystemState& state,
         SDLogger::getInstance().infof("Motion Detector initialized on PCF8574 pin P%d",
                                        PCF8574Manager::PIR_SENSOR_PIN);
 
-        // Initialize Deterrent Controller (requires PCF8574Manager and CaptureController)
-        if (_captureController) {
-            _deterrentController = new DeterrentController(_pcfManager, _captureController);
+        // Initialize Deterrent Controller (requires PCF8574Manager, CaptureController, and AWSAuth)
+        if (_captureController && _awsAuth) {
+            _deterrentController = new DeterrentController(_pcfManager, _captureController, _awsAuth);
+            _deterrentController->setUploadConfig("api.bootboots.sandbox.nakomis.com");
             SDLogger::getInstance().infof("Deterrent Controller initialized (threshold: %.0f%%, duration: %lu ms)",
                                            DeterrentController::CONFIDENCE_THRESHOLD * 100.0f,
                                            DeterrentController::DETERRENT_DURATION_MS);
+            SDLogger::getInstance().infof("Video upload enabled to api.bootboots.sandbox.nakomis.com");
         } else {
-            SDLogger::getInstance().warnf("Deterrent Controller not initialized - CaptureController unavailable");
+            SDLogger::getInstance().warnf("Deterrent Controller not initialized - CaptureController or AWSAuth unavailable");
         }
     } else {
         SDLogger::getInstance().warnf("Motion Detector not initialized - PCF8574 unavailable");
