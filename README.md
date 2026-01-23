@@ -34,19 +34,28 @@ An IoT system using an ESP32-S3 CAM device with AI-powered cat recognition and a
 
 ### Embedded Firmware
 
-The [embedded/catcam/cpp](embedded/catcam/cpp) directory contains Arduino-based firmware for ESP32 camera devices:
+The [embedded](embedded) directory contains Arduino-based firmware for ESP32 camera devices:
 
-- **[bootloader](embedded/catcam/cpp/bootloader)** - Factory bootloader that checks for pending OTA updates on every boot. Enables single-partition OTA architecture for maximum firmware space.
+- **[bootloader](embedded/bootloader)** - Factory bootloader that checks for pending OTA updates on every boot. Enables single-partition OTA architecture for maximum firmware space.
 
-- **[catcam](embedded/catcam/cpp/catcam)** - Main application with camera capture, WiFi, Bluetooth LE, SD card logging, and AI inference integration. Includes 10+ custom libraries:
+- **[catcam](embedded/catcam)** - Main application with camera capture, WiFi, Bluetooth LE, SD card logging, and AI inference integration. Includes 15+ custom libraries:
   - `BluetoothOTA` - Bluetooth-based OTA control
   - `BluetoothService` - Device status monitoring and image transfer via BLE
   - `Camera` - Image capture and PSRAM buffer management
+  - `CaptureController` - Capture orchestration
   - `CatCamHttpClient` - HTTPS POST to AWS SageMaker inference API
-  - `VideoRecorder` - MJPEG video recording to SD card
+  - `ImageStorage` - Image file management
+  - `InputManager` - Button and input handling
+  - `LedController` - RGB LED control
+  - `NeoPixel` - WS2812 LED driver
+  - `OTAUpdate` - Two-stage OTA update mechanism
+  - `PCF8574Manager` - I2C GPIO expander control
   - `SDLogger` - Thread-safe SD card logging with FreeRTOS mutex
+  - `SystemManager` - System state management
+  - `VideoRecorder` - MJPEG video recording to SD card
+  - `WifiConnect` - WiFi connection management
 
-The bootloader-based OTA architecture maximises available flash space by using a single large application partition (3.56MB) instead of the traditional dual-partition approach (2 x 1.94MB).
+The bootloader-based OTA architecture maximises available flash space by using a single large application partition (7MB on ESP32-S3) instead of the traditional dual-partition approach.
 
 ### AWS Infrastructure
 
@@ -67,11 +76,11 @@ SVG versions are auto-generated via pre-commit hook when `.drawio` files change.
 
 ### Utilities
 
-The [misc](misc) directory contains build automation and utilities:
+The [scripts](scripts) directory contains:
 
-- `pre-commit` - Git hook for auto-generating architecture SVGs and TOC updates
-- `degreen.py` / `imaging.py` - Image processing utilities
-- `bucket/sync.sh` - S3 bucket synchronisation script
+- `install-hooks.sh` - Git hooks installation script
+
+The [githooks](githooks) directory contains git hooks for auto-generating architecture SVGs and TOC updates.
 
 ## Supported Hardware
 
@@ -102,17 +111,22 @@ bootboots/
 │   └── architecture/          # System architecture diagrams (.drawio + .svg)
 │
 ├── embedded/
-│   └── catcam/
-│       └── cpp/
-│           ├── bootloader/    # Factory bootloader (OTA staging)
-│           ├── catcam/        # Main camera application
-│           └── CLAUDE.md      # Detailed technical context
+│   ├── bootloader/            # Factory bootloader (OTA staging)
+│   ├── catcam/                # Main camera application
+│   │   ├── include/           # Header files
+│   │   ├── lib/               # Custom libraries (15+)
+│   │   ├── scripts/           # Build and deployment scripts
+│   │   └── src/               # Main application source
+│   ├── CLAUDE.md              # Detailed technical context
+│   └── README.md              # Embedded firmware documentation
+│
+├── githooks/                  # Git hooks for automation
 │
 ├── infra/                     # AWS CDK infrastructure (TypeScript)
 │   ├── lib/                   # CDK stack definitions
 │   └── lambda/                # Lambda function code
 │
-├── misc/                      # Build utilities and git hooks
+├── scripts/                   # Project-wide utility scripts
 │
 └── README.md                  # This file
 ```
@@ -132,25 +146,25 @@ bootboots/
 
 1. **Generate secrets** from AWS SSM Parameter Store:
    ```bash
-   cd embedded/catcam/cpp/catcam
+   cd embedded/catcam
    export AWS_PROFILE=nakom.is-sandbox
    python3 scripts/generate_secrets.py
    ```
 
 2. **Build and flash** (USB - for factory-new devices):
    ```bash
-   cd embedded/catcam/cpp/catcam
+   cd embedded/catcam
    ./scripts/factory_setup.sh /dev/cu.usbserial-XXXX
    ```
 
-See [embedded/catcam/cpp/README.md](embedded/catcam/cpp/README.md) for detailed setup instructions.
+See [embedded/README.md](embedded/README.md) for detailed setup instructions.
 
 ### OTA Updates (Preferred)
 
 Once a device is set up, use OTA updates via Bluetooth:
 
 ```bash
-cd embedded/catcam/cpp/catcam
+cd embedded/catcam
 export AWS_PROFILE=nakom.is-sandbox
 python3 scripts/build_and_upload.py
 ```

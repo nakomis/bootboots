@@ -318,14 +318,28 @@ prefs.end();
 
 ### SD Card Interface
 
-SDLogger uses SD_MMC interface with the following pin configuration:
+SDLogger uses SD_MMC interface. Pin configuration depends on the board:
+
+**ESP32-S3 CAM (Primary Target)**:
+```cpp
+// SDMMC 1-bit mode
+SD_MMC_CLK  = GPIO 39
+SD_MMC_CMD  = GPIO 38
+SD_MMC_D0   = GPIO 40
+
+// Must call before SD_MMC.begin():
+SD_MMC.setPins(39, 38, 40);
+SD_MMC.begin("/sdcard", true);  // true = 1-bit mode
+```
+
+**Legacy ESP32-CAM (AI-Thinker)**:
 ```cpp
 pinMode(14, PULLUP);  // CLK
 pinMode(15, PULLUP);  // CMD
 pinMode(2, PULLUP);   // DATA0
-pinMode(4, PULLUP);   // DATA1
-pinMode(12, PULLUP);  // DATA2
-pinMode(13, PULLUP);  // DATA3
+pinMode(4, PULLUP);   // DATA1 (optional for 4-bit mode)
+pinMode(12, PULLUP);  // DATA2 (optional for 4-bit mode)
+pinMode(13, PULLUP);  // DATA3 (optional for 4-bit mode)
 ```
 
 Ensure your hardware has these pins connected appropriately for SD_MMC mode.

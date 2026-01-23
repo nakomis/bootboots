@@ -190,7 +190,7 @@ build_flags =
 ## Build Commands
 
 ```bash
-cd /Users/martinmu_1/repos/nakomis/bootboots/embedded/catcam/cpp
+cd /Users/martinmu_1/repos/nakomis/bootboots/embedded
 
 # Build bootloader
 cd bootloader && pio run -e esp32s3cam
@@ -206,7 +206,7 @@ cd ../catcam && pio run -e esp32s3cam
 **This is the preferred way to deploy firmware.** No USB connection required - the device is updated wirelessly via Bluetooth OTA from the web interface.
 
 ```bash
-cd /Users/martinmu_1/repos/nakomis/bootboots/embedded/catcam/cpp/catcam
+cd /Users/martinmu_1/repos/nakomis/bootboots/embedded/catcam
 
 # Set AWS credentials for S3 upload
 export AWS_PROFILE=nakom.is-sandbox
@@ -234,7 +234,7 @@ Then use the web interface at localhost:3000 to trigger the OTA update via Bluet
 3. Run:
 
 ```bash
-cd /Users/martinmu_1/repos/nakomis/bootboots/embedded/catcam/cpp
+cd /Users/martinmu_1/repos/nakomis/bootboots/embedded
 
 ~/.platformio/packages/tool-esptoolpy/esptool.py --chip esp32s3 --port /dev/cu.usbmodem* --baud 921600 \
   write_flash -z --flash_mode dout --flash_freq 80m --flash_size 16MB \
@@ -249,6 +249,8 @@ cd /Users/martinmu_1/repos/nakomis/bootboots/embedded/catcam/cpp
 **Remember:** Close the serial monitor first, then put device in download mode.
 
 ```bash
+cd /Users/martinmu_1/repos/nakomis/bootboots/embedded
+
 ~/.platformio/packages/tool-esptoolpy/esptool.py --chip esp32s3 --port /dev/cu.usbmodem* --baud 921600 \
   write_flash -z --flash_mode dout --flash_freq 80m --flash_size 16MB \
   0x110000 catcam/.pio/build/esp32s3cam/firmware.bin
@@ -282,7 +284,7 @@ DebugSerial.begin(115200, SERIAL_8N1, 44, 43);  // RX=44, TX=43
 ## Project Structure
 
 ```
-cpp/
+embedded/
 ├── bootloader/
 │   ├── platformio.ini
 │   ├── partitions_bootloader.csv      # 4MB partition table
@@ -304,16 +306,25 @@ cpp/
 │   ├── src/
 │   │   └── main.cpp
 │   └── lib/
-│       ├── BluetoothOTA/
-│       ├── BluetoothService/
-│       ├── Camera/
-│       ├── OTAUpdate/
-│       ├── PCF8574Manager/
-│       ├── SDLogger/
-│       ├── VideoRecorder/
-│       └── WifiConnect/
+│       ├── AWSAuth/                   # AWS IoT authentication
+│       ├── BluetoothOTA/              # BLE-based OTA control
+│       ├── BluetoothService/          # Device status monitoring
+│       ├── Camera/                    # Image capture
+│       ├── CaptureController/         # Capture orchestration
+│       ├── CatCamHttpClient/          # HTTPS to SageMaker
+│       ├── ImageStorage/              # Image file management
+│       ├── InputManager/              # Button handling
+│       ├── LedController/             # RGB LED control
+│       ├── NeoPixel/                  # WS2812 driver
+│       ├── OTAUpdate/                 # Two-stage OTA
+│       ├── PCF8574Manager/            # I2C GPIO expander
+│       ├── SDLogger/                  # Thread-safe logging
+│       ├── SystemManager/             # System state management
+│       ├── VideoRecorder/             # MJPEG recording
+│       └── WifiConnect/               # WiFi management
 │
-└── CLAUDE.md                          # This file
+├── CLAUDE.md                          # This file
+└── README.md                          # Embedded firmware documentation
 ```
 
 ## Secrets

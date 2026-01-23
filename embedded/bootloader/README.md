@@ -79,7 +79,7 @@ Use the automated factory setup script for new devices:
 
 ```bash
 cd ../catcam
-./scripts/factory_setup.sh /dev/cu.usbserial-XXXX
+./scripts/factory_setup.sh /dev/cu.usbmodem*
 ```
 
 This script will:
@@ -93,8 +93,8 @@ This script will:
 If you need to flash just the bootloader:
 
 ```bash
-cd /Users/martinmu_1/repos/nakomis/bootboots/embedded/catcam/cpp/bootloader
-pio run --target upload --upload-port /dev/cu.usbserial-*
+cd /Users/martinmu_1/repos/nakomis/bootboots/embedded/bootloader
+pio run -e esp32s3cam --target upload --upload-port /dev/cu.usbmodem*
 ```
 
 This flashes the bootloader to the **factory** partition.
@@ -186,4 +186,4 @@ Current Version: **1.0.0**
 
 ## License
 
-Copyright © 2025 BootBoots / Nakomis
+CC0 1.0 Universal - Public domain dedication.
