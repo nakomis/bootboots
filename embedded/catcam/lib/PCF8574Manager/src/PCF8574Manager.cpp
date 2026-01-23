@@ -124,6 +124,10 @@ bool PCF8574Manager::readPressureSensor() {
     return readPinInput(PRESSURE_SENSOR_PIN);
 }
 
+bool PCF8574Manager::readPIRSensor() {
+    return readPinInput(PIR_SENSOR_PIN);
+}
+
 bool PCF8574Manager::isConnected() {
     Wire.beginTransmission(_i2cAddress);
     uint8_t error = Wire.endTransmission();

@@ -17,6 +17,10 @@ struct SystemState {
     int bootsDetections = 0;
     int falsePositivesAvoided = 0;
     int atomizerActivations = 0;
+
+    // Motion detection tracking
+    int motionTriggerCount = 0;         // Total PIR motion events detected
+    int deterrentActivationCount = 0;   // Times deterrent was activated (Boots detected)
 };
 
 #endif

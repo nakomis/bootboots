@@ -258,3 +258,109 @@ void CaptureController::parseAndLogInferenceResponse(const String& response) {
         SDLogger::getInstance().warnf("Unexpected response format: %s", response.c_str());
     }
 }
+
+DetectionResult CaptureController::parseInferenceResponse(const String& response, const String& filename) {
+    DetectionResult result;
+    result.filename = filename;
+    result.rawResponse = response;
+
+    DynamicJsonDocument doc(2048);
+    DeserializationError jsonError = deserializeJson(doc, response);
+
+    if (jsonError) {
+        SDLogger::getInstance().warnf("Failed to parse inference response: %s", jsonError.c_str());
+        return result;
+    }
+
+    if (doc["success"] != true) {
+        SDLogger::getInstance().warnf("Inference API returned success=false");
+        return result;
+    }
+
+    // Get winner from mostLikelyCat object at root level
+    JsonObject mostLikelyCat = doc["mostLikelyCat"];
+    if (mostLikelyCat.isNull()) {
+        SDLogger::getInstance().warnf("No mostLikelyCat in response");
+        return result;
+    }
+
+    result.success = true;
+    result.detectedName = mostLikelyCat["name"] | "Unknown";
+    result.confidence = mostLikelyCat["confidence"] | 0.0f;
+    result.detectedIndex = mostLikelyCat["index"] | -1;
+
+    return result;
+}
+
+DetectionResult CaptureController::captureAndDetect() {
+    DetectionResult result;
+
+    if (!_camera) {
+        SDLogger::getInstance().errorf("Camera not initialized");
+        return result;
+    }
+
+    SDLogger::getInstance().infof("=== Quick Capture for Detection ===");
+
+    // No LED countdown for quick PIR-triggered capture
+
+    // Capture image
+    NamedImage* image = _camera->getImage();
+    if (!image || !image->image || image->size == 0) {
+        SDLogger::getInstance().errorf("Failed to capture image");
+        return result;
+    }
+
+    // Generate timestamp-based filename
+    String basename = _imageStorage ? _imageStorage->generateFilename() : String(millis());
+
+    SDLogger::getInstance().infof("Captured image: %s (%d bytes)", basename.c_str(), image->size);
+
+    // Save image to SD card
+    if (_imageStorage) {
+        _imageStorage->saveImage(basename, image);
+    }
+
+    // Upload to AWS and get inference result
+    String response;
+    if (_awsAuth && _roleAlias && _apiHost && _apiPath) {
+        // Get AWS credentials (refresh if needed)
+        if (!_awsAuth->areCredentialsValid()) {
+            SDLogger::getInstance().infof("Refreshing AWS credentials...");
+            if (!_awsAuth->getCredentialsWithRoleAlias(_roleAlias)) {
+                SDLogger::getInstance().errorf("Failed to get AWS credentials");
+                _camera->releaseImageBuffer(image);
+                return result;
+            }
+        }
+
+        // Post image to inference endpoint
+        CatCamHttpClient httpClient;
+        response = httpClient.postImage(image, _apiHost, _apiPath, _awsAuth);
+
+        // Save server response to SD card
+        if (_imageStorage) {
+            _imageStorage->saveResponse(basename, response);
+        }
+
+        // Parse response into DetectionResult
+        result = parseInferenceResponse(response, basename + ".jpg");
+
+        // Also log the inference results
+        parseAndLogInferenceResponse(response);
+    } else {
+        SDLogger::getInstance().warnf("AWS not configured - cannot run inference");
+    }
+
+    // Release image buffer
+    _camera->releaseImageBuffer(image);
+
+    // Clean up old images
+    if (_imageStorage) {
+        _imageStorage->cleanupOldImages();
+    }
+
+    SDLogger::getInstance().infof("=== Detection Complete ===");
+
+    return result;
+}

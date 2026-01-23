@@ -16,6 +16,8 @@ class ImageStorage;
 class LedController;
 class CaptureController;
 class InputManager;
+class MotionDetector;
+class DeterrentController;
 struct SystemState;
 
 /**
@@ -101,6 +103,8 @@ public:
     VideoRecorder* getVideoRecorder() { return _videoRecorder; }
     ImageStorage* getImageStorage() { return _imageStorage; }
     CaptureController* getCaptureController() { return _captureController; }
+    MotionDetector* getMotionDetector() { return _motionDetector; }
+    DeterrentController* getDeterrentController() { return _deterrentController; }
 
 private:
     // Owned components (created and destroyed by SystemManager)
@@ -114,6 +118,8 @@ private:
     VideoRecorder* _videoRecorder;
     ImageStorage* _imageStorage;
     CaptureController* _captureController;
+    MotionDetector* _motionDetector;
+    DeterrentController* _deterrentController;
 
     // PCF8574 LED blinking state
     unsigned long _lastPcfBlink;

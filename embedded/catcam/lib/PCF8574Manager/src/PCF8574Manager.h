@@ -12,7 +12,7 @@ public:
     static constexpr uint8_t ATOMIZER_PIN = 0;      // P0 - Atomizer control
     static constexpr uint8_t FLASH_LED_PIN = 1;     // P1 - Flash LED
     static constexpr uint8_t PRESSURE_SENSOR_PIN = 2; // P2 - Pressure sensor input
-    static constexpr uint8_t SPARE_PIN_3 = 3;       // P3 - Future expansion
+    static constexpr uint8_t PIR_SENSOR_PIN = 3;    // P3 - PIR motion sensor (active HIGH)
     static constexpr uint8_t SPARE_PIN_4 = 4;       // P4 - Future expansion
     static constexpr uint8_t SPARE_PIN_5 = 5;       // P5 - Future expansion
     static constexpr uint8_t SPARE_PIN_6 = 6;       // P6 - Future expansion
@@ -30,6 +30,7 @@ public:
     bool setAtomizerState(bool active);
     bool setFlashLED(bool on);
     bool readPressureSensor();
+    bool readPIRSensor();
     
     // System health and safety
     bool isConnected();

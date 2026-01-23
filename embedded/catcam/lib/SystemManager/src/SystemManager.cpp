@@ -18,6 +18,8 @@
 #include "LedController.h"
 #include "CaptureController.h"
 #include "InputManager.h"
+#include "MotionDetector.h"
+#include "DeterrentController.h"
 #include "secrets.h"
 
 SystemManager::SystemManager()
@@ -31,12 +33,16 @@ SystemManager::SystemManager()
     , _videoRecorder(nullptr)
     , _imageStorage(nullptr)
     , _captureController(nullptr)
+    , _motionDetector(nullptr)
+    , _deterrentController(nullptr)
     , _lastPcfBlink(0)
     , _pcfLedState(false)
 {
 }
 
 SystemManager::~SystemManager() {
+    delete _deterrentController;
+    delete _motionDetector;
     delete _captureController;
     delete _imageStorage;
     delete _videoRecorder;
@@ -185,6 +191,25 @@ bool SystemManager::initComponents(const Config& config, SystemState& state,
     BLEDevice::startAdvertising();
     SDLogger::getInstance().infof("BLE advertising started");
 
+    // Initialize Motion Detector (requires PCF8574Manager)
+    if (_pcfManager && state.pcf8574Ready) {
+        _motionDetector = new MotionDetector(_pcfManager);
+        SDLogger::getInstance().infof("Motion Detector initialized on PCF8574 pin P%d",
+                                       PCF8574Manager::PIR_SENSOR_PIN);
+
+        // Initialize Deterrent Controller (requires PCF8574Manager and CaptureController)
+        if (_captureController) {
+            _deterrentController = new DeterrentController(_pcfManager, _captureController);
+            SDLogger::getInstance().infof("Deterrent Controller initialized (threshold: %.0f%%, duration: %lu ms)",
+                                           DeterrentController::CONFIDENCE_THRESHOLD * 100.0f,
+                                           DeterrentController::DETERRENT_DURATION_MS);
+        } else {
+            SDLogger::getInstance().warnf("Deterrent Controller not initialized - CaptureController unavailable");
+        }
+    } else {
+        SDLogger::getInstance().warnf("Motion Detector not initialized - PCF8574 unavailable");
+    }
+
     return true;
 }
 
@@ -196,6 +221,11 @@ void SystemManager::update(SystemState& state) {
 
     if (_bluetoothOTA) {
         _bluetoothOTA->handle();
+    }
+
+    // Update motion detector state
+    if (_motionDetector) {
+        _motionDetector->update();
     }
 
     // Update WiFi connection status

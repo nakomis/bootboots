@@ -9,6 +9,8 @@
 #include "LedController.h"
 #include "InputManager.h"
 #include "CaptureController.h"
+#include "MotionDetector.h"
+#include "DeterrentController.h"
 #include "version.h"
 
 #ifndef OTA_PASSWORD
@@ -148,6 +150,34 @@ void loop() {
         CaptureController* captureController = systemManager.getCaptureController();
         if (captureController) {
             captureController->recordVideo();
+        }
+    }
+
+    // Check for PIR motion detection
+    MotionDetector* motionDetector = systemManager.getMotionDetector();
+    if (motionDetector && motionDetector->wasMotionDetected()) {
+        SDLogger::getInstance().infof("PIR motion detected");
+        systemState.motionTriggerCount++;
+
+        CaptureController* captureController = systemManager.getCaptureController();
+        DeterrentController* deterrentController = systemManager.getDeterrentController();
+
+        if (captureController && deterrentController) {
+            // Capture photo and run inference
+            DetectionResult result = captureController->captureAndDetect();
+
+            if (result.success && deterrentController->shouldActivate(result)) {
+                SDLogger::getInstance().criticalf("Boots detected (%.1f%%) - activating deterrent!",
+                    result.confidence * 100.0f);
+                systemState.deterrentActivationCount++;
+                systemState.bootsDetections++;
+                deterrentController->activate(systemState);  // BLOCKING 8 seconds
+            } else if (result.success) {
+                systemState.totalDetections++;
+                if (result.detectedIndex != DeterrentController::BOOTS_INDEX) {
+                    systemState.falsePositivesAvoided++;
+                }
+            }
         }
     }
 

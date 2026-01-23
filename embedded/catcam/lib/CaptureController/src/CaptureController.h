@@ -9,6 +9,18 @@
 #include "AWSAuth.h"
 
 /**
+ * DetectionResult - Result from capture and inference
+ */
+struct DetectionResult {
+    bool success = false;           // True if capture and inference succeeded
+    String detectedName;            // Name of detected cat (e.g., "Boots", "Chi", "NoCat")
+    int detectedIndex = -1;         // Index in model output (0=Boots, 1=Chi, etc.)
+    float confidence = 0.0f;        // Confidence score (0.0 to 1.0)
+    String filename;                // Filename of captured image
+    String rawResponse;             // Raw JSON response from inference API
+};
+
+/**
  * CaptureController - Orchestrates photo and video capture
  *
  * Coordinates Camera, VideoRecorder, LedController, ImageStorage, and AWSAuth
@@ -57,6 +69,13 @@ public:
     String capturePhoto();
 
     /**
+     * Capture photo and run inference without LED countdown (for PIR-triggered detection)
+     * Quick response path - captures photo, uploads to AWS, returns structured result
+     * @return DetectionResult with inference results
+     */
+    DetectionResult captureAndDetect();
+
+    /**
      * Record a video with LED countdown
      * @param durationSeconds Recording duration (default 10)
      * @param fps Frames per second (default 10)
@@ -95,4 +114,5 @@ private:
     // Helper methods
     void runCountdown();
     void parseAndLogInferenceResponse(const String& response);
+    DetectionResult parseInferenceResponse(const String& response, const String& filename);
 };
