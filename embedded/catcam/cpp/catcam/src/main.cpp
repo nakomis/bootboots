@@ -34,8 +34,8 @@
 // Board-specific pin configuration
 #ifdef ESP32S3_CAM
 // ESP32-S3 CAM: Dedicated I2C pins (not shared with UART)
-#define I2C_SDA 4               // GPIO4 - SDA
-#define I2C_SCL 5               // GPIO5 - SCL
+#define I2C_SDA 47               // GPIO4 - SDA
+#define I2C_SCL 21               // GPIO5 - SCL
 #define BOARD_NAME "ESP32-S3-CAM"
 #else
 // Original ESP32-CAM: I2C on UART0 pins
@@ -44,7 +44,7 @@
 #define BOARD_NAME "ESP32-CAM"
 #endif
 
-#define PCF8574_ADDRESS 0x20    // I2C address for PCF8574
+#define PCF8574_ADDRESS 0x27    // I2C address for PCF8574
 
 // BOOT button for user input (triggers photo capture)
 #define BOOT_BUTTON_PIN 0       // GPIO0 - BOOT button (LOW when pressed)

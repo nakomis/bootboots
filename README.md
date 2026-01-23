@@ -126,6 +126,7 @@ bootboots/
 - Node.js and npm (for infrastructure)
 - AWS CLI configured with `nakom.is-sandbox` profile
 - draw.io desktop app (for architecture diagram generation)
+- githooks installed using `./scripts/install-hooks.sh`
 
 ### Initial Device Setup
 
