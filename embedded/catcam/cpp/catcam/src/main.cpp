@@ -108,7 +108,6 @@ void setup() {
         .debounceMs = 50,
         .imagesDir = IMAGES_DIR,
         .maxImagesToKeep = MAX_IMAGES_TO_KEEP,
-        .otaPassword = OTA_PASSWORD,
         .deviceName = "BootBoots-CatCam",
         .awsRegion = "eu-west-2",
         .awsRoleAlias = AWS_ROLE_ALIAS,

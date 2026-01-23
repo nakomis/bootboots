@@ -7,7 +7,6 @@
 #define OTA_BUFFER_SIZE 512
 
 OTAUpdate::OTAUpdate() {
-    _initialized = false;
     _updating = false;
     _progress = 0;
     _status = "Not initialized";
@@ -29,23 +28,6 @@ OTAUpdate::~OTAUpdate() {
         delete _secureClient;
         _secureClient = nullptr;
     }
-}
-
-void OTAUpdate::init(const char* hostname, const char* password) {
-    if (_initialized) {
-        SDLogger::getInstance().warnf("OTA already initialized");
-        return;
-    }
-
-    _hostname = String(hostname);
-    _initialized = true;
-    _status = "Ready for updates";
-    SDLogger::getInstance().infof("OTA update service initialized (SD card method)");
-}
-
-void OTAUpdate::handle() {
-    // No-op - SD card OTA doesn't need continuous handling
-    // The bootloader handles flashing after reboot
 }
 
 bool OTAUpdate::isUpdating() {
@@ -80,41 +62,6 @@ void OTAUpdate::cancelUpdate() {
             _updateCallback(false, "Update cancelled by user");
         }
     }
-}
-
-bool OTAUpdate::hasPendingUpdate() {
-    Preferences prefs;
-    prefs.begin("ota", true);  // Read-only
-    bool pending = prefs.getBool("pending", false);
-    prefs.end();
-    return pending;
-}
-
-bool OTAUpdate::cleanupPendingUpdate() {
-    // Clean up any leftover OTA files/flags (bootloader handles actual flashing)
-    SDLogger::getInstance().infof("Checking for leftover OTA files...");
-
-    // Check for stale NVS flags (shouldn't happen, bootloader clears them)
-    Preferences prefs;
-    prefs.begin("ota", true);
-    bool pending = prefs.getBool("pending", false);
-    prefs.end();
-
-    if (pending) {
-        SDLogger::getInstance().warnf("WARNING: Stale OTA pending flag found - clearing it");
-        prefs.begin("ota", false);
-        prefs.putBool("pending", false);
-        prefs.putUInt("size", 0);
-        prefs.end();
-    }
-
-    // Clean up leftover firmware file if it exists
-    if (SD_MMC.exists(FIRMWARE_FILE)) {
-        SDLogger::getInstance().warnf("Leftover firmware file found - deleting");
-        SD_MMC.remove(FIRMWARE_FILE);
-    }
-
-    return true;
 }
 
 bool OTAUpdate::downloadToSD(const char* firmwareURL) {

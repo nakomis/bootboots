@@ -24,18 +24,6 @@ public:
     ~OTAUpdate();
 
     /**
-     * Initialize the OTA update service
-     * @param hostname Device hostname (for logging)
-     * @param password Unused, kept for API compatibility
-     */
-    void init(const char* hostname = "BootBoots-CatCam", const char* password = nullptr);
-
-    /**
-     * Handle any pending OTA operations (currently no-op)
-     */
-    void handle();
-
-    /**
      * Check if an update is currently in progress
      */
     bool isUpdating();
@@ -62,16 +50,6 @@ public:
      * @return true if download started successfully (will reboot on completion)
      */
     bool downloadToSD(const char* firmwareURL);
-
-    /**
-     * Check if there's a pending update in NVS flags
-     */
-    static bool hasPendingUpdate();
-
-    /**
-     * Clean up any leftover OTA files/flags (bootloader handles actual flashing)
-     */
-    static bool cleanupPendingUpdate();
 
     /**
      * Get current status message

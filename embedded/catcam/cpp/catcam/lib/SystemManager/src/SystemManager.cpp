@@ -155,7 +155,6 @@ bool SystemManager::initComponents(const Config& config, SystemState& state,
 
     // Initialize OTA Update Service
     _otaUpdate = new OTAUpdate();
-    _otaUpdate->init(config.deviceName, config.otaPassword);
     _otaUpdate->setUpdateCallback([](bool success, const char* error) {
         if (success) {
             SDLogger::getInstance().infof("OTA Update: %s", error);
@@ -197,11 +196,6 @@ void SystemManager::update(SystemState& state) {
 
     if (_bluetoothOTA) {
         _bluetoothOTA->handle();
-    }
-
-    // Handle OTA updates
-    if (_otaUpdate) {
-        _otaUpdate->handle();
     }
 
     // Update WiFi connection status

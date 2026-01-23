@@ -38,7 +38,6 @@ public:
         unsigned long debounceMs;
         const char* imagesDir;
         int maxImagesToKeep;
-        const char* otaPassword;
         const char* deviceName;
         const char* awsRegion;
         const char* awsRoleAlias;
