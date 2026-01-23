@@ -75,6 +75,10 @@ bool SDLogger::init(const char* logDir) {
     return true;
 }
 
+void SDLogger::trace(const char* message) {
+    log(LOG_TRACE, message);
+}
+
 void SDLogger::debug(const char* message) {
     log(LOG_DEBUG, message);
 }
@@ -93,6 +97,15 @@ void SDLogger::error(const char* message) {
 
 void SDLogger::critical(const char* message) {
     log(LOG_CRITICAL, message);
+}
+
+void SDLogger::tracef(const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    char buffer[2048];
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+    trace(buffer);
 }
 
 void SDLogger::debugf(const char* format, ...) {
@@ -163,21 +176,6 @@ void SDLogger::logf(LogLevel level, const char* format, ...) {
     log(level, buffer);
 }
 
-void SDLogger::logDeterrentActivation(const char* catName, float confidence, const float* allProbs) {
-    criticalf("DETERRENT_ACTIVATED: %s (%.1f%%) - Probs:[%.1f,%.1f,%.1f,%.1f,%.1f,%.1f]",
-        catName, confidence * 100,
-        allProbs[0] * 100, allProbs[1] * 100, allProbs[2] * 100,
-        allProbs[3] * 100, allProbs[4] * 100, allProbs[5] * 100);
-}
-
-void SDLogger::logDeterrentRejection(const char* catName, float confidence, const char* reason) {
-    infof("DETERRENT_REJECTED: %s (%.1f%%) - %s", catName, confidence * 100, reason);
-}
-
-void SDLogger::logDetection(const char* catName, float confidence, int pictureNumber) {
-    infof("DETECTION: %s (%.1f%%) - Picture #%d", catName, confidence * 100, pictureNumber);
-}
-
 void SDLogger::flush() {
     if (!_initialized) return;
 
@@ -236,6 +234,7 @@ String SDLogger::formatLogEntry(LogLevel level, const char* message) {
 
 String SDLogger::getLogLevelString(LogLevel level) {
     switch (level) {
+    case LOG_TRACE: return "TRACE";
     case LOG_DEBUG: return "DEBUG";
     case LOG_INFO: return "INFO";
     case LOG_WARN: return "WARN";

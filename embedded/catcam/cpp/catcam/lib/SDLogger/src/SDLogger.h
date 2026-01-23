@@ -8,6 +8,7 @@
 #include <freertos/semphr.h>
 
 enum LogLevel {
+    LOG_TRACE = -1,
     LOG_DEBUG = 0,
     LOG_INFO = 1,
     LOG_WARN = 2,
@@ -23,6 +24,7 @@ public:
     bool init(const char* logDir = "/logs");
     
     // Thread-safe logging methods
+    void trace(const char* message);
     void debug(const char* message);
     void info(const char* message);
     void warn(const char* message);
@@ -30,6 +32,7 @@ public:
     void critical(const char* message);
     
     // Formatted logging
+    void tracef(const char* format, ...);
     void debugf(const char* format, ...);
     void infof(const char* format, ...);
     void warnf(const char* format, ...);
@@ -92,12 +95,14 @@ private:
 };
 
 // Convenience macros for easier logging
+#define LOG_T(msg) SDLogger::getInstance().trace(msg)
 #define LOG_D(msg) SDLogger::getInstance().debug(msg)
 #define LOG_I(msg) SDLogger::getInstance().info(msg)
 #define LOG_W(msg) SDLogger::getInstance().warn(msg)
 #define LOG_E(msg) SDLogger::getInstance().error(msg)
 #define LOG_C(msg) SDLogger::getInstance().critical(msg)
 
+#define LOG_TF(fmt, ...) SDLogger::getInstance().tracef(fmt, ##__VA_ARGS__)
 #define LOG_DF(fmt, ...) SDLogger::getInstance().debugf(fmt, ##__VA_ARGS__)
 #define LOG_IF(fmt, ...) SDLogger::getInstance().infof(fmt, ##__VA_ARGS__)
 #define LOG_WF(fmt, ...) SDLogger::getInstance().warnf(fmt, ##__VA_ARGS__)
