@@ -19,9 +19,9 @@
 #include "CatCamHttpClient.h"
 #include "VideoRecorder.h"
 #include "ImageStorage.h"
+#include "LedController.h"
 #include "version.h"
 #include "secrets.h"
-#include "NeoPixel.h"
 #include <HTTPClient.h>
 
 #include "main.h"
@@ -63,6 +63,7 @@ AWSAuth* awsAuth = nullptr;
 Camera* camera = nullptr;
 VideoRecorder* videoRecorder = nullptr;
 ImageStorage* imageStorage = nullptr;
+LedController ledController;
 
 // AWS Auth configuration
 const char* AWS_ROLE_ALIAS = "BootBootsRoleAlias";
@@ -73,9 +74,6 @@ const char* API_PATH = "/infer";
 void initCameraAndLed();
 String captureAndPostPhoto();
 void recordVideo();
-void setLedColor(uint8_t r, uint8_t g, uint8_t b);
-void ledOff();
-bool flashLedAccelerating(uint8_t r, uint8_t g, uint8_t b, unsigned long startInterval, unsigned long endInterval, unsigned long durationMs);
 bool isBootButtonPressed();
 
 // System state instance
@@ -286,6 +284,7 @@ void initializeComponents() {
     // Initialize Bluetooth Service
     bluetoothService = new BootBootsBluetoothService();
     bluetoothService->init("BootBoots-CatCam");
+    bluetoothService->setLedController(&ledController);
     SDLogger::getInstance().infof("Bluetooth Service initialized");
 
     // Initialize OTA Update Service
@@ -373,107 +372,17 @@ void handleSystemError(const char* component, const char* error) {
     // blinkStatusLED(5, 200); // 5 fast blinks for error
 }
 
-// RGB LED Helper Functions
-void setLedColor(uint8_t r, uint8_t g, uint8_t b) {
-#ifdef ESP32S3_CAM
-    NeoPixel::instance().setLedColor(r, g, b);
-#endif
-}
-
-void ledOff() {
-    setLedColor(0, 0, 0);
-}
-
 // Check if BOOT button is pressed (returns true if pressed)
 bool isBootButtonPressed() {
     return digitalRead(BOOT_BUTTON_PIN) == LOW;
 }
 
-// Flash LED with accelerating frequency over the duration
-// Returns true if BOOT button was pressed (exit requested)
-bool flashLedAccelerating(uint8_t r, uint8_t g, uint8_t b, unsigned long startInterval, unsigned long endInterval, unsigned long durationMs) {
-    unsigned long startTime = millis();
-    unsigned long elapsed = 0;
-    bool ledOn = false;
-    int toggleCount = 0;
-
-    SDLogger::getInstance().debugf("Flash LED: color=(%d,%d,%d) start=%lu end=%lu duration=%lu",
-        r, g, b, startInterval, endInterval, durationMs);
-
-    unsigned long lastToggle = startTime;
-
-    while (elapsed < durationMs) {
-        elapsed = millis() - startTime;
-
-        // Check for BOOT button press to exit countdown early
-        if (isBootButtonPressed()) {
-            ledOff();
-            SDLogger::getInstance().debugf("BOOT button pressed during countdown");
-            return true;
-        }
-
-        // Calculate current interval - interpolate from startInterval to endInterval
-        float progress = (float)elapsed / (float)durationMs;
-        unsigned long currentInterval = startInterval + (unsigned long)(progress * (float)(endInterval - startInterval));
-
-        // Clamp interval to reasonable values
-        if (currentInterval < 30) currentInterval = 30;
-        if (currentInterval > 1000) currentInterval = 1000;
-
-        if (millis() - lastToggle >= currentInterval) {
-            ledOn = !ledOn;
-            toggleCount++;
-            if (ledOn) {
-                setLedColor(r, g, b);
-            }
-            else {
-                ledOff();
-            }
-            lastToggle = millis();
-        }
-
-        // Handle Bluetooth during the flash sequence
-        if (bluetoothService) {
-            bluetoothService->handle();
-        }
-        if (bluetoothOTA) {
-            bluetoothOTA->handle();
-        }
-
-        delay(10);  // Small delay to prevent tight loop
-    }
-
-    SDLogger::getInstance().debugf("Flash complete: %d toggles", toggleCount);
-    ledOff();
-    return false;
-}
-
 void initCameraAndLed() {
     SDLogger::getInstance().infof("=== Initializing Camera and LED ===");
 
-#ifdef ESP32S3_CAM
-    // Initialize RGB LED
-    SDLogger::getInstance().infof("Initializing RGB LED on GPIO %d", RGB_LED_PIN);
-    NeoPixel::instance().setBrightness(255);
-
-    // LED test sequence - verify hardware works
-    for (int i = 0; i < 3; i++) {
-        NeoPixel::instance().setLedColor(255, 0, 0);
-        delay(100);
-
-        NeoPixel::instance().setLedColor(0, 255, 0);
-        delay(100);
-
-        NeoPixel::instance().setLedColor(0, 0, 255);
-        delay(100);
-    }
-
-    NeoPixel::instance().setLedColor(0, 0, 0);
-    delay(250);
-
-    // Set working brightness
-    NeoPixel::instance().setBrightness((uint8_t)100);
-#endif
+    // Initialize LED controller and run test sequence
+    ledController.init(100);  // Default brightness 100
+    ledController.runTestSequence(3, 100);
 
     // Initialize camera
     camera = new Camera();
@@ -499,35 +408,38 @@ String captureAndPostPhoto() {
 
     SDLogger::getInstance().infof("=== Capturing Photo ===");
 
+    // Callbacks for LED animations
+    auto cancelCheck = []() { return isBootButtonPressed(); };
+    auto loopCallback = []() {
+        if (bluetoothService) bluetoothService->handle();
+        if (bluetoothOTA) bluetoothOTA->handle();
+    };
+
     // Step 1: Flash red LED (starts slow, gets faster)
     SDLogger::getInstance().debugf("Red LED countdown...");
-    flashLedAccelerating(255, 0, 0, 500, 250, 2500);
+    ledController.flashAccelerating(255, 0, 0, 500, 250, 2500, cancelCheck, loopCallback);
 
     // Step 2: Flash blue LED (starts slow, gets faster)
     SDLogger::getInstance().debugf("Blue LED countdown...");
-    flashLedAccelerating(0, 0, 255, 250, 50, 2500);
+    ledController.flashAccelerating(0, 0, 255, 250, 50, 2500, cancelCheck, loopCallback);
 
     // Step 3: Set bright WHITE for photo capture
-#ifdef ESP32S3_CAM
-    NeoPixel::instance().setBrightness(255);  // Maximum brightness for photo
-#endif
-    setLedColor(255, 255, 255);
+    ledController.setBrightness(255);  // Maximum brightness for photo
+    ledController.setColor(255, 255, 255);
 
     // Capture image
     NamedImage* image = camera->getImage();
     if (!image || !image->image || image->size == 0) {
         SDLogger::getInstance().errorf("Failed to capture image");
-        ledOff();
+        ledController.off();
         return "";
     }
 
     // Generate timestamp-based filename for this capture
     String basename = imageStorage->generateFilename();
 
-#ifdef ESP32S3_CAM
-    NeoPixel::instance().setBrightness(50);  // 0-255, moderate brightness
-#endif
-    setLedColor(0, 255, 0);
+    ledController.setBrightness(50);  // Moderate brightness
+    ledController.setColor(0, 255, 0);
 
     SDLogger::getInstance().infof("Captured image: %s (%d bytes)", basename.c_str(), image->size);
 
@@ -540,7 +452,7 @@ String captureAndPostPhoto() {
         if (!awsAuth->getCredentialsWithRoleAlias(AWS_ROLE_ALIAS)) {
             SDLogger::getInstance().errorf("Failed to get AWS credentials");
             camera->releaseImageBuffer(image);
-            ledOff();
+            ledController.off();
             return "";
         }
     }
@@ -598,7 +510,7 @@ String captureAndPostPhoto() {
     imageStorage->cleanupOldImages();
 
     // Step 4: Turn LED off
-    ledOff();
+    ledController.off();
 
     SDLogger::getInstance().infof("=== Photo Capture Complete ===");
 
@@ -619,19 +531,24 @@ void recordVideo() {
 
     SDLogger::getInstance().infof("=== Starting Video Recording ===");
 
+    // Callbacks for LED animations
+    auto cancelCheck = []() { return isBootButtonPressed(); };
+    auto loopCallback = []() {
+        if (bluetoothService) bluetoothService->handle();
+        if (bluetoothOTA) bluetoothOTA->handle();
+    };
+
     // Step 1: Flash red LED (starts slow, gets faster) - same as photo capture
     SDLogger::getInstance().debugf("Red LED countdown...");
-    flashLedAccelerating(255, 0, 0, 500, 250, 2500);
+    ledController.flashAccelerating(255, 0, 0, 500, 250, 2500, cancelCheck, loopCallback);
 
     // Step 2: Flash blue LED (starts slow, gets faster) - same as photo capture
     SDLogger::getInstance().debugf("Blue LED countdown...");
-    flashLedAccelerating(0, 0, 255, 250, 50, 2500);
+    ledController.flashAccelerating(0, 0, 255, 250, 50, 2500, cancelCheck, loopCallback);
 
     // Step 3: Set WHITE LED on during recording
-#ifdef ESP32S3_CAM
-    NeoPixel::instance().setBrightness(255);  // Maximum brightness for recording
-#endif
-    setLedColor(255, 255, 255);
+    ledController.setBrightness(255);  // Maximum brightness for recording
+    ledController.setColor(255, 255, 255);
 
     // Configure and start recording
     VideoConfig config = VideoRecorder::getDefaultConfig();
@@ -658,27 +575,17 @@ void recordVideo() {
         }
     );
 
-    // Step 4: Turn LED off after recording
-    ledOff();
-#ifdef ESP32S3_CAM
-    NeoPixel::instance().setBrightness(100);  // Restore normal brightness
-#endif
+    // Step 4: Turn LED off after recording and restore normal brightness
+    ledController.off();
+    ledController.setBrightness(100);
 
     if (result.success) {
-        // Brief green flash to indicate success
-        setLedColor(0, 255, 0);
-        delay(500);
-        ledOff();
-
+        ledController.flashSuccess();
         SDLogger::getInstance().infof("=== Video Recording Complete ===");
         SDLogger::getInstance().infof("Saved: %s (%d frames, %d bytes, %d ms)",
             result.filename.c_str(), result.totalFrames, result.fileSize, result.durationMs);
     } else {
-        // Brief red flash to indicate failure
-        setLedColor(255, 0, 0);
-        delay(500);
-        ledOff();
-
+        ledController.flashError();
         SDLogger::getInstance().errorf("=== Video Recording Failed ===");
         SDLogger::getInstance().errorf("Error: %s", result.errorMessage.c_str());
     }

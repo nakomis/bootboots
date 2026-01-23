@@ -10,6 +10,7 @@
 #include <SD_MMC.h>
 #include <vector>
 #include "../../SDLogger/src/SDLogger.h"
+#include "../../LedController/src/LedController.h"
 #include "../../../include/SystemState.h"
 
 // BootBoots BLE Service UUID (lowercase for Web Bluetooth API compatibility)
@@ -30,6 +31,9 @@ public:
 
     // Get BLE server for sharing with other services
     BLEServer* getServer() { return pServer; }
+
+    // Set LED controller for visual feedback during transfers
+    void setLedController(LedController* led) { _ledController = led; }
 
     // BLE Server callbacks
     void onConnect(BLEServer* pServer) override;
@@ -56,7 +60,8 @@ private:
     char _pendingCommandBuffer[MAX_PENDING_CMD_SIZE];
     volatile bool _hasPendingCommand;
     volatile bool _pendingDisconnect;  // Deferred disconnect handling
-    
+    LedController* _ledController = nullptr;  // Optional LED for visual feedback
+
     // Helper methods
     String formatSystemStatusJson(const SystemState& state);
     String getLatestLogEntries(int maxEntries = 50);
