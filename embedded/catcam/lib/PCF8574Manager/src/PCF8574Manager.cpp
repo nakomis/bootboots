@@ -21,8 +21,8 @@ bool PCF8574Manager::init(int sdaPin, int sclPin) {
         return false;
     }
     
-    // Initialize all pins to safe state (LOW/OFF)
-    _currentState = 0x00;
+    // Initialize all pins to safe state (LOW/OFF) with the exception of the low activated pins
+    _currentState = PCF8574_INITIAL_PIN_STATE;
     if (!writeToDevice(_currentState)) {
         SDLogger::getInstance().errorf("Failed to initialize PCF8574 to safe state");
         return false;
@@ -53,9 +53,11 @@ bool PCF8574Manager::setPinState(uint8_t pin, bool state) {
         logError("setPinState", ERROR_EMERGENCY_MODE);
         return false;
     }
+
+    bool stateToSet = isActiveLowPin(pin) ? !state : state;
     
     // Update the bit for this pin
-    if (state) {
+    if (stateToSet) {
         _currentState |= (1 << pin);
     } else {
         _currentState &= ~(1 << pin);
@@ -222,6 +224,11 @@ bool PCF8574Manager::isSafeToOperate() {
     // }
     
     return true;
+}
+
+bool PCF8574Manager::isActiveLowPin(uint8_t pin) {
+    const uint8_t *found = std::find(std::begin(LowActivatedPins::pins), std::end(LowActivatedPins::pins), pin);
+    return found != std::end(LowActivatedPins::pins);
 }
 
 bool PCF8574Manager::writeToDevice(uint8_t data) {

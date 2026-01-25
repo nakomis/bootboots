@@ -20,6 +20,7 @@ void DeterrentController::setUploadConfig(const char* apiHost) {
 }
 
 bool DeterrentController::shouldActivate(const DetectionResult& result) const {
+    return true;
     if (!result.success) {
         return false;
     }
@@ -97,12 +98,12 @@ void DeterrentController::activate(SystemState& state) {
                 SDLogger::getInstance().infof("DeterrentController: Video saved: %s (%d frames, %d bytes)",
                     result.filename.c_str(), result.totalFrames, result.fileSize);
 
-                // Upload video to cloud
-                if (uploadVideo(result.filename)) {
-                    SDLogger::getInstance().infof("DeterrentController: Video uploaded successfully");
-                } else {
-                    SDLogger::getInstance().warnf("DeterrentController: Video upload failed (video still saved locally)");
-                }
+                // // Upload video to cloud
+                // if (uploadVideo(result.filename)) {
+                //     SDLogger::getInstance().infof("DeterrentController: Video uploaded successfully");
+                // } else {
+                //     SDLogger::getInstance().warnf("DeterrentController: Video upload failed (video still saved locally)");
+                // }
             } else {
                 SDLogger::getInstance().errorf("DeterrentController: Video recording failed: %s",
                     result.errorMessage.c_str());
