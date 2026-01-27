@@ -21,6 +21,9 @@ struct SystemState {
     // Motion detection tracking
     int motionTriggerCount = 0;         // Total PIR motion events detected
     int deterrentActivationCount = 0;   // Times deterrent was activated (Boots detected)
+
+    // Training mode - captures photos without inference/deterrent
+    bool trainingMode = false;
 };
 
 #endif

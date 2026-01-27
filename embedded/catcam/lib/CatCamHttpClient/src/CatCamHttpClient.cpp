@@ -10,7 +10,7 @@ CatCamHttpClient::CatCamHttpClient()
 
 }
 
-String CatCamHttpClient::postImage(NamedImage* namedImage, const char* host, const char* path, AWSAuth* awsAuth) {
+String CatCamHttpClient::postImage(NamedImage* namedImage, const char* host, const char* path, AWSAuth* awsAuth, bool trainingMode) {
     if (!namedImage || !namedImage->image || namedImage->size == 0) {
         SDLogger::getInstance().errorf("CatCamHttpClient: Invalid image data");
         return "{\"error\": \"Invalid image data\"}";
@@ -22,14 +22,21 @@ String CatCamHttpClient::postImage(NamedImage* namedImage, const char* host, con
     }
 
     size_t imageSize = namedImage->size;
-    SDLogger::getInstance().infof("CatCamHttpClient: Posting image (%d bytes) to https://%s%s", imageSize, host, path);
+
+    // Construct the actual path, appending training mode query param if needed
+    String actualPath = String(path);
+    if (trainingMode) {
+        actualPath += "?mode=training";
+    }
+
+    SDLogger::getInstance().infof("CatCamHttpClient: Posting image (%d bytes) to https://%s%s", imageSize, host, actualPath.c_str());
 
     // Create SigV4 signed headers for the image POST
     // For binary payloads, we calculate the actual SHA256 hash
     String contentType = "image/jpeg";
 
     // Create the SigV4 headers with the actual binary payload hash
-    SigV4Headers headers = awsAuth->createSigV4HeadersForBinary("POST", path, host,
+    SigV4Headers headers = awsAuth->createSigV4HeadersForBinary("POST", actualPath.c_str(), host,
         namedImage->image, imageSize,
         contentType);
 
@@ -52,7 +59,7 @@ String CatCamHttpClient::postImage(NamedImage* namedImage, const char* host, con
 
     // Send HTTP request manually to handle binary payload with SigV4
     client.print("POST ");
-    client.print(path);
+    client.print(actualPath);
     client.println(" HTTP/1.1");
     client.print("Host: ");
     client.println(host);

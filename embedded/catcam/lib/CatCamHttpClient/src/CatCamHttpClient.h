@@ -13,7 +13,8 @@ public:
     CatCamHttpClient();
 
     // Post an image to the specified URL with SigV4 authentication
-    String postImage(NamedImage* namedImage, const char* host, const char* path, AWSAuth* awsAuth);
+    // If trainingMode is true, appends ?mode=training to the path
+    String postImage(NamedImage* namedImage, const char* host, const char* path, AWSAuth* awsAuth, bool trainingMode = false);
 
     std::function<void(int, int)> sendUpdate;
 

@@ -2,10 +2,15 @@ import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda
 import { Logger } from '@aws-lambda-powertools/logger';
 import { SageMakerRuntimeClient, InvokeEndpointCommand } from '@aws-sdk/client-sagemaker-runtime';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { randomUUID } from 'crypto';
 
 const logger = new Logger();
 const sagemakerClient = new SageMakerRuntimeClient({ region: process.env.AWS_REGION });
 const s3Client = new S3Client({ region: process.env.AWS_REGION });
+const dynamoClient = new DynamoDBClient({ region: process.env.AWS_REGION });
+const docClient = DynamoDBDocumentClient.from(dynamoClient);
 
 // Cat names in order corresponding to the probability array indices
 const CAT_NAMES = ['Boots', 'Chi', 'Kappa', 'Mu', 'Tau', 'Wolf'];
@@ -29,14 +34,37 @@ function getMostLikelyCat(probabilities: number[]): { name: string; confidence: 
     };
 }
 
+// Function to create a catadata record for training images
+async function createCatadataRecord(s3Key: string): Promise<void> {
+    const uuid = randomUUID();
+
+    const putCommand = new PutCommand({
+        TableName: 'catadata',
+        Item: {
+            imageName: s3Key,
+            uuid: uuid,
+            createdAt: new Date().toISOString(),
+        }
+    });
+
+    try {
+        await docClient.send(putCommand);
+        logger.info('Successfully created catadata record', { imageName: s3Key, uuid });
+    } catch (error) {
+        logger.error('Failed to create catadata record', { error, imageName: s3Key });
+        throw error;
+    }
+}
+
 // Function to save image to S3
-async function saveImageToS3(imageBuffer: Buffer, timestamp: string): Promise<string> {
+async function saveImageToS3(imageBuffer: Buffer, timestamp: string, trainingMode: boolean = false): Promise<string> {
     const bucketName = process.env.IMAGES_BUCKET_NAME;
     if (!bucketName) {
         throw new Error('IMAGES_BUCKET_NAME environment variable is not set');
     }
 
-    const key = `catcam-images/${timestamp}.jpg`;
+    const imagePrefix = trainingMode ? 'catcam-training' : 'catcam-images';
+    const key = `${imagePrefix}/${timestamp}.jpg`;
 
     const putCommand = new PutObjectCommand({
         Bucket: bucketName,
@@ -133,6 +161,12 @@ export async function handler(event: APIGatewayProxyEvent, _context: Context): P
                 };
             }
 
+            // Check for training mode
+            const trainingMode = event.queryStringParameters?.mode === 'training';
+            if (trainingMode) {
+                logger.info('Training mode detected - will skip SageMaker inference');
+            }
+
             // Validate request body exists
             if (!event.body) {
                 return {
@@ -225,11 +259,39 @@ export async function handler(event: APIGatewayProxyEvent, _context: Context): P
             // Save image to S3 bucket
             let s3ImageKey: string | null = null;
             try {
-                s3ImageKey = await saveImageToS3(imageBuffer, timestamp);
-                logger.info('Image saved to S3 successfully', { s3ImageKey });
+                s3ImageKey = await saveImageToS3(imageBuffer, timestamp, trainingMode);
+                logger.info('Image saved to S3 successfully', { s3ImageKey, trainingMode });
             } catch (s3Error) {
                 logger.error('Failed to save image to S3, continuing with inference', { error: s3Error });
                 // Continue with SageMaker inference even if S3 upload fails
+            }
+
+            // If training mode, create catadata record and return early (skip SageMaker inference)
+            if (trainingMode) {
+                logger.info('Training mode: skipping SageMaker inference');
+
+                // Create catadata record for the training image
+                if (s3ImageKey) {
+                    try {
+                        await createCatadataRecord(s3ImageKey);
+                    } catch (dbError) {
+                        logger.error('Failed to create catadata record, but image was saved', { error: dbError });
+                        // Continue - image was saved successfully even if DB write failed
+                    }
+                }
+
+                return {
+                    statusCode: 200,
+                    headers: corsHeaders,
+                    body: JSON.stringify({
+                        success: true,
+                        mode: 'training',
+                        metadata: {
+                            timestamp: new Date().toISOString(),
+                            s3ImageKey: s3ImageKey || null
+                        }
+                    })
+                };
             }
 
             // Prepare SageMaker endpoint invocation

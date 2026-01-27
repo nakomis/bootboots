@@ -106,6 +106,8 @@ String BootBootsBluetoothService::formatSystemStatusJson(const SystemState& stat
     doc["statistics"]["boots_detections"] = state.bootsDetections;
     doc["statistics"]["atomizer_activations"] = state.atomizerActivations;
     doc["statistics"]["false_positives_avoided"] = state.falsePositivesAvoided;
+
+    doc["system"]["training_mode"] = state.trainingMode;
     
     doc["timing"]["last_detection"] = state.lastDetection;
     doc["timing"]["last_status_report"] = state.lastStatusReport;
@@ -310,6 +312,43 @@ void BootBootsBluetoothService::processCommand(const String& command) {
         String completeJson;
         serializeJson(completeDoc, completeJson);
         sendResponse(completeJson);
+    } else if (cmd == "get_settings") {
+        SDLogger::getInstance().infof("Get settings request via Bluetooth");
+        DynamicJsonDocument response(256);
+        response["type"] = "settings";
+        response["training_mode"] = systemState.trainingMode;
+        String responseStr;
+        serializeJson(response, responseStr);
+        sendResponse(responseStr);
+    } else if (cmd == "set_setting") {
+        String setting = doc["setting"] | "";
+        if (setting == "training_mode") {
+            bool value = doc["value"] | false;
+            SDLogger::getInstance().infof("Setting training_mode to %s via Bluetooth", value ? "true" : "false");
+            systemState.trainingMode = value;
+
+            // Notify callback to persist the setting
+            if (_trainingModeCallback) {
+                _trainingModeCallback(value);
+            }
+
+            // Send confirmation
+            DynamicJsonDocument response(256);
+            response["type"] = "setting_updated";
+            response["setting"] = "training_mode";
+            response["value"] = value;
+            String responseStr;
+            serializeJson(response, responseStr);
+            sendResponse(responseStr);
+        } else {
+            SDLogger::getInstance().warnf("Unknown setting: %s", setting.c_str());
+            DynamicJsonDocument errorDoc(128);
+            errorDoc["type"] = "error";
+            errorDoc["message"] = "Unknown setting";
+            String errorJson;
+            serializeJson(errorDoc, errorJson);
+            sendResponse(errorJson);
+        }
     } else {
         SDLogger::getInstance().warnf("Unknown command: %s", cmd.c_str());
     }

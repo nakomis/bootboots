@@ -66,6 +66,13 @@ export class ApiGatewayStack extends cdk.Stack {
     // Grant S3 write permissions to the Lambda function
     imagesBucket.grantWrite(inferLambda);
 
+    // Grant DynamoDB write permissions for catadata table (training mode)
+    inferLambda.addToRolePolicy(new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['dynamodb:PutItem'],
+        resources: [`arn:aws:dynamodb:${this.region}:${this.account}:table/catadata`],
+    }));
+
     // Create log group for video notification Lambda
     const videoNotificationLogGroup = new logs.LogGroup(this, 'BootBootsVideoNotificationLogGroup', {
         logGroupName: '/aws/lambda/BootBootsVideoNotification',

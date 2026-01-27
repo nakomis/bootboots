@@ -35,6 +35,9 @@ public:
     // Set LED controller for visual feedback during transfers
     void setLedController(LedController* led) { _ledController = led; }
 
+    // Set callback for training mode changes
+    void setTrainingModeCallback(std::function<void(bool)> callback) { _trainingModeCallback = callback; }
+
     // BLE Server callbacks
     void onConnect(BLEServer* pServer) override;
     void onDisconnect(BLEServer* pServer) override;
@@ -61,6 +64,7 @@ private:
     volatile bool _hasPendingCommand;
     volatile bool _pendingDisconnect;  // Deferred disconnect handling
     LedController* _ledController = nullptr;  // Optional LED for visual feedback
+    std::function<void(bool)> _trainingModeCallback = nullptr;  // Callback for training mode changes
 
     // Helper methods
     String formatSystemStatusJson(const SystemState& state);

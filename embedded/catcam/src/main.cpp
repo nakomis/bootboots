@@ -3,6 +3,7 @@
 #include <SDLogger.h>
 #include <esp_ota_ops.h>
 #include <esp_partition.h>
+#include <Preferences.h>
 
 #include "SystemState.h"
 #include "SystemManager.h"
@@ -11,6 +12,7 @@
 #include "CaptureController.h"
 #include "MotionDetector.h"
 #include "DeterrentController.h"
+#include "BluetoothService.h"
 #include "version.h"
 
 #ifndef OTA_PASSWORD
@@ -49,9 +51,11 @@ SystemState systemState;
 SystemManager systemManager;
 LedController ledController;
 InputManager inputManager;
+Preferences preferences;
 
 // Function declarations
 bool isBootButtonPressed();
+void saveTrainingMode(bool enabled);
 
 // Wrapper for BluetoothService extern - delegates to CaptureController
 String captureAndPostPhoto();
@@ -101,6 +105,12 @@ void setup() {
     // Record system start time
     systemState.systemStartTime = millis();
 
+    // Load training mode from NVS
+    preferences.begin("bootboots", false);
+    systemState.trainingMode = preferences.getBool("trainingMode", false);
+    SDLogger::getInstance().infof("Training mode loaded from NVS: %s", systemState.trainingMode ? "ON" : "OFF");
+    preferences.end();
+
     // Configure SystemManager
     SystemManager::Config config = {
         .i2cSDA = I2C_SDA,
@@ -122,6 +132,18 @@ void setup() {
 
     // Initialize all system components
     systemManager.initComponents(config, systemState, ledController, inputManager);
+
+    // Register training mode callback with BluetoothService
+    BootBootsBluetoothService* btService = systemManager.getBluetoothService();
+    if (btService) {
+        btService->setTrainingModeCallback(saveTrainingMode);
+    }
+
+    // Sync training mode to capture controller
+    CaptureController* captureController = systemManager.getCaptureController();
+    if (captureController) {
+        captureController->setTrainingMode(systemState.trainingMode);
+    }
 
     // Mark system as initialized
     systemState.initialized = true;
@@ -162,20 +184,28 @@ void loop() {
         CaptureController* captureController = systemManager.getCaptureController();
         DeterrentController* deterrentController = systemManager.getDeterrentController();
 
-        if (captureController && deterrentController) {
-            // Capture photo and run inference
-            DetectionResult result = captureController->captureAndDetect();
+        if (captureController) {
+            // Training mode: capture photo without inference/deterrent
+            if (systemState.trainingMode) {
+                SDLogger::getInstance().infof("Training mode: capturing photo without inference");
+                captureController->captureTrainingPhoto();
+            }
+            // Normal mode: capture photo and run inference with deterrent
+            else if (deterrentController) {
+                // Capture photo and run inference
+                DetectionResult result = captureController->captureAndDetect();
 
-            if (result.success && deterrentController->shouldActivate(result)) {
-                SDLogger::getInstance().criticalf("Boots detected (%.1f%%) - activating deterrent!",
-                    result.confidence * 100.0f);
-                systemState.deterrentActivationCount++;
-                systemState.bootsDetections++;
-                deterrentController->activate(systemState);  // BLOCKING 8 seconds
-            } else if (result.success) {
-                systemState.totalDetections++;
-                if (result.detectedIndex != DeterrentController::BOOTS_INDEX) {
-                    systemState.falsePositivesAvoided++;
+                if (result.success && deterrentController->shouldActivate(result)) {
+                    SDLogger::getInstance().criticalf("Boots detected (%.1f%%) - activating deterrent!",
+                        result.confidence * 100.0f);
+                    systemState.deterrentActivationCount++;
+                    systemState.bootsDetections++;
+                    deterrentController->activate(systemState);  // BLOCKING 8 seconds
+                } else if (result.success) {
+                    systemState.totalDetections++;
+                    if (result.detectedIndex != DeterrentController::BOOTS_INDEX) {
+                        systemState.falsePositivesAvoided++;
+                    }
                 }
             }
         }
@@ -200,8 +230,26 @@ bool isBootButtonPressed() {
 String captureAndPostPhoto() {
     CaptureController* captureController = systemManager.getCaptureController();
     if (captureController) {
+        // Use training mode capture if training mode is enabled
+        if (systemState.trainingMode) {
+            return captureController->captureTrainingPhoto();
+        }
         return captureController->capturePhoto();
     }
     SDLogger::getInstance().errorf("CaptureController not initialized");
     return "";
+}
+
+// Save training mode to NVS
+void saveTrainingMode(bool enabled) {
+    preferences.begin("bootboots", false);
+    preferences.putBool("trainingMode", enabled);
+    preferences.end();
+    SDLogger::getInstance().infof("Training mode saved to NVS: %s", enabled ? "ON" : "OFF");
+
+    // Also update capture controller
+    CaptureController* captureController = systemManager.getCaptureController();
+    if (captureController) {
+        captureController->setTrainingMode(enabled);
+    }
 }

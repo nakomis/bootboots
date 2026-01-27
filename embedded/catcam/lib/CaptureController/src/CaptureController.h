@@ -93,6 +93,23 @@ public:
      */
     VideoRecorder* getVideoRecorder() { return _videoRecorder; }
 
+    /**
+     * Set training mode
+     * In training mode, photos are uploaded without inference/deterrent
+     */
+    void setTrainingMode(bool enabled) { _trainingMode = enabled; }
+
+    /**
+     * Check if training mode is enabled
+     */
+    bool isTrainingMode() const { return _trainingMode; }
+
+    /**
+     * Capture photo in training mode - uploads to training/ prefix, skips inference
+     * @return Filename of captured image (with .jpg extension), or empty string on failure
+     */
+    String captureTrainingPhoto();
+
 private:
     Camera* _camera;
     VideoRecorder* _videoRecorder;
@@ -101,6 +118,7 @@ private:
     AWSAuth* _awsAuth;
 
     bool _initialized = false;
+    bool _trainingMode = false;
 
     // Callbacks
     CancelCheckCallback _cancelCheck = nullptr;

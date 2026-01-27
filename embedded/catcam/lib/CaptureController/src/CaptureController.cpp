@@ -292,6 +292,74 @@ DetectionResult CaptureController::parseInferenceResponse(const String& response
     return result;
 }
 
+String CaptureController::captureTrainingPhoto() {
+    if (!_camera) {
+        SDLogger::getInstance().errorf("Camera not initialized");
+        return "";
+    }
+
+    SDLogger::getInstance().infof("=== Capturing Training Photo ===");
+
+    // No LED countdown for training captures (similar to quick PIR captures)
+
+    // Capture image
+    NamedImage* image = _camera->getImage();
+    if (!image || !image->image || image->size == 0) {
+        SDLogger::getInstance().errorf("Failed to capture image");
+        return "";
+    }
+
+    // Generate timestamp-based filename
+    String basename = _imageStorage ? _imageStorage->generateFilename() : String(millis());
+
+    SDLogger::getInstance().infof("Captured training image: %s (%d bytes)", basename.c_str(), image->size);
+
+    // Save image to SD card
+    if (_imageStorage) {
+        _imageStorage->saveImage(basename, image);
+    }
+
+    // Upload to AWS with training mode flag
+    String response;
+    if (_awsAuth && _roleAlias && _apiHost && _apiPath) {
+        // Get AWS credentials (refresh if needed)
+        if (!_awsAuth->areCredentialsValid()) {
+            SDLogger::getInstance().infof("Refreshing AWS credentials...");
+            if (!_awsAuth->getCredentialsWithRoleAlias(_roleAlias)) {
+                SDLogger::getInstance().errorf("Failed to get AWS credentials");
+                _camera->releaseImageBuffer(image);
+                return "";
+            }
+        }
+
+        // Post image to inference endpoint with training mode flag
+        CatCamHttpClient httpClient;
+        response = httpClient.postImage(image, _apiHost, _apiPath, _awsAuth, true);  // trainingMode=true
+
+        // Save server response to SD card
+        if (_imageStorage) {
+            _imageStorage->saveResponse(basename, response);
+        }
+
+        // Log training response (no inference to parse)
+        SDLogger::getInstance().infof("Training upload response: %s", response.c_str());
+    } else {
+        SDLogger::getInstance().warnf("AWS not configured - cannot upload training photo");
+    }
+
+    // Release image buffer
+    _camera->releaseImageBuffer(image);
+
+    // Clean up old images
+    if (_imageStorage) {
+        _imageStorage->cleanupOldImages();
+    }
+
+    SDLogger::getInstance().infof("=== Training Photo Capture Complete ===");
+
+    return basename + ".jpg";
+}
+
 DetectionResult CaptureController::captureAndDetect() {
     DetectionResult result;
 
