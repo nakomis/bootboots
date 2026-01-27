@@ -6,14 +6,24 @@
 #include <SPI.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
+#include <freertos/queue.h>
+#include <freertos/task.h>
 
 enum LogLevel {
-    LOG_TRACE = -1,
-    LOG_DEBUG = 0,
-    LOG_INFO = 1,
-    LOG_WARN = 2,
-    LOG_ERROR = 3,
-    LOG_CRITICAL = 4
+    LOG_TRACE = 0,
+    LOG_DEBUG = 1,
+    LOG_INFO = 2,
+    LOG_WARN = 3,
+    LOG_ERROR = 4,
+    LOG_CRITICAL = 5
+};
+
+// Log entry structure for async queue
+struct LogEntry {
+    LogLevel level;
+    uint32_t timestamp;      // millis() when enqueued
+    char message[256];       // Log message content
+    bool immediate;          // If true, should be written immediately (critical logs)
 };
 
 class SDLogger {
@@ -53,6 +63,13 @@ public:
     void rotateLogs();
     bool isInitialized() const { return _initialized; }
 
+    // Async queue management
+    void shutdown();
+    uint32_t getDroppedCount() const { return _droppedCount; }
+    uint32_t getTotalEnqueued() const { return _totalEnqueued; }
+    uint32_t getTotalWritten() const { return _totalWritten; }
+    uint32_t getQueueDepth() const;
+
     // Log retrieval
     String getRecentLogEntries(int maxLines = 50);
     void processRecentLogEntries(int maxLines, std::function<void(const String&)> processor);
@@ -80,7 +97,28 @@ private:
 
     // Thread safety
     SemaphoreHandle_t _mutex = nullptr;
-    
+
+    // Async queue members
+    QueueHandle_t _logQueue = nullptr;
+    TaskHandle_t _writerTask = nullptr;
+    SemaphoreHandle_t _flushSemaphore = nullptr;
+    volatile bool _shutdownRequested = false;
+    volatile uint32_t _droppedCount = 0;
+    volatile uint32_t _totalEnqueued = 0;
+    volatile uint32_t _totalWritten = 0;
+    uint32_t _lastDropWarning = 0;
+
+    // Async queue constants
+    static const int QUEUE_SIZE = 64;
+    static const int BATCH_SIZE = 8;
+    static const int WRITER_TASK_STACK_SIZE = 4096;
+    static const int WRITER_TASK_PRIORITY = 1;
+
+    // Async queue methods
+    bool enqueueLogEntry(LogLevel level, const char* message, bool immediate);
+    void processLogEntry(const LogEntry& entry);
+    static void writerTaskFunction(void* parameter);
+
     // Internal methods
     void writeToFile(const char* message);
     String formatLogEntry(LogLevel level, const char* message);

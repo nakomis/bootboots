@@ -64,13 +64,46 @@ bool SDLogger::init(const char* logDir) {
     // Generate initial log file name
     _currentLogFile = generateLogFileName();
 
+    // Create flush semaphore for blocking flush operations
+    _flushSemaphore = xSemaphoreCreateBinary();
+    if (_flushSemaphore == nullptr) {
+        Serial.println("SDLogger: Failed to create flush semaphore");
+        return false;
+    }
+
+    // Create log queue for async writes
+    _logQueue = xQueueCreate(QUEUE_SIZE, sizeof(LogEntry));
+    if (_logQueue == nullptr) {
+        Serial.println("SDLogger: Failed to create log queue");
+        return false;
+    }
+
+    // Create writer task
+    _shutdownRequested = false;
+    BaseType_t taskResult = xTaskCreate(
+        writerTaskFunction,
+        "LogWriter",
+        WRITER_TASK_STACK_SIZE,
+        this,
+        WRITER_TASK_PRIORITY,
+        &_writerTask
+    );
+
+    if (taskResult != pdPASS) {
+        Serial.println("SDLogger: Failed to create writer task");
+        vQueueDelete(_logQueue);
+        _logQueue = nullptr;
+        return false;
+    }
+
     _initialized = true;
 
     // Log initialization
-    info("SDLogger initialized successfully");
+    info("SDLogger initialized successfully (async mode)");
     infof("Boot count: %u", _bootCounter);
     infof("Log directory: %s", _logDir.c_str());
     infof("Current log file: %s", _currentLogFile.c_str());
+    infof("Queue size: %d entries", QUEUE_SIZE);
 
     return true;
 }
@@ -160,11 +193,18 @@ void SDLogger::log(LogLevel level, const char* message) {
 
     String logEntry = formatLogEntry(level, message);
 
-    // Write to SD card if initialized
-    if (_initialized) {
+    // Always print to Serial for immediate feedback
+    Serial.print(logEntry);
+
+    // Enqueue for async write if queue is available
+    if (_initialized && _logQueue != nullptr) {
+        // Critical and error logs are marked for immediate processing
+        bool immediate = (level >= LOG_CRITICAL);
+        enqueueLogEntry(level, message, immediate);
+    } else if (_initialized) {
+        // Fallback to synchronous write if queue not available
         writeToFile(logEntry.c_str());
     }
-    Serial.print(logEntry); // Also print to Serial for immediate feedback
 }
 
 void SDLogger::logf(LogLevel level, const char* format, ...) {
@@ -179,10 +219,27 @@ void SDLogger::logf(LogLevel level, const char* format, ...) {
 void SDLogger::flush() {
     if (!_initialized) return;
 
+    // If async queue is available, wait for it to drain
+    if (_logQueue != nullptr && _flushSemaphore != nullptr) {
+        // Wait for queue to empty (with 5 second timeout)
+        const int maxWaitMs = 5000;
+        const int pollIntervalMs = 50;
+        int waited = 0;
+
+        while (uxQueueMessagesWaiting(_logQueue) > 0 && waited < maxWaitMs) {
+            vTaskDelay(pdMS_TO_TICKS(pollIntervalMs));
+            waited += pollIntervalMs;
+        }
+
+        if (waited >= maxWaitMs) {
+            Serial.println("SDLogger: flush() timed out waiting for queue to drain");
+        }
+    }
+
+    // Ensure any pending file operations are complete
     safeFileOperation([this]() {
-        // SD_MMC.flush() is not available, but we can close and reopen to ensure data is written
         return true;
-        });
+    });
 }
 
 void SDLogger::rotateLogs() {
@@ -457,4 +514,128 @@ bool SDLogger::safeFileOperation(std::function<bool()> operation) {
     }
 
     return false;
+}
+
+// Async queue implementation
+
+bool SDLogger::enqueueLogEntry(LogLevel level, const char* message, bool immediate) {
+    if (_logQueue == nullptr) {
+        return false;
+    }
+
+    LogEntry entry;
+    entry.level = level;
+    entry.timestamp = millis();
+    entry.immediate = immediate;
+    strncpy(entry.message, message, sizeof(entry.message) - 1);
+    entry.message[sizeof(entry.message) - 1] = '\0';
+
+    // Non-blocking enqueue with short timeout
+    BaseType_t result = xQueueSend(_logQueue, &entry, pdMS_TO_TICKS(10));
+
+    if (result == pdTRUE) {
+        _totalEnqueued++;
+        return true;
+    } else {
+        // Queue full - drop newest message (preserves earlier diagnostic context)
+        _droppedCount++;
+
+        // Log warning to Serial every 100 drops
+        if (_droppedCount % 100 == 0) {
+            uint32_t now = millis();
+            if (now - _lastDropWarning > 1000) {  // Rate limit warnings
+                Serial.printf("SDLogger: Dropped %u log entries (queue full)\n", _droppedCount);
+                _lastDropWarning = now;
+            }
+        }
+        return false;
+    }
+}
+
+void SDLogger::processLogEntry(const LogEntry& entry) {
+    // Format the entry with stored timestamp info
+    String levelStr = getLogLevelString(entry.level);
+
+    // Use current time for formatting (entry.timestamp is when it was enqueued)
+    String logEntry = formatLogEntry(entry.level, entry.message);
+
+    // Write to file
+    writeToFile(logEntry.c_str());
+    _totalWritten++;
+}
+
+void SDLogger::writerTaskFunction(void* parameter) {
+    SDLogger* logger = static_cast<SDLogger*>(parameter);
+    LogEntry entry;
+
+    while (!logger->_shutdownRequested) {
+        // Wait for a log entry (with 100ms timeout to check shutdown flag)
+        if (xQueueReceive(logger->_logQueue, &entry, pdMS_TO_TICKS(100)) == pdTRUE) {
+            logger->processLogEntry(entry);
+
+            // Batch additional queued entries for efficiency
+            int batchCount = 1;
+            while (batchCount < SDLogger::BATCH_SIZE &&
+                   xQueueReceive(logger->_logQueue, &entry, 0) == pdTRUE) {
+                logger->processLogEntry(entry);
+                batchCount++;
+            }
+
+            // Yield to allow other tasks to run
+            taskYIELD();
+        }
+    }
+
+    // Drain remaining queue entries before shutdown
+    while (xQueueReceive(logger->_logQueue, &entry, 0) == pdTRUE) {
+        logger->processLogEntry(entry);
+    }
+
+    // Signal that we're done
+    if (logger->_flushSemaphore != nullptr) {
+        xSemaphoreGive(logger->_flushSemaphore);
+    }
+
+    vTaskDelete(NULL);
+}
+
+void SDLogger::shutdown() {
+    if (_writerTask == nullptr) {
+        return;
+    }
+
+    info("SDLogger: Shutting down async writer...");
+
+    // Signal shutdown
+    _shutdownRequested = true;
+
+    // Wait for task to finish draining and exit (5 second timeout)
+    if (_flushSemaphore != nullptr) {
+        if (xSemaphoreTake(_flushSemaphore, pdMS_TO_TICKS(5000)) != pdTRUE) {
+            Serial.println("SDLogger: Shutdown timeout, writer task may not have exited cleanly");
+        }
+    }
+
+    // Cleanup
+    if (_logQueue != nullptr) {
+        vQueueDelete(_logQueue);
+        _logQueue = nullptr;
+    }
+
+    if (_flushSemaphore != nullptr) {
+        vSemaphoreDelete(_flushSemaphore);
+        _flushSemaphore = nullptr;
+    }
+
+    _writerTask = nullptr;
+
+    Serial.printf("SDLogger: Shutdown complete. Total enqueued: %u, written: %u, dropped: %u\n",
+                  _totalEnqueued, _totalWritten, _droppedCount);
+}
+
+uint32_t SDLogger::getQueueDepth() const {
+    if (_logQueue == nullptr) {
+        return 0;
+    }
+    return uxQueueMessagesWaiting(_logQueue);
 }
