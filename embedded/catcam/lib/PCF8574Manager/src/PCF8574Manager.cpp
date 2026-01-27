@@ -77,8 +77,9 @@ bool PCF8574Manager::getPinState(uint8_t pin) {
     if (!validatePin(pin)) {
         return false;
     }
-    
-    return (_currentState & (1 << pin)) != 0;
+
+    bool rawState = (_currentState & (1 << pin)) != 0;
+    return isActiveLowPin(pin) ? !rawState : rawState;
 }
 
 bool PCF8574Manager::readPinInput(uint8_t pin) {
@@ -163,9 +164,9 @@ bool PCF8574Manager::performSelfTest() {
         // Note: PCF8574 pins configured as outputs will read back as written
         // Pins configured as inputs (high) will reflect actual pin state
     }
-    
-    // Return to safe state
-    _currentState = 0x00;
+
+    // Return to safe/inactive state (active-low pins HIGH, active-high pins LOW)
+    _currentState = PCF8574_INITIAL_PIN_STATE;
     if (!writeToDevice(_currentState)) {
         SDLogger::getInstance().errorf("PCF8574: Self-test failed to return to safe state");
         return false;
@@ -189,16 +190,16 @@ void PCF8574Manager::resetErrorState() {
 
 void PCF8574Manager::emergencyShutdown() {
     SDLogger::getInstance().criticalf("PCF8574: *** EMERGENCY SHUTDOWN ACTIVATED ***");
-    
+
     _emergencyMode = true;
-    
-    // Force all outputs to safe state (LOW)
-    _currentState = 0x00;
-    
+
+    // Force all outputs to safe/inactive state (active-low pins HIGH, active-high pins LOW)
+    _currentState = PCF8574_INITIAL_PIN_STATE;
+
     // Attempt to write safe state, but don't fail if I2C is broken
     writeToDevice(_currentState);
-    
-    SDLogger::getInstance().criticalf("PCF8574: All outputs forced to safe state (LOW)");
+
+    SDLogger::getInstance().criticalf("PCF8574: All outputs forced to inactive state");
 }
 
 bool PCF8574Manager::isSafeToOperate() {

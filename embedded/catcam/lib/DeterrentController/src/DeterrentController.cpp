@@ -88,7 +88,7 @@ void DeterrentController::activate(SystemState& state) {
                     uint32_t currentSecond = elapsedMs / 1000;
                     if (currentSecond != lastSecond) {
                         lastSecond = currentSecond;
-                        SDLogger::getInstance().debugf("Deterrent recording: frame %d/%d (%.1fs)",
+                        SDLogger::getInstance().tracef("Deterrent recording: frame %d/%d (%.1fs)",
                             currentFrame, totalFrames, elapsedMs / 1000.0f);
                     }
                 }
