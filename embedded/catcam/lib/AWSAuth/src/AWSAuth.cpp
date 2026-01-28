@@ -164,6 +164,15 @@ SigV4Headers AWSAuth::createSigV4HeadersInternal(const String& method, const Str
 
     SDLogger::getInstance().debugf("AWSAuth: Creating SigV4 signature for %s %s", method.c_str(), uri.c_str());
 
+    // Split URI into path and query string for canonical request
+    String canonicalURI = uri;
+    String queryString = "";
+    int qPos = uri.indexOf('?');
+    if (qPos >= 0) {
+        canonicalURI = uri.substring(0, qPos);
+        queryString = uri.substring(qPos + 1);
+    }
+
     // Create canonical headers (must be sorted alphabetically by header name)
     String canonicalHeaders = "content-type:" + contentType + "\n" +
                               "host:" + host + "\n" +
@@ -174,7 +183,7 @@ SigV4Headers AWSAuth::createSigV4HeadersInternal(const String& method, const Str
     // Create canonical request
     SDLogger::getInstance().debugf("AWSAuth: canonicalHeaders length: %d", canonicalHeaders.length());
 
-    String canonicalRequest = createCanonicalRequest(method, uri, "", canonicalHeaders,
+    String canonicalRequest = createCanonicalRequest(method, canonicalURI, queryString, canonicalHeaders,
                                                     signedHeaders, payloadHash);
 
     SDLogger::getInstance().debugf("AWSAuth: Canonical Request Hash: %s", sha256Hash(canonicalRequest).c_str());
