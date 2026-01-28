@@ -23,6 +23,11 @@ export class ApiGatewayStack extends cdk.Stack {
         publicReadAccess: false,
         blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
+        cors: [{
+            allowedOrigins: ['https://sandbox.nakomis.com', 'http://localhost:3000'],
+            allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.PUT, s3.HttpMethods.POST],
+            allowedHeaders: ['*'],
+        }],
         autoDeleteObjects: true,
     });
 
