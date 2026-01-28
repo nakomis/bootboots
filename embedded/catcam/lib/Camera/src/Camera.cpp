@@ -5,9 +5,9 @@ Camera::Camera() {
     failureCount = 0;
 }
 
-void Camera::init() {
+void Camera::init(const CameraSettings& settings) {
     SDLogger::getInstance().infof("Initializing ESP32-CAM...");
-    
+
     camera_config_t config;
     config.ledc_channel = LEDC_CHANNEL_0;
     config.ledc_timer = LEDC_TIMER_0;
@@ -29,20 +29,20 @@ void Camera::init() {
     config.pin_reset = RESET_GPIO_NUM;
     config.xclk_freq_hz = 20000000;
     config.pixel_format = PIXFORMAT_JPEG;
-    
-    // High quality settings for AI inference
+
+    // Use settings for frame size, quality, and buffer count
+    config.frame_size = (framesize_t)settings.frameSize;
+    config.jpeg_quality = settings.jpegQuality;
+
     if (psramFound()) {
-        config.frame_size = FRAMESIZE_UXGA; // 1600x1200
-        config.jpeg_quality = 10;
-        config.fb_count = 2;
-        SDLogger::getInstance().infof("PSRAM found - using high quality settings");
+        config.fb_count = settings.fbCount;
+        SDLogger::getInstance().infof("PSRAM found - frameSize=%d, quality=%d, fbCount=%d",
+            settings.frameSize, settings.jpegQuality, settings.fbCount);
     } else {
-        config.frame_size = FRAMESIZE_SVGA; // 800x600
-        config.jpeg_quality = 12;
-        config.fb_count = 1;
-        SDLogger::getInstance().warnf("PSRAM not found - using lower quality settings");
+        config.fb_count = 1;  // Multiple buffers require PSRAM
+        SDLogger::getInstance().warnf("PSRAM not found - forcing fbCount=1");
     }
-    
+
     // Initialize camera
     esp_err_t err = esp_camera_init(&config);
     if (err != ESP_OK) {
@@ -50,39 +50,48 @@ void Camera::init() {
         failureCount++;
         return;
     }
-    
-    // Get camera sensor for additional configuration
-    sensor_t* s = esp_camera_sensor_get();
-    if (s != nullptr) {
-        // Optimize settings for AI inference
-        s->set_brightness(s, 0);     // -2 to 2
-        s->set_contrast(s, 0);       // -2 to 2
-        s->set_saturation(s, 0);     // -2 to 2
-        s->set_special_effect(s, 0); // 0 to 6 (0=No Effect)
-        s->set_whitebal(s, 1);       // 0 = disable, 1 = enable
-        s->set_awb_gain(s, 1);       // 0 = disable, 1 = enable
-        s->set_wb_mode(s, 0);        // 0 to 4 - if awb_gain enabled
-        s->set_exposure_ctrl(s, 1);  // 0 = disable, 1 = enable
-        s->set_aec2(s, 0);           // 0 = disable, 1 = enable
-        s->set_ae_level(s, -2);       // -2 to 2
-        s->set_aec_value(s, 300);    // 0 to 1200
-        s->set_gain_ctrl(s, 1);      // 0 = disable, 1 = enable - auto gain enabled
-        s->set_agc_gain(s, 15);      // 0 to 30 - base gain for low light
-        s->set_gainceiling(s, (gainceiling_t)0); // 0 to 6 - max gain ceiling
-        s->set_bpc(s, 0);            // 0 = disable, 1 = enable
-        s->set_wpc(s, 1);            // 0 = disable, 1 = enable
-        s->set_raw_gma(s, 1);        // 0 = disable, 1 = enable
-        s->set_lenc(s, 1);           // 0 = disable, 1 = enable
-        s->set_hmirror(s, 0);        // 0 = disable, 1 = enable
-        s->set_vflip(s, 0);          // 0 = disable, 1 = enable
-        s->set_dcw(s, 1);            // 0 = disable, 1 = enable
-        s->set_colorbar(s, 0);       // 0 = disable, 1 = enable
-        
-        SDLogger::getInstance().infof("Camera sensor configured for AI inference");
-    }
-    
+
+    // Apply sensor settings (brightness, contrast, etc.)
+    applySettings(settings);
+
     SDLogger::getInstance().infof("ESP32-CAM initialized successfully");
     failureCount = 0;
+}
+
+void Camera::applySettings(const CameraSettings& settings) {
+    sensor_t* s = esp_camera_sensor_get();
+    if (s == nullptr) {
+        SDLogger::getInstance().errorf("Cannot apply camera settings - sensor not available");
+        return;
+    }
+
+    s->set_framesize(s, (framesize_t)settings.frameSize);
+    s->set_quality(s, settings.jpegQuality);
+    // fbCount can only be set during init() - requires camera reinit
+    s->set_brightness(s, settings.brightness);
+    s->set_contrast(s, settings.contrast);
+    s->set_saturation(s, settings.saturation);
+    s->set_special_effect(s, settings.specialEffect);
+    s->set_whitebal(s, settings.whiteBalance ? 1 : 0);
+    s->set_awb_gain(s, settings.awbGain ? 1 : 0);
+    s->set_wb_mode(s, settings.wbMode);
+    s->set_exposure_ctrl(s, settings.exposureCtrl ? 1 : 0);
+    s->set_aec2(s, settings.aec2 ? 1 : 0);
+    s->set_ae_level(s, settings.aeLevel);
+    s->set_aec_value(s, settings.aecValue);
+    s->set_gain_ctrl(s, settings.gainCtrl ? 1 : 0);
+    s->set_agc_gain(s, settings.agcGain);
+    s->set_gainceiling(s, (gainceiling_t)settings.gainCeiling);
+    s->set_bpc(s, settings.bpc ? 1 : 0);
+    s->set_wpc(s, settings.wpc ? 1 : 0);
+    s->set_raw_gma(s, settings.rawGma ? 1 : 0);
+    s->set_lenc(s, settings.lenc ? 1 : 0);
+    s->set_hmirror(s, settings.hmirror ? 1 : 0);
+    s->set_vflip(s, settings.vflip ? 1 : 0);
+    s->set_dcw(s, settings.dcw ? 1 : 0);
+    s->set_colorbar(s, settings.colorbar ? 1 : 0);
+
+    SDLogger::getInstance().infof("Camera settings applied");
 }
 
 NamedImage* Camera::getImage() {

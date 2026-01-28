@@ -314,9 +314,37 @@ void BootBootsBluetoothService::processCommand(const String& command) {
         sendResponse(completeJson);
     } else if (cmd == "get_settings") {
         SDLogger::getInstance().infof("Get settings request via Bluetooth");
-        DynamicJsonDocument response(256);
+        DynamicJsonDocument response(1024);
         response["type"] = "settings";
         response["training_mode"] = systemState.trainingMode;
+
+        JsonObject cam = response.createNestedObject("camera");
+        cam["frame_size"] = systemState.cameraSettings.frameSize;
+        cam["jpeg_quality"] = systemState.cameraSettings.jpegQuality;
+        cam["fb_count"] = systemState.cameraSettings.fbCount;
+        cam["brightness"] = systemState.cameraSettings.brightness;
+        cam["contrast"] = systemState.cameraSettings.contrast;
+        cam["saturation"] = systemState.cameraSettings.saturation;
+        cam["special_effect"] = systemState.cameraSettings.specialEffect;
+        cam["white_balance"] = systemState.cameraSettings.whiteBalance;
+        cam["awb_gain"] = systemState.cameraSettings.awbGain;
+        cam["wb_mode"] = systemState.cameraSettings.wbMode;
+        cam["exposure_ctrl"] = systemState.cameraSettings.exposureCtrl;
+        cam["aec2"] = systemState.cameraSettings.aec2;
+        cam["ae_level"] = systemState.cameraSettings.aeLevel;
+        cam["aec_value"] = systemState.cameraSettings.aecValue;
+        cam["gain_ctrl"] = systemState.cameraSettings.gainCtrl;
+        cam["agc_gain"] = systemState.cameraSettings.agcGain;
+        cam["gain_ceiling"] = systemState.cameraSettings.gainCeiling;
+        cam["bpc"] = systemState.cameraSettings.bpc;
+        cam["wpc"] = systemState.cameraSettings.wpc;
+        cam["raw_gma"] = systemState.cameraSettings.rawGma;
+        cam["lenc"] = systemState.cameraSettings.lenc;
+        cam["hmirror"] = systemState.cameraSettings.hmirror;
+        cam["vflip"] = systemState.cameraSettings.vflip;
+        cam["dcw"] = systemState.cameraSettings.dcw;
+        cam["colorbar"] = systemState.cameraSettings.colorbar;
+
         String responseStr;
         serializeJson(response, responseStr);
         sendResponse(responseStr);
@@ -340,6 +368,62 @@ void BootBootsBluetoothService::processCommand(const String& command) {
             String responseStr;
             serializeJson(response, responseStr);
             sendResponse(responseStr);
+        } else if (setting.startsWith("camera_")) {
+            String camSetting = setting.substring(7); // strip "camera_"
+            int intValue = doc["value"] | 0;
+            bool boolValue = doc["value"] | false;
+            bool handled = true;
+
+            if (camSetting == "frame_size") { systemState.cameraSettings.frameSize = intValue; }
+            else if (camSetting == "jpeg_quality") { systemState.cameraSettings.jpegQuality = intValue; }
+            else if (camSetting == "fb_count") { systemState.cameraSettings.fbCount = intValue; }
+            else if (camSetting == "brightness") { systemState.cameraSettings.brightness = intValue; }
+            else if (camSetting == "contrast") { systemState.cameraSettings.contrast = intValue; }
+            else if (camSetting == "saturation") { systemState.cameraSettings.saturation = intValue; }
+            else if (camSetting == "special_effect") { systemState.cameraSettings.specialEffect = intValue; }
+            else if (camSetting == "white_balance") { systemState.cameraSettings.whiteBalance = boolValue; }
+            else if (camSetting == "awb_gain") { systemState.cameraSettings.awbGain = boolValue; }
+            else if (camSetting == "wb_mode") { systemState.cameraSettings.wbMode = intValue; }
+            else if (camSetting == "exposure_ctrl") { systemState.cameraSettings.exposureCtrl = boolValue; }
+            else if (camSetting == "aec2") { systemState.cameraSettings.aec2 = boolValue; }
+            else if (camSetting == "ae_level") { systemState.cameraSettings.aeLevel = intValue; }
+            else if (camSetting == "aec_value") { systemState.cameraSettings.aecValue = intValue; }
+            else if (camSetting == "gain_ctrl") { systemState.cameraSettings.gainCtrl = boolValue; }
+            else if (camSetting == "agc_gain") { systemState.cameraSettings.agcGain = intValue; }
+            else if (camSetting == "gain_ceiling") { systemState.cameraSettings.gainCeiling = intValue; }
+            else if (camSetting == "bpc") { systemState.cameraSettings.bpc = boolValue; }
+            else if (camSetting == "wpc") { systemState.cameraSettings.wpc = boolValue; }
+            else if (camSetting == "raw_gma") { systemState.cameraSettings.rawGma = boolValue; }
+            else if (camSetting == "lenc") { systemState.cameraSettings.lenc = boolValue; }
+            else if (camSetting == "hmirror") { systemState.cameraSettings.hmirror = boolValue; }
+            else if (camSetting == "vflip") { systemState.cameraSettings.vflip = boolValue; }
+            else if (camSetting == "dcw") { systemState.cameraSettings.dcw = boolValue; }
+            else if (camSetting == "colorbar") { systemState.cameraSettings.colorbar = boolValue; }
+            else { handled = false; }
+
+            if (handled) {
+                SDLogger::getInstance().infof("Camera setting %s updated via Bluetooth", camSetting.c_str());
+
+                if (_cameraSettingCallback) {
+                    _cameraSettingCallback(camSetting, intValue);
+                }
+
+                DynamicJsonDocument response(256);
+                response["type"] = "setting_updated";
+                response["setting"] = setting;
+                response["value"] = doc["value"];
+                String responseStr;
+                serializeJson(response, responseStr);
+                sendResponse(responseStr);
+            } else {
+                SDLogger::getInstance().warnf("Unknown camera setting: %s", camSetting.c_str());
+                DynamicJsonDocument errorDoc(128);
+                errorDoc["type"] = "error";
+                errorDoc["message"] = "Unknown camera setting";
+                String errorJson;
+                serializeJson(errorDoc, errorJson);
+                sendResponse(errorJson);
+            }
         } else {
             SDLogger::getInstance().warnf("Unknown setting: %s", setting.c_str());
             DynamicJsonDocument errorDoc(128);

@@ -10,7 +10,7 @@ CaptureController::CaptureController(Camera* camera, VideoRecorder* videoRecorde
       _imageStorage(imageStorage), _awsAuth(awsAuth) {
 }
 
-bool CaptureController::init() {
+bool CaptureController::init(const CameraSettings& settings) {
     SDLogger::getInstance().infof("=== Initializing CaptureController ===");
 
     // Initialize LED controller and run test sequence
@@ -19,9 +19,9 @@ bool CaptureController::init() {
         _ledController->runTestSequence(3, 100);
     }
 
-    // Initialize camera
+    // Initialize camera with settings (frame size, quality, buffer count)
     if (_camera) {
-        _camera->init();
+        _camera->init(settings);
         delay(500);  // Give camera time to stabilize
     } else {
         SDLogger::getInstance().errorf("Camera not provided");

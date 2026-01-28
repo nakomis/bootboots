@@ -8,6 +8,7 @@
 #include <esp32-hal-psram.h>
 
 #include "NamedImage.h"
+#include "../../../include/SystemState.h"
 
 #ifdef ESP32S3_CAM
 // Pin definition for ESP32-S3-CAM with OV5640
@@ -51,7 +52,8 @@ class Camera
 {
 public:
     Camera();
-    void init();
+    void init(const CameraSettings& settings = CameraSettings());
+    void applySettings(const CameraSettings& settings);
     NamedImage* getImage();
     void deInit();
     

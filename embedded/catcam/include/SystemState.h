@@ -1,6 +1,35 @@
 #ifndef CATCAM_SYSTEMSTATE_H
 #define CATCAM_SYSTEMSTATE_H
 
+// Camera sensor settings - synced via BLE and persisted to NVS
+struct CameraSettings {
+    int frameSize = 13;        // framesize_t enum: 5=QVGA, 8=VGA, 9=SVGA, 10=XGA, 11=HD, 12=SXGA, 13=UXGA
+    int jpegQuality = 10;      // 0-63 (lower = better quality, more data)
+    int fbCount = 2;           // 1-3 frame buffers (requires PSRAM for >1)
+    int brightness = 0;        // -2 to 2
+    int contrast = 0;          // -2 to 2
+    int saturation = 0;        // -2 to 2
+    int specialEffect = 0;     // 0=None, 1=Negative, 2=Grayscale, 3=Red, 4=Green, 5=Blue, 6=Sepia
+    bool whiteBalance = true;
+    bool awbGain = true;
+    int wbMode = 0;            // 0=Auto, 1=Sunny, 2=Cloudy, 3=Office, 4=Home
+    bool exposureCtrl = true;
+    bool aec2 = false;
+    int aeLevel = -2;          // -2 to 2
+    int aecValue = 300;        // 0 to 1200
+    bool gainCtrl = true;
+    int agcGain = 15;          // 0 to 30
+    int gainCeiling = 0;       // 0 to 6
+    bool bpc = false;
+    bool wpc = true;
+    bool rawGma = true;
+    bool lenc = true;
+    bool hmirror = false;
+    bool vflip = false;
+    bool dcw = true;
+    bool colorbar = false;
+};
+
 // SystemState struct definition - shared between main.cpp and BluetoothService
 struct SystemState {
     bool initialized = false;
@@ -24,6 +53,9 @@ struct SystemState {
 
     // Training mode - captures photos without inference/deterrent
     bool trainingMode = false;
+
+    // Camera sensor settings
+    CameraSettings cameraSettings;
 };
 
 #endif

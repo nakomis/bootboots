@@ -43,9 +43,10 @@ public:
     /**
      * Initialize the capture controller
      * Runs LED test sequence and initializes camera/video recorder
+     * @param settings Camera settings for init (frame size, quality, buffers)
      * @return true if initialization successful
      */
-    bool init();
+    bool init(const CameraSettings& settings = CameraSettings());
 
     /**
      * Check if the controller is initialized and ready

@@ -14,6 +14,7 @@
 #include "MotionDetector.h"
 #include "DeterrentController.h"
 #include "BluetoothService.h"
+#include "Camera.h"
 #include "version.h"
 
 #ifndef OTA_PASSWORD
@@ -57,6 +58,8 @@ Preferences preferences;
 // Function declarations
 bool isBootButtonPressed();
 void saveTrainingMode(bool enabled);
+void loadCameraSettings();
+void saveCameraSetting(const String& setting, int value);
 
 // Wrapper for BluetoothService extern - delegates to CaptureController
 String captureAndPostPhoto();
@@ -112,6 +115,9 @@ void setup() {
     SDLogger::getInstance().infof("Training mode loaded from NVS: %s", systemState.trainingMode ? "ON" : "OFF");
     preferences.end();
 
+    // Load camera settings from NVS
+    loadCameraSettings();
+
     // Configure SystemManager
     SystemManager::Config config = {
         .i2cSDA = I2C_SDA,
@@ -134,10 +140,11 @@ void setup() {
     // Initialize all system components
     systemManager.initComponents(config, systemState, ledController, inputManager);
 
-    // Register training mode callback with BluetoothService
+    // Register callbacks with BluetoothService
     BootBootsBluetoothService* btService = systemManager.getBluetoothService();
     if (btService) {
         btService->setTrainingModeCallback(saveTrainingMode);
+        btService->setCameraSettingCallback(saveCameraSetting);
     }
 
     // Sync training mode to capture controller
@@ -252,4 +259,81 @@ void saveTrainingMode(bool enabled) {
     if (captureController) {
         captureController->setTrainingMode(enabled);
     }
+}
+
+// Load camera settings from NVS
+void loadCameraSettings() {
+    CameraSettings& cs = systemState.cameraSettings;
+    preferences.begin("bootboots", true);  // read-only
+
+    cs.frameSize = preferences.getInt("camFrmSize", cs.frameSize);
+    cs.jpegQuality = preferences.getInt("camJpgQual", cs.jpegQuality);
+    cs.fbCount = preferences.getInt("camFbCount", cs.fbCount);
+    cs.brightness = preferences.getInt("camBright", cs.brightness);
+    cs.contrast = preferences.getInt("camContrast", cs.contrast);
+    cs.saturation = preferences.getInt("camSat", cs.saturation);
+    cs.specialEffect = preferences.getInt("camEffect", cs.specialEffect);
+    cs.whiteBalance = preferences.getBool("camWB", cs.whiteBalance);
+    cs.awbGain = preferences.getBool("camAWBGain", cs.awbGain);
+    cs.wbMode = preferences.getInt("camWBMode", cs.wbMode);
+    cs.exposureCtrl = preferences.getBool("camExpCtrl", cs.exposureCtrl);
+    cs.aec2 = preferences.getBool("camAEC2", cs.aec2);
+    cs.aeLevel = preferences.getInt("camAELevel", cs.aeLevel);
+    cs.aecValue = preferences.getInt("camAECVal", cs.aecValue);
+    cs.gainCtrl = preferences.getBool("camGainCtrl", cs.gainCtrl);
+    cs.agcGain = preferences.getInt("camAGCGain", cs.agcGain);
+    cs.gainCeiling = preferences.getInt("camGainCeil", cs.gainCeiling);
+    cs.bpc = preferences.getBool("camBPC", cs.bpc);
+    cs.wpc = preferences.getBool("camWPC", cs.wpc);
+    cs.rawGma = preferences.getBool("camGamma", cs.rawGma);
+    cs.lenc = preferences.getBool("camLenc", cs.lenc);
+    cs.hmirror = preferences.getBool("camHMirror", cs.hmirror);
+    cs.vflip = preferences.getBool("camVFlip", cs.vflip);
+    cs.dcw = preferences.getBool("camDCW", cs.dcw);
+    cs.colorbar = preferences.getBool("camColorbar", cs.colorbar);
+
+    preferences.end();
+    SDLogger::getInstance().infof("Camera settings loaded from NVS");
+}
+
+// Save a single camera setting to NVS and apply to camera
+void saveCameraSetting(const String& setting, int value) {
+    CameraSettings& cs = systemState.cameraSettings;
+    preferences.begin("bootboots", false);
+
+    if (setting == "frame_size") { preferences.putInt("camFrmSize", cs.frameSize); }
+    else if (setting == "jpeg_quality") { preferences.putInt("camJpgQual", cs.jpegQuality); }
+    else if (setting == "fb_count") { preferences.putInt("camFbCount", cs.fbCount); }
+    else if (setting == "brightness") { preferences.putInt("camBright", cs.brightness); }
+    else if (setting == "contrast") { preferences.putInt("camContrast", cs.contrast); }
+    else if (setting == "saturation") { preferences.putInt("camSat", cs.saturation); }
+    else if (setting == "special_effect") { preferences.putInt("camEffect", cs.specialEffect); }
+    else if (setting == "white_balance") { preferences.putBool("camWB", cs.whiteBalance); }
+    else if (setting == "awb_gain") { preferences.putBool("camAWBGain", cs.awbGain); }
+    else if (setting == "wb_mode") { preferences.putInt("camWBMode", cs.wbMode); }
+    else if (setting == "exposure_ctrl") { preferences.putBool("camExpCtrl", cs.exposureCtrl); }
+    else if (setting == "aec2") { preferences.putBool("camAEC2", cs.aec2); }
+    else if (setting == "ae_level") { preferences.putInt("camAELevel", cs.aeLevel); }
+    else if (setting == "aec_value") { preferences.putInt("camAECVal", cs.aecValue); }
+    else if (setting == "gain_ctrl") { preferences.putBool("camGainCtrl", cs.gainCtrl); }
+    else if (setting == "agc_gain") { preferences.putInt("camAGCGain", cs.agcGain); }
+    else if (setting == "gain_ceiling") { preferences.putInt("camGainCeil", cs.gainCeiling); }
+    else if (setting == "bpc") { preferences.putBool("camBPC", cs.bpc); }
+    else if (setting == "wpc") { preferences.putBool("camWPC", cs.wpc); }
+    else if (setting == "raw_gma") { preferences.putBool("camGamma", cs.rawGma); }
+    else if (setting == "lenc") { preferences.putBool("camLenc", cs.lenc); }
+    else if (setting == "hmirror") { preferences.putBool("camHMirror", cs.hmirror); }
+    else if (setting == "vflip") { preferences.putBool("camVFlip", cs.vflip); }
+    else if (setting == "dcw") { preferences.putBool("camDCW", cs.dcw); }
+    else if (setting == "colorbar") { preferences.putBool("camColorbar", cs.colorbar); }
+
+    preferences.end();
+
+    // Apply updated settings to camera
+    Camera* camera = systemManager.getCamera();
+    if (camera) {
+        camera->applySettings(cs);
+    }
+
+    SDLogger::getInstance().infof("Camera setting '%s' saved to NVS and applied", setting.c_str());
 }

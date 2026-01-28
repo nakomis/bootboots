@@ -38,6 +38,9 @@ public:
     // Set callback for training mode changes
     void setTrainingModeCallback(std::function<void(bool)> callback) { _trainingModeCallback = callback; }
 
+    // Set callback for camera setting changes (setting name, int/bool value)
+    void setCameraSettingCallback(std::function<void(const String&, int)> callback) { _cameraSettingCallback = callback; }
+
     // BLE Server callbacks
     void onConnect(BLEServer* pServer) override;
     void onDisconnect(BLEServer* pServer) override;
@@ -65,6 +68,7 @@ private:
     volatile bool _pendingDisconnect;  // Deferred disconnect handling
     LedController* _ledController = nullptr;  // Optional LED for visual feedback
     std::function<void(bool)> _trainingModeCallback = nullptr;  // Callback for training mode changes
+    std::function<void(const String&, int)> _cameraSettingCallback = nullptr;  // Callback for camera setting changes
 
     // Helper methods
     String formatSystemStatusJson(const SystemState& state);
