@@ -42,7 +42,7 @@ private:
 public:
     // Pin definitions for PCF8574 (P0-P7)
     static constexpr uint8_t PIR_SENSOR_PIN = 0;        // P0 - PIR motion sensor (active HIGH)
-    static constexpr uint8_t LIGHT_SENSOR_PIN_4 = 1;    // P1 - Ambient Light sensor
+    static constexpr uint8_t LIGHT_SENSOR_PIN = 1;    // P1 - Ambient Light sensor
     static constexpr uint8_t BUTTON_PIN = 2;            // P2 - Input button
     static constexpr uint8_t ATOMIZER_PIN = 3;          // P3 - Atomizer control
     static constexpr uint8_t PRESSURE_SENSOR_PIN = 4;   // P4 - Pressure sensor input
@@ -60,7 +60,7 @@ public:
     using LowActivatedPins = PinSet<ATOMIZER_PIN, LED_STRIP_1_PIN, LED_STRIP_2_PIN>;
 
     // Input pins must be written HIGH for PCF8574 quasi-bidirectional I/O to work
-    using InputPins = PinSet<PIR_SENSOR_PIN, LIGHT_SENSOR_PIN_4, BUTTON_PIN, PRESSURE_SENSOR_PIN>;
+    using InputPins = PinSet<PIR_SENSOR_PIN, LIGHT_SENSOR_PIN, BUTTON_PIN, PRESSURE_SENSOR_PIN>;
 
     // Initial state: active-low outputs HIGH (inactive) + input pins HIGH (readable)
     static constexpr uint8_t PCF8574_INITIAL_PIN_STATE = LowActivatedPins::mask | InputPins::mask;
@@ -76,6 +76,7 @@ public:
     // Specialized control functions
     bool setAtomizerState(bool active);
     bool setFlashLED(bool on);
+    bool setLedStrip(bool on);
     bool readPressureSensor();
     bool readPIRSensor();
 

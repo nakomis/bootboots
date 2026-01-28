@@ -31,6 +31,7 @@ public:
     // Callback types for external integration
     using CancelCheckCallback = std::function<bool()>;
     using LoopCallback = std::function<void()>;
+    using FlashCallback = std::function<void(bool on)>;
 
     /**
      * Constructor - takes pointers to required components
@@ -56,6 +57,12 @@ public:
      * These are called during LED countdown animations
      */
     void setCallbacks(CancelCheckCallback cancelCheck, LoopCallback loopCallback);
+
+    /**
+     * Set flash control callback for external LED strip(s)
+     * Called with true before image capture, false after capture complete
+     */
+    void setFlashCallback(FlashCallback flashCallback);
 
     /**
      * Configure AWS endpoint for photo uploads
@@ -123,6 +130,7 @@ private:
     // Callbacks
     CancelCheckCallback _cancelCheck = nullptr;
     LoopCallback _loopCallback = nullptr;
+    FlashCallback _flashCallback = nullptr;
 
     // AWS configuration
     const char* _roleAlias = nullptr;

@@ -47,6 +47,10 @@ void CaptureController::setCallbacks(CancelCheckCallback cancelCheck, LoopCallba
     _loopCallback = loopCallback;
 }
 
+void CaptureController::setFlashCallback(FlashCallback flashCallback) {
+    _flashCallback = flashCallback;
+}
+
 void CaptureController::setAWSConfig(const char* roleAlias, const char* apiHost, const char* apiPath) {
     _roleAlias = roleAlias;
     _apiHost = apiHost;
@@ -82,8 +86,15 @@ String CaptureController::capturePhoto() {
         _ledController->setColor(255, 255, 255);
     }
 
+    // Turn on external flash for capture
+    if (_flashCallback) _flashCallback(true);
+
     // Capture image
     NamedImage* image = _camera->getImage();
+
+    // Turn off external flash after capture
+    if (_flashCallback) _flashCallback(false);
+
     if (!image || !image->image || image->size == 0) {
         SDLogger::getInstance().errorf("Failed to capture image");
         if (_ledController) _ledController->off();
@@ -302,8 +313,15 @@ String CaptureController::captureTrainingPhoto() {
 
     // No LED countdown for training captures (similar to quick PIR captures)
 
+    // Turn on external flash for capture
+    if (_flashCallback) _flashCallback(true);
+
     // Capture image
     NamedImage* image = _camera->getImage();
+
+    // Turn off external flash after capture
+    if (_flashCallback) _flashCallback(false);
+
     if (!image || !image->image || image->size == 0) {
         SDLogger::getInstance().errorf("Failed to capture image");
         return "";
@@ -372,8 +390,15 @@ DetectionResult CaptureController::captureAndDetect() {
 
     // No LED countdown for quick PIR-triggered capture
 
+    // Turn on external flash for capture
+    if (_flashCallback) _flashCallback(true);
+
     // Capture image
     NamedImage* image = _camera->getImage();
+
+    // Turn off external flash after capture
+    if (_flashCallback) _flashCallback(false);
+
     if (!image || !image->image || image->size == 0) {
         SDLogger::getInstance().errorf("Failed to capture image");
         return result;

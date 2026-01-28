@@ -126,6 +126,10 @@ bool PCF8574Manager::setFlashLED(bool on) {
     return setPinState(FLASH_LED_PIN, on);
 }
 
+bool PCF8574Manager::setLedStrip(bool on) {
+    return setPinState(LED_STRIP_1_PIN, on);
+}
+
 bool PCF8574Manager::readPressureSensor() {
     return readPinInput(PRESSURE_SENSOR_PIN);
 }

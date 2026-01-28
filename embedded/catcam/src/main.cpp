@@ -7,6 +7,7 @@
 
 #include "SystemState.h"
 #include "SystemManager.h"
+#include "PCF8574Manager.h"
 #include "LedController.h"
 #include "InputManager.h"
 #include "CaptureController.h"
@@ -194,7 +195,6 @@ void loop() {
             else if (deterrentController) {
                 // Capture photo and run inference
                 DetectionResult result = captureController->captureAndDetect();
-
                 if (result.success && deterrentController->shouldActivate(result)) {
                     SDLogger::getInstance().criticalf("Boots detected (%.1f%%) - activating deterrent!",
                         result.confidence * 100.0f);

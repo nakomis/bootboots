@@ -144,6 +144,13 @@ bool SystemManager::initComponents(const Config& config, SystemState& state,
                 }
             );
 
+            // Set flash callback for external LED strip control during capture
+            if (_pcfManager) {
+                _captureController->setFlashCallback([this](bool on) {
+                    _pcfManager->setLedStrip(on);
+                });
+            }
+
             SDLogger::getInstance().infof("=== Press BOOT to record video ===");
         } else {
             SDLogger::getInstance().errorf("Failed to initialize AWS Auth");

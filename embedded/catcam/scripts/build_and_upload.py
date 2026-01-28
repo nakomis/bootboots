@@ -157,6 +157,27 @@ class FirmwareBuilder:
             print(f"❌ Upload error: {e}")
             return False
 
+def ensure_aws_profile():
+    """Check if AWS_PROFILE is set, prompt user if not."""
+    profile = os.environ.get('AWS_PROFILE')
+    if profile:
+        return profile, False
+
+    print("⚠️  AWS_PROFILE is not set.")
+    try:
+        profile = input("Enter AWS profile name: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        sys.exit(1)
+
+    if not profile:
+        print("❌ No profile provided. Exiting.")
+        sys.exit(1)
+
+    os.environ['AWS_PROFILE'] = profile
+    return profile, True
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Build and upload BootBoots firmware',
@@ -180,6 +201,9 @@ Examples:
 
     args = parser.parse_args()
 
+    # Ensure AWS_PROFILE is set (needed for S3 upload)
+    aws_profile, was_prompted = ensure_aws_profile()
+
     # Find project root (directory containing platformio.ini)
     current_dir = Path.cwd()
     project_root = current_dir
@@ -196,6 +220,7 @@ Examples:
     print("=" * 60)
     print("  BootBoots Firmware Build & Upload")
     print("=" * 60)
+    print(f"☁️  AWS Profile: {aws_profile}")
 
     builder = FirmwareBuilder(project_root)
 
@@ -246,6 +271,11 @@ Examples:
         print("   (Upload skipped - build-only mode)")
         firmware_file = builder.find_firmware_file(args.environment)
         print(f"   Firmware: {firmware_file}")
+
+    if was_prompted:
+        print()
+        print(f"💡 To keep AWS_PROFILE set in your shell, run:")
+        print(f"   export AWS_PROFILE={aws_profile}")
 
 if __name__ == "__main__":
     main()
