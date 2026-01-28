@@ -136,12 +136,12 @@ String CatCamHttpClient::postImage(NamedImage* namedImage, const char* host, con
         if (line.startsWith("Content-Length:")) {
             contentLength = line.substring(15).toInt();
         }
-        SDLogger::getInstance().debugf("CatCamHttpClient: Header: %s", line.c_str());
+        SDLogger::getInstance().tracef("CatCamHttpClient: Header: %s", line.c_str());
     }
 
     // Read response body - wait for data if needed
     String response = "";
-    SDLogger::getInstance().debugf("CatCamHttpClient: Reading body, Content-Length: %d", contentLength);
+    SDLogger::getInstance().tracef("CatCamHttpClient: Reading body, Content-Length: %d", contentLength);
 
     if (contentLength > 0) {
         response.reserve(contentLength + 1);
@@ -155,7 +155,7 @@ String CatCamHttpClient::postImage(NamedImage* namedImage, const char* host, con
                 delay(10);
             }
         }
-        SDLogger::getInstance().debugf("CatCamHttpClient: Read %d bytes of body", response.length());
+        SDLogger::getInstance().tracef("CatCamHttpClient: Read %d bytes of body", response.length());
     }
     else {
         // Fallback: read whatever is available
@@ -170,6 +170,7 @@ String CatCamHttpClient::postImage(NamedImage* namedImage, const char* host, con
     SDLogger::getInstance().infof("CatCamHttpClient: Response code: %d", statusCode);
     // Log response body at INFO level for debugging auth failures
     if (statusCode != 200) {
+        SDLogger::getInstance().infof("CatCamHttpClient: statusCode: %d", statusCode);
         SDLogger::getInstance().infof("CatCamHttpClient: Body length: %d", response.length());
         if (response.length() > 0) {
             // Log first 200 chars as hex to debug

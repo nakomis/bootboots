@@ -260,7 +260,7 @@ void SystemManager::blinkPcfLed(SystemState& state) {
         if (millis() - _lastPcfBlink > 2000) {
             _pcfLedState = !_pcfLedState;
             _pcfManager->setFlashLED(_pcfLedState);
-            SDLogger::getInstance().debugf("PCF8574 Flash LED (P1): %s", _pcfLedState ? "ON" : "OFF");
+            SDLogger::getInstance().tracef("PCF8574 Flash LED (P1): %s", _pcfLedState ? "ON" : "OFF");
             _lastPcfBlink = millis();
         }
     }

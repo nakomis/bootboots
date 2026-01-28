@@ -181,12 +181,12 @@ SigV4Headers AWSAuth::createSigV4HeadersInternal(const String& method, const Str
     String signedHeaders = "content-type;host;x-amz-date;x-amz-security-token";
 
     // Create canonical request
-    SDLogger::getInstance().debugf("AWSAuth: canonicalHeaders length: %d", canonicalHeaders.length());
+    SDLogger::getInstance().tracef("AWSAuth: canonicalHeaders length: %d", canonicalHeaders.length());
 
     String canonicalRequest = createCanonicalRequest(method, canonicalURI, queryString, canonicalHeaders,
                                                     signedHeaders, payloadHash);
 
-    SDLogger::getInstance().debugf("AWSAuth: Canonical Request Hash: %s", sha256Hash(canonicalRequest).c_str());
+    SDLogger::getInstance().tracef("AWSAuth: Canonical Request Hash: %s", sha256Hash(canonicalRequest).c_str());
 
     // Create string to sign
     String algorithm = "AWS4-HMAC-SHA256";
@@ -195,7 +195,7 @@ SigV4Headers AWSAuth::createSigV4HeadersInternal(const String& method, const Str
     String stringToSign = createStringToSign(algorithm, amzDate, credentialScope,
                                            canonicalRequestHash);
 
-    SDLogger::getInstance().debugf("AWSAuth: String to Sign:\n%s", stringToSign.c_str());
+    SDLogger::getInstance().tracef("AWSAuth: String to Sign:\n%s", stringToSign.c_str());
 
     // Create signing key
     uint8_t signingKey[32];
@@ -218,7 +218,6 @@ SigV4Headers AWSAuth::createSigV4HeadersInternal(const String& method, const Str
     headers.payloadHash = payloadHash;  // Store the payload hash for the HTTP header
     headers.isValid = true;
 
-    SDLogger::getInstance().debugf("AWSAuth: Authorization: %s", headers.authorization.c_str());
     SDLogger::getInstance().debugf("AWSAuth: SigV4 headers created successfully");
 
     return headers;
