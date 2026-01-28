@@ -73,7 +73,10 @@ bool OTAUpdate::downloadToSD(const char* firmwareURL) {
     SDLogger::getInstance().infof("Starting OTA: downloading to SD card from %s", firmwareURL);
 
     // Disable SD file logging to free memory during download
+    // Must flush before unmounting to ensure the background writer task
+    // has finished any in-progress file operations
     SDLogger::getInstance().setFileLoggingEnabled(false);
+    SDLogger::getInstance().flush();
 
     // Unmount and remount SD_MMC to clear any state
     // This prevents timeout errors during write operations
