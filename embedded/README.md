@@ -353,6 +353,23 @@ Traditional ESP32 OTA requires **two app partitions** of equal size to ping-pong
 
 The catcam app calls `esp_ota_set_boot_partition(factory)` on every boot to ensure the factory bootloader runs first. This solves the chicken-and-egg problem where the ESP32 ROM bootloader would otherwise boot directly into OTA0.
 
+### PCF8574 I/O Expander Pin Map
+
+The PCF8574 uses quasi-bidirectional I/O. Input pins must be written HIGH (weak pull-up) to be readable. Active-low output pins are written HIGH when inactive.
+
+| Pin | Name | Direction | Active | Initial State |
+|-----|------|-----------|--------|---------------|
+| P0 | PIR Sensor | Input | HIGH | 1 (HIGH) |
+| P1 | Light Sensor | Input | - | 1 (HIGH) |
+| P2 | Button | Input | - | 1 (HIGH) |
+| P3 | Atomizer | Output | LOW | 1 (HIGH = inactive) |
+| P4 | Pressure Sensor | Input | - | 1 (HIGH) |
+| P5 | LED Strip 1 | Output | LOW | 1 (HIGH = inactive) |
+| P6 | LED Strip 2 | Output | LOW | 1 (HIGH = inactive) |
+| P7 | Flash LED | Output | HIGH | 0 (LOW = off) |
+
+`PCF8574_INITIAL_PIN_STATE = 0x7F`
+
 ### Memory Usage
 
 - **Bootloader**: Minimal dependencies, ~200KB+ free heap

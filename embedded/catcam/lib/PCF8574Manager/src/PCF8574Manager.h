@@ -50,7 +50,7 @@ public:
     static constexpr uint8_t LED_STRIP_2_PIN = 6;       // P6 - Flash LED Strip 2
     static constexpr uint8_t FLASH_LED_PIN = 7;         // P7 - Single Flash LED
 
-    // Low-activated pins: define once, get both array and bitmask automatically
+    // Pin sets: define once, get both array and bitmask automatically
     template<uint8_t... Pins>
     struct PinSet {
         static constexpr uint8_t pins[] = { Pins... };
@@ -58,8 +58,12 @@ public:
         static constexpr uint8_t mask = ((1 << Pins) | ...);
     };
     using LowActivatedPins = PinSet<ATOMIZER_PIN, LED_STRIP_1_PIN, LED_STRIP_2_PIN>;
-    
-    static constexpr uint8_t PCF8574_INITIAL_PIN_STATE = LowActivatedPins::mask;
+
+    // Input pins must be written HIGH for PCF8574 quasi-bidirectional I/O to work
+    using InputPins = PinSet<PIR_SENSOR_PIN, LIGHT_SENSOR_PIN_4, BUTTON_PIN, PRESSURE_SENSOR_PIN>;
+
+    // Initial state: active-low outputs HIGH (inactive) + input pins HIGH (readable)
+    static constexpr uint8_t PCF8574_INITIAL_PIN_STATE = LowActivatedPins::mask | InputPins::mask;
 
     PCF8574Manager(uint8_t i2cAddress);
     bool init(int sdaPin, int sclPin);
