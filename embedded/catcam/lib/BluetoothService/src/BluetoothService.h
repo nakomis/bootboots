@@ -11,6 +11,7 @@
 #include <vector>
 #include "../../SDLogger/src/SDLogger.h"
 #include "../../LedController/src/LedController.h"
+#include "../../CommandDispatcher/src/CommandDispatcher.h"
 #include "../../../include/SystemState.h"
 
 // BootBoots BLE Service UUID (lowercase for Web Bluetooth API compatibility)
@@ -18,6 +19,23 @@
 #define STATUS_CHARACTERISTIC_UUID    "bb00b007-e90f-49fa-89c5-31e705b74d85"
 #define LOGS_CHARACTERISTIC_UUID      "bb00b007-f1a2-49fa-89c5-31e705b74d86"
 #define COMMAND_CHARACTERISTIC_UUID   "bb00b007-c0de-49fa-89c5-31e705b74d87"
+
+/**
+ * BLE Response Sender - Implements IResponseSender for Bluetooth transport
+ * Supports chunked transfers for large data (images, logs)
+ */
+class BleResponseSender : public IResponseSender {
+public:
+    BleResponseSender(BLECharacteristic* characteristic, bool* connected);
+
+    void sendResponse(const String& response) override;
+    bool supportsChunking() const override { return true; }
+    const char* getName() const override { return "BLE"; }
+
+private:
+    BLECharacteristic* _characteristic;
+    bool* _connected;
+};
 
 class BootBootsBluetoothService : public BLEServerCallbacks, public BLECharacteristicCallbacks {
 public:
@@ -35,10 +53,13 @@ public:
     // Set LED controller for visual feedback during transfers
     void setLedController(LedController* led) { _ledController = led; }
 
-    // Set callback for training mode changes
+    // Set command dispatcher for unified command handling
+    void setCommandDispatcher(CommandDispatcher* dispatcher) { _commandDispatcher = dispatcher; }
+
+    // Set callback for training mode changes (legacy, now handled by dispatcher)
     void setTrainingModeCallback(std::function<void(bool)> callback) { _trainingModeCallback = callback; }
 
-    // Set callback for camera setting changes (setting name, int/bool value)
+    // Set callback for camera setting changes (legacy, now handled by dispatcher)
     void setCameraSettingCallback(std::function<void(const String&, int)> callback) { _cameraSettingCallback = callback; }
 
     // BLE Server callbacks
@@ -67,6 +88,8 @@ private:
     volatile bool _hasPendingCommand;
     volatile bool _pendingDisconnect;  // Deferred disconnect handling
     LedController* _ledController = nullptr;  // Optional LED for visual feedback
+    CommandDispatcher* _commandDispatcher = nullptr;  // Command dispatcher for unified handling
+    BleResponseSender* _responseSender = nullptr;  // Response sender for dispatcher
     std::function<void(bool)> _trainingModeCallback = nullptr;  // Callback for training mode changes
     std::function<void(const String&, int)> _cameraSettingCallback = nullptr;  // Callback for camera setting changes
 

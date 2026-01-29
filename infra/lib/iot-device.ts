@@ -49,11 +49,28 @@ export class IotDeviceStack extends cdk.Stack {
       policyName: 'AssumeRolePolicy',
       policyDocument: {
         Version: '2012-10-17',
-        Statement: [{
-          Effect: 'Allow',
-          Action: 'iot:AssumeRoleWithCertificate',
-          Resource: bbRoleAlias.attrRoleAliasArn,
-        }],
+        Statement: [
+          {
+            Effect: 'Allow',
+            Action: 'iot:AssumeRoleWithCertificate',
+            Resource: bbRoleAlias.attrRoleAliasArn,
+          },
+          {
+            Effect: 'Allow',
+            Action: 'iot:Connect',
+            Resource: `arn:aws:iot:${this.region}:${this.account}:client/${thingName}`,
+          },
+          {
+            Effect: 'Allow',
+            Action: 'iot:Subscribe',
+            Resource: `arn:aws:iot:${this.region}:${this.account}:topicfilter/catcam/*`,
+          },
+          {
+            Effect: 'Allow',
+            Action: ['iot:Publish', 'iot:Receive'],
+            Resource: `arn:aws:iot:${this.region}:${this.account}:topic/catcam/*`,
+          },
+        ],
       },
     });
 

@@ -18,6 +18,8 @@ class CaptureController;
 class InputManager;
 class MotionDetector;
 class DeterrentController;
+class CommandDispatcher;
+class MqttService;
 struct SystemState;
 
 /**
@@ -105,6 +107,8 @@ public:
     CaptureController* getCaptureController() { return _captureController; }
     MotionDetector* getMotionDetector() { return _motionDetector; }
     DeterrentController* getDeterrentController() { return _deterrentController; }
+    CommandDispatcher* getCommandDispatcher() { return _commandDispatcher; }
+    MqttService* getMqttService() { return _mqttService; }
 
 private:
     // Owned components (created and destroyed by SystemManager)
@@ -120,6 +124,8 @@ private:
     CaptureController* _captureController;
     MotionDetector* _motionDetector;
     DeterrentController* _deterrentController;
+    CommandDispatcher* _commandDispatcher;
+    MqttService* _mqttService;
 
     // PCF8574 LED blinking state
     unsigned long _lastPcfBlink;

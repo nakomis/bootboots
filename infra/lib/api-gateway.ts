@@ -16,6 +16,7 @@ export class ApiGatewayStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
+
     // Create S3 bucket for storing JPEG images
     const imagesBucket = new s3.Bucket(this, 'BootBootsImagesBucket', {
         bucketName: `bootboots-images-${this.account}-${this.region}`,

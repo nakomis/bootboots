@@ -35,6 +35,7 @@ struct SystemState {
     bool initialized = false;
     bool cameraReady = false;
     bool wifiConnected = false;
+    bool mqttConnected = false;
     bool sdCardReady = false;
     bool i2cReady = false;
     bool pcf8574Ready = false;

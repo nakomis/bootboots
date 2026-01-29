@@ -20,6 +20,8 @@
 #include "InputManager.h"
 #include "MotionDetector.h"
 #include "DeterrentController.h"
+#include "CommandDispatcher.h"
+#include "MqttService.h"
 #include "secrets.h"
 
 SystemManager::SystemManager()
@@ -35,12 +37,16 @@ SystemManager::SystemManager()
     , _captureController(nullptr)
     , _motionDetector(nullptr)
     , _deterrentController(nullptr)
+    , _commandDispatcher(nullptr)
+    , _mqttService(nullptr)
     , _lastPcfBlink(0)
     , _pcfLedState(false)
 {
 }
 
 SystemManager::~SystemManager() {
+    delete _mqttService;
+    delete _commandDispatcher;
     delete _deterrentController;
     delete _motionDetector;
     delete _captureController;
@@ -160,10 +166,25 @@ bool SystemManager::initComponents(const Config& config, SystemState& state,
         state.wifiConnected = false;
     }
 
+    // Initialize Command Dispatcher (shared between BLE and MQTT)
+    _commandDispatcher = new CommandDispatcher();
+    _commandDispatcher->setSystemState(&state);
+
+    // Set up external callbacks for dispatcher
+    _commandDispatcher->setPhotoCaptureCallback([this]() -> String {
+        if (_captureController) {
+            return _captureController->capturePhoto();
+        }
+        return "";
+    });
+
+    SDLogger::getInstance().infof("Command Dispatcher initialized");
+
     // Initialize Bluetooth Service
     _bluetoothService = new BootBootsBluetoothService();
     _bluetoothService->init(config.deviceName);
     _bluetoothService->setLedController(&ledController);
+    _bluetoothService->setCommandDispatcher(_commandDispatcher);
     SDLogger::getInstance().infof("Bluetooth Service initialized");
 
     // Initialize OTA Update Service
@@ -198,6 +219,22 @@ bool SystemManager::initComponents(const Config& config, SystemState& state,
     BLEDevice::startAdvertising();
     SDLogger::getInstance().infof("BLE advertising started");
 
+    // Initialize MQTT Service (requires WiFi)
+    if (state.wifiConnected) {
+        _mqttService = new MqttService();
+        if (_mqttService->init(AWS_IOT_ENDPOINT, AWS_CERT_CA, AWS_CERT_CRT, AWS_CERT_PRIVATE, "BootBootsThing")) {
+            _mqttService->setCommandDispatcher(_commandDispatcher);
+            _mqttService->setSystemState(&state);
+            SDLogger::getInstance().infof("MQTT Service initialized");
+        } else {
+            SDLogger::getInstance().errorf("Failed to initialize MQTT Service");
+            delete _mqttService;
+            _mqttService = nullptr;
+        }
+    } else {
+        SDLogger::getInstance().warnf("MQTT Service not initialized - WiFi not connected");
+    }
+
     // Initialize Motion Detector (requires PCF8574Manager)
     if (_pcfManager && state.pcf8574Ready) {
         _motionDetector = new MotionDetector(_pcfManager);
@@ -230,6 +267,12 @@ void SystemManager::update(SystemState& state) {
 
     if (_bluetoothOTA) {
         _bluetoothOTA->handle();
+    }
+
+    // Handle MQTT service
+    if (_mqttService) {
+        _mqttService->handle();
+        state.mqttConnected = _mqttService->getConnectionState();
     }
 
     // Update motion detector state
