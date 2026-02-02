@@ -3,6 +3,7 @@ import * as cdk from 'aws-cdk-lib';
 import { ApiGatewayStack } from '../lib/api-gateway';
 import { FirmwareCleanupStack } from '../lib/firmware-cleanup-stack';
 import { IotDeviceStack } from '../lib/iot-device';
+import { AiTrainingStack } from '../lib/ai-training-stack';
 
 const londonEnv = { env: { account: '975050268859', region: 'eu-west-2' } };
 
@@ -16,3 +17,12 @@ new IotDeviceStack(app, "BootBootsIoTStack", {...londonEnv, api: apiGateway.api}
 
 // Create the Firmware Cleanup stack
 new FirmwareCleanupStack(app, 'BootBootsFirmwareCleanupStack', londonEnv);
+
+// Create the AI Training stack
+// Pass modelDataUrl context to deploy with a pre-trained model:
+//   cdk deploy BootBootsAiTrainingStack --context modelDataUrl=s3://bucket/path/model.tar.gz
+const modelDataUrl = app.node.tryGetContext('modelDataUrl');
+new AiTrainingStack(app, 'BootBootsAiTrainingStack', {
+    ...londonEnv,
+    modelDataUrl,
+});
