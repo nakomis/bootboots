@@ -9,10 +9,15 @@
 #include "../../SDLogger/src/SDLogger.h"
 #include "../../OTAUpdate/src/OTAUpdate.h"
 
-// Service and Characteristic UUIDs for OTA
-#define OTA_SERVICE_UUID        "12345678-1234-1234-1234-123456789abc"
-#define OTA_COMMAND_CHAR_UUID   "87654321-4321-4321-4321-cba987654321"
-#define OTA_STATUS_CHAR_UUID    "11111111-2222-3333-4444-555555555555"
+// Nakomis ESP32 OTA Service UUIDs (shared across all Nakomis ESP32 projects)
+#define NAKOMIS_ESP32_SERVICE_UUID      "99db6ea6-27e4-434d-aafd-795cf95feb06"
+#define NAKOMIS_ESP32_COMMAND_CHAR_UUID "1ac886a6-5fff-41ea-9b11-25a7dcb93a7e"
+#define NAKOMIS_ESP32_STATUS_CHAR_UUID  "5f5979f3-f1a6-4ce7-8360-e249c2e9333d"
+
+// Legacy aliases for backwards compatibility
+#define OTA_SERVICE_UUID        NAKOMIS_ESP32_SERVICE_UUID
+#define OTA_COMMAND_CHAR_UUID   NAKOMIS_ESP32_COMMAND_CHAR_UUID
+#define OTA_STATUS_CHAR_UUID    NAKOMIS_ESP32_STATUS_CHAR_UUID
 
 struct OTACommand {
     String action;

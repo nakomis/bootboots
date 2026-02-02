@@ -19,13 +19,13 @@ BluetoothOTA provides a BLE-based wrapper around the OTAUpdate service, allowing
 
 ### Service UUID
 ```
-12345678-1234-1234-1234-123456789abc
+99db6ea6-27e4-434d-aafd-795cf95feb06
 ```
 
 ### Characteristics
 
 #### Command Characteristic (Write)
-**UUID**: `87654321-4321-4321-4321-cba987654321`
+**UUID**: `1ac886a6-5fff-41ea-9b11-25a7dcb93a7e`
 
 Accepts JSON commands:
 ```json
@@ -42,7 +42,7 @@ Accepts JSON commands:
 - `cancel_update` - Cancel in-progress update
 
 #### Status Characteristic (Read/Notify)
-**UUID**: `11111111-2222-3333-4444-555555555555`
+**UUID**: `5f5979f3-f1a6-4ce7-8360-e249c2e9333d`
 
 Returns JSON status:
 ```json
