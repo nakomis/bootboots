@@ -2,6 +2,7 @@
 #include <HTTPClient.h>
 #include <SD_MMC.h>
 #include <Preferences.h>
+#include <esp_heap_caps.h>
 
 #define FIRMWARE_FILE "/firmware_update.bin"
 #define OTA_BUFFER_SIZE 512
@@ -12,9 +13,8 @@ OTAUpdate::OTAUpdate() {
     _status = "Not initialized";
     _updateCallback = nullptr;
     _progressCallback = nullptr;
-    _httpClient = new HTTPClient();
-    _secureClient = new WiFiClientSecure();
-    _secureClient->setInsecure(); // Skip certificate validation for simplicity
+    _httpClient = nullptr;  // Created on demand to avoid memory fragmentation
+    _secureClient = nullptr;
     _totalSize = 0;
     _downloadedSize = 0;
 }
@@ -99,13 +99,43 @@ bool OTAUpdate::downloadToSD(const char* firmwareURL) {
     _progress = 0;
     _status = "Downloading to SD card...";
 
-    // Configure HTTP client
+    // Clean up any existing clients to free memory
+    if (_httpClient) {
+        delete _httpClient;
+        _httpClient = nullptr;
+    }
+    if (_secureClient) {
+        delete _secureClient;
+        _secureClient = nullptr;
+    }
+
+    SDLogger::getInstance().infof("Free heap before SSL client creation: %d bytes", ESP.getFreeHeap());
+
+    // Configure HTTP client - create fresh instances to avoid fragmentation
     String url = String(firmwareURL);
     if (url.startsWith("https://")) {
         SDLogger::getInstance().infof("Using HTTPS secure connection");
+
+        // Create fresh SSL client
+        _secureClient = new WiFiClientSecure();
+        _secureClient->setInsecure(); // Skip certificate validation
+
+        // Log memory state for debugging - check INTERNAL RAM specifically
+        // (MALLOC_CAP_8BIT alone includes PSRAM which gives misleading results)
+        SDLogger::getInstance().infof("Largest INTERNAL free block: %d bytes",
+            heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+        SDLogger::getInstance().infof("Free internal heap: %d bytes",
+            heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+        SDLogger::getInstance().infof("Free PSRAM: %d bytes",
+            heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+
+        _httpClient = new HTTPClient();
         _httpClient->begin(*_secureClient, firmwareURL);
+
+        SDLogger::getInstance().infof("Free heap after SSL client creation: %d bytes", ESP.getFreeHeap());
     } else {
         SDLogger::getInstance().infof("Using HTTP connection");
+        _httpClient = new HTTPClient();
         WiFiClient client;
         _httpClient->begin(client, firmwareURL);
     }

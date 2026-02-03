@@ -61,8 +61,12 @@ public:
     void copyImageToPSRAM(NamedImage* namedImage);
     void releaseImageBuffer(NamedImage* namedImage);
 
+    // Settings getters
+    int getLedDelayMillis() const { return ledDelayMillis; }
+
 private:
     int failureCount = 0;
+    int ledDelayMillis = 100;
     Preferences preferences;
     
     // PSRAM helper methods

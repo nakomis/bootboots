@@ -14,6 +14,7 @@
 #include "MotionDetector.h"
 #include "DeterrentController.h"
 #include "BluetoothService.h"
+#include "CommandDispatcher.h"
 #include "Camera.h"
 #include "version.h"
 
@@ -140,11 +141,11 @@ void setup() {
     // Initialize all system components
     systemManager.initComponents(config, systemState, ledController, inputManager);
 
-    // Register callbacks with BluetoothService
-    BootBootsBluetoothService* btService = systemManager.getBluetoothService();
-    if (btService) {
-        btService->setTrainingModeCallback(saveTrainingMode);
-        btService->setCameraSettingCallback(saveCameraSetting);
+    // Register callbacks with CommandDispatcher (handles commands from BLE and MQTT)
+    CommandDispatcher* dispatcher = systemManager.getCommandDispatcher();
+    if (dispatcher) {
+        dispatcher->setTrainingModeCallback(saveTrainingMode);
+        dispatcher->setCameraSettingCallback(saveCameraSetting);
     }
 
     // Sync training mode to capture controller
@@ -264,7 +265,10 @@ void saveTrainingMode(bool enabled) {
 // Load camera settings from NVS
 void loadCameraSettings() {
     CameraSettings& cs = systemState.cameraSettings;
-    preferences.begin("bootboots", true);  // read-only
+    if (!preferences.begin("bootboots", true)) {  // read-only
+        SDLogger::getInstance().errorf("Failed to open NVS namespace 'bootboots' for reading");
+        return;
+    }
 
     cs.frameSize = preferences.getInt("camFrmSize", cs.frameSize);
     cs.jpegQuality = preferences.getInt("camJpgQual", cs.jpegQuality);
@@ -291,15 +295,19 @@ void loadCameraSettings() {
     cs.vflip = preferences.getBool("camVFlip", cs.vflip);
     cs.dcw = preferences.getBool("camDCW", cs.dcw);
     cs.colorbar = preferences.getBool("camColorbar", cs.colorbar);
+    cs.ledDelayMillis = preferences.getInt("ledDelayMillis", cs.ledDelayMillis);
 
     preferences.end();
-    SDLogger::getInstance().infof("Camera settings loaded from NVS");
+    SDLogger::getInstance().infof("Camera settings loaded from NVS (ledDelayMillis=%d)", cs.ledDelayMillis);
 }
 
 // Save a single camera setting to NVS and apply to camera
 void saveCameraSetting(const String& setting, int value) {
     CameraSettings& cs = systemState.cameraSettings;
-    preferences.begin("bootboots", false);
+    if (!preferences.begin("bootboots", false)) {
+        SDLogger::getInstance().errorf("Failed to open NVS namespace 'bootboots' for writing");
+        return;
+    }
 
     if (setting == "frame_size") { preferences.putInt("camFrmSize", cs.frameSize); }
     else if (setting == "jpeg_quality") { preferences.putInt("camJpgQual", cs.jpegQuality); }
@@ -326,6 +334,13 @@ void saveCameraSetting(const String& setting, int value) {
     else if (setting == "vflip") { preferences.putBool("camVFlip", cs.vflip); }
     else if (setting == "dcw") { preferences.putBool("camDCW", cs.dcw); }
     else if (setting == "colorbar") { preferences.putBool("camColorbar", cs.colorbar); }
+    else if (setting == "led_delay_millis") {
+        SDLogger::getInstance().infof("Saving ledDelayMillis=%d to NVS", cs.ledDelayMillis);
+        size_t written = preferences.putInt("ledDelayMillis", cs.ledDelayMillis);
+        if (written == 0) {
+            SDLogger::getInstance().errorf("Failed to write ledDelayMillis to NVS");
+        }
+    }
 
     preferences.end();
 

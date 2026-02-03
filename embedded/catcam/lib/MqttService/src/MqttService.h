@@ -83,6 +83,13 @@ public:
      */
     bool getConnectionState() const { return _connected; }
 
+    /**
+     * Pause MQTT connection and free SSL resources
+     * Call this before memory-intensive operations like OTA updates.
+     * The connection will automatically resume on next handle() call.
+     */
+    void pause();
+
 private:
     WiFiClientSecure* _wifiClient;
     PubSubClient* _client;

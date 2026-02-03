@@ -31,6 +31,7 @@ BluetoothOTA::BluetoothOTA() {
     _pCallbacks = nullptr;
     _pServerCallbacks = nullptr;
     _otaUpdate = nullptr;
+    _mqttService = nullptr;
     _initialized = false;
     _deviceConnected = false;
     _wasConnected = false;
@@ -414,6 +415,11 @@ void BluetoothOTA::processOTAUpdate(const OTACommand& command) {
 
     SDLogger::getInstance().infof("Starting OTA update from URL: %s", command.firmware_url.c_str());
     sendStatusUpdate("starting", "Starting OTA update...");
+
+    // Free MQTT SSL resources first - this releases ~40KB of heap
+    if (_mqttService) {
+        _mqttService->pause();
+    }
 
     // Stop BLE advertising to free some memory for direct HTTP OTA
     // Note: We can't fully deinit BLE as it causes hangs (see esp32-snippets #1155)

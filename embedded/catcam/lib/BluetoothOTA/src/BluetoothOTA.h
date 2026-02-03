@@ -8,6 +8,7 @@
 #include <BLE2902.h>
 #include "../../SDLogger/src/SDLogger.h"
 #include "../../OTAUpdate/src/OTAUpdate.h"
+#include "../../MqttService/src/MqttService.h"
 
 // Nakomis ESP32 OTA Service UUIDs (shared across all Nakomis ESP32 projects)
 #define NAKOMIS_ESP32_SERVICE_UUID      "99db6ea6-27e4-434d-aafd-795cf95feb06"
@@ -58,6 +59,9 @@ public:
     // OTA Update integration
     void setOTAUpdate(OTAUpdate* otaUpdate) { _otaUpdate = otaUpdate; }
 
+    // MQTT service - paused before OTA to free SSL memory
+    void setMqttService(MqttService* mqttService) { _mqttService = mqttService; }
+
 private:
     BLEServer* _pServer;
     BLEService* _pService;
@@ -65,6 +69,7 @@ private:
     BLECharacteristic* _pStatusCharacteristic;
     BluetoothOTACallbacks* _pCallbacks;
     OTAUpdate* _otaUpdate;
+    MqttService* _mqttService;
     
     bool _initialized;
     bool _deviceConnected;

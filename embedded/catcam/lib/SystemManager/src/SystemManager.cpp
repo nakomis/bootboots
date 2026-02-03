@@ -225,6 +225,14 @@ bool SystemManager::initComponents(const Config& config, SystemState& state,
         if (_mqttService->init(AWS_IOT_ENDPOINT, AWS_CERT_CA, AWS_CERT_CRT, AWS_CERT_PRIVATE, "BootBootsThing")) {
             _mqttService->setCommandDispatcher(_commandDispatcher);
             _mqttService->setSystemState(&state);
+            // Link to BluetoothOTA so it can pause MQTT before OTA updates
+            if (_bluetoothOTA) {
+                _bluetoothOTA->setMqttService(_mqttService);
+            }
+            // Link to AWSAuth so it can pause MQTT before credential refresh
+            if (_awsAuth) {
+                _awsAuth->setMqttService(_mqttService);
+            }
             SDLogger::getInstance().infof("MQTT Service initialized");
         } else {
             SDLogger::getInstance().errorf("Failed to initialize MQTT Service");

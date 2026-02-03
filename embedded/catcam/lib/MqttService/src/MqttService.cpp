@@ -1,6 +1,7 @@
 #include "MqttService.h"
 #include "SystemState.h"
 #include "SDLogger.h"
+#include <WiFi.h>
 
 // Static instance for callback routing
 MqttService* MqttService::_instance = nullptr;
@@ -195,6 +196,32 @@ void MqttService::onMessage(char* topic, byte* payload, unsigned int length) {
             SDLogger::getInstance().warnf("MQTT: No command dispatcher set");
         }
     }
+}
+
+void MqttService::pause() {
+    SDLogger::getInstance().infof("MQTT: Pausing connection to free SSL memory...");
+
+    if (_client) {
+        _client->disconnect();
+        delete _client;
+        _client = nullptr;
+    }
+
+    if (_wifiClient) {
+        _wifiClient->stop();
+        delete _wifiClient;
+        _wifiClient = nullptr;
+    }
+
+    if (_responseSender) {
+        delete _responseSender;
+        _responseSender = nullptr;
+    }
+
+    _connected = false;
+    _initialized = false;  // Will need to reinit on resume
+
+    SDLogger::getInstance().infof("MQTT: Paused, free heap: %d bytes", ESP.getFreeHeap());
 }
 
 void MqttService::publishStatus() {

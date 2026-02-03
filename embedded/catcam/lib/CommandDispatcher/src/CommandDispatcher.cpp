@@ -181,6 +181,7 @@ bool CommandDispatcher::handleGetSettings(CommandContext& ctx) {
     cam["vflip"] = _systemState->cameraSettings.vflip;
     cam["dcw"] = _systemState->cameraSettings.dcw;
     cam["colorbar"] = _systemState->cameraSettings.colorbar;
+    cam["led_delay_millis"] = _systemState->cameraSettings.ledDelayMillis;
 
     String responseStr;
     serializeJson(response, responseStr);
@@ -253,6 +254,7 @@ bool CommandDispatcher::handleSetSetting(CommandContext& ctx) {
         else if (camSetting == "vflip") { _systemState->cameraSettings.vflip = boolValue; }
         else if (camSetting == "dcw") { _systemState->cameraSettings.dcw = boolValue; }
         else if (camSetting == "colorbar") { _systemState->cameraSettings.colorbar = boolValue; }
+        else if (camSetting == "led_delay_millis") { _systemState->cameraSettings.ledDelayMillis = intValue; }
         else { handled = false; }
 
         if (handled) {

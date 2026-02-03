@@ -1,6 +1,7 @@
 #include "AWSAuth.h"
 #include <mbedtls/md.h>
 #include <HTTPClient.h>
+#include "../../MqttService/src/MqttService.h"
 
 AWSAuth::AWSAuth(const char* region) : region(region) {
     credentials.isValid = false;
@@ -8,6 +9,7 @@ AWSAuth::AWSAuth(const char* region) : region(region) {
     caCert = nullptr;
     clientCert = nullptr;
     clientKey = nullptr;
+    _mqttService = nullptr;
 }
 
 bool AWSAuth::initialize(const char* awsCertCA, const char* awsCertCRT, const char* awsCertPrivate,
@@ -42,6 +44,12 @@ bool AWSAuth::initialize(const char* awsCertCA, const char* awsCertCRT, const ch
 bool AWSAuth::getCredentialsWithRoleAlias(const char* roleAlias) {
     // Use IoT Credentials Provider to get temporary AWS credentials
     // Endpoint format: https://<credentials-endpoint>/role-aliases/<role-alias>/credentials
+
+    // Pause MQTT to free SSL memory before making our own SSL request
+    if (_mqttService) {
+        SDLogger::getInstance().infof("AWSAuth: Pausing MQTT to free SSL memory");
+        _mqttService->pause();
+    }
 
     WiFiClientSecure sslClient;
     sslClient.setCACert(caCert);

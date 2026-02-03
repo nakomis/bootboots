@@ -28,6 +28,7 @@ struct CameraSettings {
     bool vflip = false;
     bool dcw = true;
     bool colorbar = false;
+    int ledDelayMillis = 100;
 };
 
 // SystemState struct definition - shared between main.cpp and BluetoothService

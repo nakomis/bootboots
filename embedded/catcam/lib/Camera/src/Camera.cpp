@@ -90,7 +90,7 @@ void Camera::applySettings(const CameraSettings& settings) {
     s->set_vflip(s, settings.vflip ? 1 : 0);
     s->set_dcw(s, settings.dcw ? 1 : 0);
     s->set_colorbar(s, settings.colorbar ? 1 : 0);
-
+    ledDelayMillis = settings.ledDelayMillis;
     SDLogger::getInstance().infof("Camera settings applied");
 }
 

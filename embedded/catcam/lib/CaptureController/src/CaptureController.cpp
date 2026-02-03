@@ -88,6 +88,10 @@ String CaptureController::capturePhoto() {
 
     // Turn on external flash for capture
     if (_flashCallback) _flashCallback(true);
+    
+    // Wait a short while for the LEDs to warm up
+    SDLogger::getInstance().infof("capturePhoto waiting for %d millis to allow LEDs to warm", _camera->getLedDelayMillis());
+    delay(_camera->getLedDelayMillis());
 
     // Capture image
     NamedImage* image = _camera->getImage();
@@ -315,6 +319,10 @@ String CaptureController::captureTrainingPhoto() {
 
     // Turn on external flash for capture
     if (_flashCallback) _flashCallback(true);
+    
+    // Wait a short while for the LEDs to warm up
+    SDLogger::getInstance().infof("captureTrainingPhoto Waiting for %d millis to allow LEDs to warm", _camera->getLedDelayMillis());
+    delay(_camera->getLedDelayMillis());
 
     // Capture image
     NamedImage* image = _camera->getImage();
@@ -392,6 +400,10 @@ DetectionResult CaptureController::captureAndDetect() {
 
     // Turn on external flash for capture
     if (_flashCallback) _flashCallback(true);
+
+    // Wait a short while for the LEDs to warm up
+    SDLogger::getInstance().infof("captureAndDetect Waiting for %d millis to allow LEDs to warm", _camera->getLedDelayMillis());
+    delay(_camera->getLedDelayMillis());
 
     // Capture image
     NamedImage* image = _camera->getImage();
