@@ -20,7 +20,7 @@
   - Configured automatically via `bucket.addEventNotification()`
   - Triggers on: `s3.EventType.OBJECT_CREATED`
   - Filter: Suffix `firmware.bin`
-  - Bucket: `bootboots-firmware-updates`
+  - Bucket: `nakomis-firmware-updates`
 
 - CloudWatch Logs
   - Log group: `/aws/lambda/FirmwareCleanupLambda`
@@ -123,8 +123,8 @@ Since CDK v2, `addEventNotification()` works on imported buckets (from `Bucket.f
 
 1. Upload firmware: `python scripts/build_and_upload.py`
 2. Check CloudWatch Logs: `aws logs tail /aws/lambda/FirmwareCleanupLambda --follow`
-3. Verify manifest: `aws s3 cp s3://bootboots-firmware-updates/BootBoots/manifest.json -`
-4. List S3 files: `aws s3 ls s3://bootboots-firmware-updates/BootBoots/ --recursive`
+3. Verify manifest: `aws s3 cp s3://nakomis-firmware-updates/BootBoots/manifest.json -`
+4. List S3 files: `aws s3 ls s3://nakomis-firmware-updates/BootBoots/ --recursive`
 
 Should see only 3 firmware versions retained.
 

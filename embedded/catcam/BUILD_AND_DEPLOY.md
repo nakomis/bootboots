@@ -23,7 +23,7 @@ python scripts/build_and_upload.py --build-only
 - **AWS CLI** configured with credentials
 
 ### 2. AWS Setup
-- S3 bucket: `bootboots-firmware-updates`
+- S3 bucket: `nakomis-firmware-updates`
 - IAM permissions: `s3:PutObject`, `s3:GetObject`, `s3:ListBucket`
 
 ### 3. ESP32 Configuration
@@ -66,7 +66,7 @@ python scripts/build_and_upload.py --build-only
    - Generates `firmware.bin` in `.pio/build/esp32cam/`
 
 3. **S3 Upload**
-   - Uploads firmware to `s3://bootboots-firmware-updates/BootBoots/{version}/firmware.bin`
+   - Uploads firmware to `s3://nakomis-firmware-updates/BootBoots/{version}/firmware.bin`
    - Updates `manifest.json` with version metadata
    - Adds file size and timestamp information
 
@@ -75,7 +75,7 @@ python scripts/build_and_upload.py --build-only
 ## S3 Bucket Structure
 
 ```
-bootboots-firmware-updates/
+nakomis-firmware-updates/
 ├── BootBoots/
 │   ├── manifest.json
 │   ├── 1.0.0/
@@ -244,7 +244,7 @@ export AWS_SECRET_ACCESS_KEY=your_secret
 **Problem**: S3 bucket access denied
 ```bash
 # Verify bucket exists
-aws s3 ls s3://bootboots-firmware-updates
+aws s3 ls s3://nakomis-firmware-updates
 
 # Check IAM permissions
 aws sts get-caller-identity
@@ -295,7 +295,7 @@ pio run
 
 # Upload to S3
 aws s3 cp .pio/build/esp32cam/firmware.bin \
-  s3://bootboots-firmware-updates/BootBoots/1.0.1/firmware.bin
+  s3://nakomis-firmware-updates/BootBoots/1.0.1/firmware.bin
 ```
 
 ### Testing OTA Locally
@@ -403,7 +403,7 @@ Enable S3 server access logging to track firmware downloads:
 
 ```bash
 aws s3api put-bucket-logging \
-  --bucket bootboots-firmware-updates \
+  --bucket nakomis-firmware-updates \
   --bucket-logging-status file://logging.json
 ```
 
@@ -431,6 +431,6 @@ aws s3api put-bucket-logging \
 | `pio run --target upload` | Flash via USB |
 | `pio device monitor` | Open serial monitor |
 
-**S3 Bucket**: `bootboots-firmware-updates`
+**S3 Bucket**: `nakomis-firmware-updates`
 **Project Name**: `BootBoots`
 **Current Version**: Check `include/version.h`

@@ -5,7 +5,7 @@
 1. AWS CLI configured with appropriate credentials
 2. AWS CDK CLI installed (`npm install -g aws-cdk`)
 3. Node.js 22.x or later
-4. Access to the `bootboots-firmware-updates` S3 bucket
+4. Access to the `nakomis-firmware-updates` S3 bucket
 
 ## Deployment Steps
 
@@ -54,7 +54,7 @@ BootBootsFirmwareCleanupStack.CleanupLambdaArn = arn:aws:lambda:eu-west-2:...
 BootBootsFirmwareCleanupStack.CleanupLambdaName = FirmwareCleanupLambda
 BootBootsFirmwareCleanupStack.LogGroupName = /aws/lambda/FirmwareCleanupLambda
 BootBootsFirmwareCleanupStack.NotificationStatus = S3 event notification configured via addEventNotification
-BootBootsFirmwareCleanupStack.S3BucketName = bootboots-firmware-updates
+BootBootsFirmwareCleanupStack.S3BucketName = nakomis-firmware-updates
 ```
 
 **Note:** The S3 event notification is configured automatically by CDK using `bucket.addEventNotification()`. No manual setup required!
@@ -101,7 +101,7 @@ Or in AWS Console:
 3. Verify you see logs like:
    ```
    Firmware Cleanup Lambda triggered
-   Processing: s3://bootboots-firmware-updates/BootBoots/1.0.55/firmware.bin
+   Processing: s3://nakomis-firmware-updates/BootBoots/1.0.55/firmware.bin
    Found 4 total firmware versions
    Keeping 3 versions, deleting 1 versions
    ✅ Deleted: BootBoots/1.0.51/firmware.bin
@@ -114,7 +114,7 @@ Or in AWS Console:
 Check the manifest was updated:
 
 ```bash
-aws s3 cp s3://bootboots-firmware-updates/BootBoots/manifest.json - | python -m json.tool
+aws s3 cp s3://nakomis-firmware-updates/BootBoots/manifest.json - | python -m json.tool
 ```
 
 Expected output:
@@ -145,7 +145,7 @@ Expected output:
 List S3 files:
 
 ```bash
-aws s3 ls s3://bootboots-firmware-updates/BootBoots/ --recursive
+aws s3 ls s3://nakomis-firmware-updates/BootBoots/ --recursive
 ```
 
 You should see only 3 firmware versions (plus manifest.json).
@@ -206,7 +206,7 @@ aws iam list-attached-role-policies --role-name <ROLE_NAME>
 
 1. **Check S3 event notification exists:**
    ```bash
-   aws s3api get-bucket-notification-configuration --bucket bootboots-firmware-updates
+   aws s3api get-bucket-notification-configuration --bucket nakomis-firmware-updates
    ```
 
 2. **Check Lambda permissions:**

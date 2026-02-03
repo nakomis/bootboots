@@ -19,7 +19,7 @@ class FirmwareBuilder:
         self.project_root = Path(project_root)
         self.version_file = self.project_root / "include" / "version.h"
         self.platformio_ini = self.project_root / "platformio.ini"
-        self.s3_bucket = "bootboots-firmware-updates"
+        self.s3_bucket = "nakomis-firmware-updates"
         self.project_name = "BootBoots"
 
     def get_current_version(self):

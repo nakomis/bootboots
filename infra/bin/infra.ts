@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import * as cdk from 'aws-cdk-lib';
 import { ApiGatewayStack } from '../lib/api-gateway';
-import { FirmwareCleanupStack } from '../lib/firmware-cleanup-stack';
 import { IotDeviceStack } from '../lib/iot-device';
 import { AiTrainingStack } from '../lib/ai-training-stack';
 
@@ -14,9 +13,6 @@ const apiGateway = new ApiGatewayStack(app, 'BootBootsApiGatewayStack', londonEn
 
 // Create the IoT stack
 new IotDeviceStack(app, "BootBootsIoTStack", {...londonEnv, api: apiGateway.api})
-
-// Create the Firmware Cleanup stack
-new FirmwareCleanupStack(app, 'BootBootsFirmwareCleanupStack', londonEnv);
 
 // Create the AI Training stack
 // Pass modelDataUrl context to deploy with a pre-trained model:

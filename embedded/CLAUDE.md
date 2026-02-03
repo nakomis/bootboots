@@ -13,7 +13,7 @@ Both use the **Arduino framework** for simplicity and library compatibility.
 - **Web App + Infra**: `/Users/martinmu_1/repos/nakomis/sandboxsite` - React web interface and AWS CDK infrastructure (see CLAUDE.md in that repo)
   - `sandbox-app/` - React frontend for OTA updates and device control via Web Bluetooth
   - `infra/` - AWS CDK stacks (CloudFront, Cognito, S3)
-- **S3 Bucket**: `bootboots-firmware-updates` - Stores firmware binaries and manifest (Lambda auto-updates manifest on upload)
+- **S3 Bucket**: `nakomis-firmware-updates` - Stores firmware binaries and manifest (Lambda auto-updates manifest on upload)
 
 **Note:** When adding new API Gateway endpoints that the web app calls, ensure the URL pattern is excluded from cache-first in `sandbox-app/public/sw.js` to avoid stale data.
 
@@ -218,7 +218,7 @@ python3 scripts/build_and_upload.py
 This script:
 1. Bumps the version number in `include/version.h`
 2. Builds the firmware for ESP32-S3
-3. Uploads to S3 bucket `bootboots-firmware-updates`
+3. Uploads to S3 bucket `nakomis-firmware-updates`
 4. Lambda automatically updates the manifest
 
 Then use the web interface at localhost:3000 to trigger the OTA update via Bluetooth.
