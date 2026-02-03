@@ -8,6 +8,7 @@ interface FirmwareVersion {
   key: string;
   size: number;
   lastModified: Date;
+  internal?: boolean;  // From S3 object metadata
 }
 
 interface ManifestVersion {
@@ -20,6 +21,7 @@ interface ManifestVersion {
 interface Manifest {
   project: string;
   versions: ManifestVersion[];
+  internal?: boolean;  // If true, project is hidden from UI (e.g., bootloader)
 }
 
 /**
@@ -71,6 +73,26 @@ function extractVersion(key: string): string {
 }
 
 /**
+ * Get metadata for a firmware object to check if it's internal
+ */
+async function getFirmwareMetadata(bucket: string, key: string): Promise<{ internal?: boolean }> {
+  try {
+    const command = new HeadObjectCommand({
+      Bucket: bucket,
+      Key: key,
+    });
+    const response = await s3Client.send(command);
+
+    // S3 metadata keys are lowercased
+    const internal = response.Metadata?.internal === 'true';
+    return { internal: internal || undefined };
+  } catch (error) {
+    console.warn(`Could not get metadata for ${key}:`, error);
+    return {};
+  }
+}
+
+/**
  * List all firmware versions for a project
  */
 async function listFirmwareVersions(bucket: string, projectName: string): Promise<FirmwareVersion[]> {
@@ -91,11 +113,15 @@ async function listFirmwareVersions(bucket: string, projectName: string): Promis
         if (object.Key && object.Key.endsWith('/firmware.bin')) {
           try {
             const version = extractVersion(object.Key);
+            // Get metadata to check if internal
+            const metadata = await getFirmwareMetadata(bucket, object.Key);
+
             versions.push({
               version,
               key: object.Key,
               size: object.Size || 0,
               lastModified: object.LastModified || new Date(),
+              internal: metadata.internal,
             });
           } catch (error) {
             console.warn(`Skipping invalid key: ${object.Key}`, error);
@@ -156,9 +182,13 @@ async function updateManifest(bucket: string, projectName: string, versions: Fir
     size: v.size,
   }));
 
+  // Check if any version is marked as internal (project-level flag)
+  const isInternal = versions.some(v => v.internal === true);
+
   const manifest: Manifest = {
     project: projectName,
     versions: manifestVersions,
+    ...(isInternal && { internal: true }),  // Only include if true
   };
 
   const manifestKey = `${projectName}/manifest.json`;
@@ -170,7 +200,7 @@ async function updateManifest(bucket: string, projectName: string, versions: Fir
     ContentType: 'application/json',
   }));
 
-  console.log(`✅ Updated manifest: ${manifestKey}`);
+  console.log(`✅ Updated manifest: ${manifestKey}${isInternal ? ' (internal)' : ''}`);
 }
 
 /**
