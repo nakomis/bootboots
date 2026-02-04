@@ -192,6 +192,53 @@ export class ApiGatewayStack extends cdk.Stack {
       ],
     });
 
+    // Create log group for list-devices Lambda
+    const listDevicesLogGroup = new logs.LogGroup(this, 'BootBootsListDevicesLogGroup', {
+        logGroupName: '/aws/lambda/BootBootsListDevices',
+        retention: logs.RetentionDays.ONE_MONTH,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    // Create the list-devices Lambda
+    const listDevicesLambda = new NodejsFunction(this, 'BootBootsListDevicesFunction', {
+        functionName: 'BootBootsListDevices',
+        runtime: cdk.aws_lambda.Runtime.NODEJS_22_X,
+        entry: `${__dirname}/../lambda/list-devices/src/handler.ts`,
+        logGroup: listDevicesLogGroup,
+        timeout: cdk.Duration.seconds(30),
+        memorySize: 256,
+        bundling: {
+            minify: true,
+            sourceMap: false,
+            target: 'node22',
+        },
+    });
+
+    // Grant IoT permissions to list and describe things
+    listDevicesLambda.addToRolePolicy(new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['iot:ListThings', 'iot:DescribeThing'],
+        resources: ['*'],
+    }));
+
+    // Create the /devices resource with Cognito auth
+    const devicesResource = this.api.root.addResource('devices');
+    devicesResource.addMethod('GET', new apigateway.LambdaIntegration(listDevicesLambda), {
+        authorizationType: apigateway.AuthorizationType.IAM,
+        apiKeyRequired: false,
+        methodResponses: [
+            { statusCode: '200' },
+            { statusCode: '400' },
+            { statusCode: '500' },
+        ],
+    });
+
+    // Output the /devices endpoint URL
+    new cdk.CfnOutput(this, 'DevicesEndpointUrl', {
+      value: `https://api.bootboots.sandbox.nakomis.com/devices`,
+      description: 'URL for the /devices GET endpoint',
+    });
+
     // Create the authCheck resource for IoT device authentication verification
     const authCheckResource = this.api.root.addResource('authCheck');
     authCheckResource.addMethod('POST', new apigateway.MockIntegration({

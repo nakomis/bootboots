@@ -2,6 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as iot from 'aws-cdk-lib/aws-iot';
+import * as cr from 'aws-cdk-lib/custom-resources';
 import { ThingWithCert } from 'cdk-iot-core-certificates-v3';
 import { RestApi } from 'aws-cdk-lib/aws-apigateway';
 
@@ -15,11 +16,58 @@ export class IotDeviceStack extends cdk.Stack {
 
     const thingName = "BootBootsThing";
 
-    const { thingArn, certId, certPem, privKey } = new ThingWithCert(this, 'MyThing', {
+    const thingWithCert = new ThingWithCert(this, 'MyThing', {
       thingName: thingName,
       saveToParamStore: true,
       paramPrefix: 'BootsBoots',
     });
+    const { thingArn, certId, certPem, privKey } = thingWithCert;
+
+    // Update the IoT Thing with attributes for device discovery
+    // Using AwsCustomResource to call UpdateThing API after the thing is created by ThingWithCert
+    const updateThingAttributes = new cr.AwsCustomResource(this, 'UpdateThingAttributes', {
+      onCreate: {
+        service: 'IoT',
+        action: 'updateThing',
+        parameters: {
+          thingName: thingName,
+          attributePayload: {
+            attributes: {
+              'project': 'bootboots',
+              'deviceType': 'bootboots',
+              'capabilities': 'photos,logs,settings,camera',
+            },
+            merge: true,
+          },
+        },
+        physicalResourceId: cr.PhysicalResourceId.of(`${thingName}-attributes`),
+      },
+      onUpdate: {
+        service: 'IoT',
+        action: 'updateThing',
+        parameters: {
+          thingName: thingName,
+          attributePayload: {
+            attributes: {
+              'project': 'bootboots',
+              'deviceType': 'bootboots',
+              'capabilities': 'photos,logs,settings,camera',
+            },
+            merge: true,
+          },
+        },
+        physicalResourceId: cr.PhysicalResourceId.of(`${thingName}-attributes`),
+      },
+      policy: cr.AwsCustomResourcePolicy.fromStatements([
+        new iam.PolicyStatement({
+          actions: ['iot:UpdateThing'],
+          resources: [`arn:aws:iot:${this.region}:${this.account}:thing/${thingName}`],
+        }),
+      ]),
+    });
+
+    // Ensure attributes are set after the thing is created
+    updateThingAttributes.node.addDependency(thingWithCert);
 
     const bbRole = new iam.Role(this, "BootBootsIamRole", {
       roleName: "BootBootsThingIamRole",
