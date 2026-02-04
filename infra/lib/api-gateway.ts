@@ -137,9 +137,16 @@ export class ApiGatewayStack extends cdk.Stack {
       description: 'BootBoots Inference API Gateway with POST /infer endpoint',
       binaryMediaTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/octet-stream', 'video/x-msvideo', 'video/avi'],
       defaultCorsPreflightOptions: {
-        allowOrigins: apigateway.Cors.ALL_ORIGINS,
-        allowMethods: ['POST', 'PUT', 'OPTIONS'],
-        allowHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
+        allowOrigins: ['https://sandbox.nakomis.com', 'http://localhost:3000', 'http://localhost:3001'],
+        allowMethods: ['GET', 'POST', 'PUT', 'OPTIONS'],
+        allowHeaders: [
+          'Content-Type',
+          'Authorization',
+          'X-API-Key',
+          'X-Amz-Date',
+          'X-Amz-Security-Token',
+          'X-Amz-Content-Sha256',
+        ],
       },
       // Disable the default endpoint to force usage of custom domain
       disableExecuteApiEndpoint: true,
