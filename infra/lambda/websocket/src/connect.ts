@@ -4,10 +4,27 @@ import { DynamoDBClient, PutItemCommand } from '@aws-sdk/client-dynamodb';
 const dynamoDb = new DynamoDBClient({});
 const CONNECTIONS_TABLE = process.env.CONNECTIONS_TABLE!;
 
+// Allowed origins for WebSocket connections
+const ALLOWED_ORIGINS = [
+    'https://sandbox.nakomis.com',
+    'http://localhost:3000',
+    'http://localhost:3001',
+];
+
 export const handler: APIGatewayProxyHandler = async (event): Promise<APIGatewayProxyResult> => {
     const connectionId = event.requestContext.connectionId;
+    const origin = event.headers?.Origin || event.headers?.origin;
 
-    console.log(`WebSocket connect: ${connectionId}`);
+    console.log(`WebSocket connect: ${connectionId}, origin: ${origin}`);
+
+    // Validate origin
+    if (origin && !ALLOWED_ORIGINS.includes(origin)) {
+        console.log(`Rejected connection from unauthorized origin: ${origin}`);
+        return {
+            statusCode: 403,
+            body: 'Forbidden: Origin not allowed',
+        };
+    }
 
     try {
         // Store connection with TTL of 24 hours
