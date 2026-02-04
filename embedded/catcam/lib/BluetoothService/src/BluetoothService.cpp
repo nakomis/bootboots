@@ -278,6 +278,24 @@ void BootBootsBluetoothService::processCommand(const String& command) {
     } else if (cmd == "list_images") {
         SDLogger::getInstance().infof("Image list request via command");
         sendImageList();
+    } else if (cmd == "list_logs") {
+        SDLogger::getInstance().infof("Log list request via command");
+        sendLogList();
+    } else if (cmd == "get_log_file") {
+        String filename = doc["filename"] | "";
+        int entries = doc["entries"] | -1;  // -1 means all entries
+        if (filename.length() > 0) {
+            SDLogger::getInstance().infof("Log file request via command: %s (entries: %d)", filename.c_str(), entries);
+            sendLogFile(filename, entries);
+        } else {
+            SDLogger::getInstance().warnf("get_log_file command missing filename");
+            DynamicJsonDocument errorDoc(128);
+            errorDoc["type"] = "error";
+            errorDoc["message"] = "Missing filename parameter";
+            String errorJson;
+            serializeJson(errorDoc, errorJson);
+            sendResponse(errorJson);
+        }
     } else if (cmd == "get_image") {
         String filename = doc["filename"] | "";
         if (filename.length() > 0) {
@@ -548,4 +566,110 @@ void BootBootsBluetoothService::sendImageMetadata(const String& filename) {
     sendResponse(resultJson);
 
     SDLogger::getInstance().infof("Metadata transfer complete for: %s", filename.c_str());
+}
+
+void BootBootsBluetoothService::sendLogList() {
+    std::vector<String> logFiles = SDLogger::getInstance().listLogFiles();
+    size_t totalLogs = logFiles.size();
+
+    SDLogger::getInstance().infof("Sending log list: %d files", totalLogs);
+
+    // If no files found, send debug info about what we tried
+    if (totalLogs == 0) {
+        // Check if /logs directory exists and list what's there
+        File dir = SD_MMC.open("/logs");
+        String debugInfo = "No .log files found. ";
+        if (!dir) {
+            debugInfo += "Could not open /logs directory.";
+        } else if (!dir.isDirectory()) {
+            debugInfo += "/logs is not a directory.";
+            dir.close();
+        } else {
+            debugInfo += "Files in /logs: ";
+            File entry;
+            int count = 0;
+            while ((entry = dir.openNextFile()) && count < 10) {
+                debugInfo += entry.name();
+                debugInfo += " ";
+                count++;
+                entry.close();
+            }
+            if (count == 0) {
+                debugInfo += "(empty)";
+            }
+            dir.close();
+        }
+        SDLogger::getInstance().warnf("%s", debugInfo.c_str());
+
+        // Send debug info as a message the frontend can display
+        DynamicJsonDocument debugDoc(512);
+        debugDoc["type"] = "log_list_debug";
+        debugDoc["message"] = debugInfo;
+        String debugJson;
+        serializeJson(debugDoc, debugJson);
+        sendResponse(debugJson);
+    }
+
+    // Send each log filename as a separate chunk
+    for (size_t i = 0; i < totalLogs; i++) {
+        DynamicJsonDocument chunkDoc(256);
+        chunkDoc["type"] = "log_list_chunk";
+        chunkDoc["chunk"] = i;
+        chunkDoc["total"] = totalLogs;
+        chunkDoc["filename"] = logFiles[i];
+
+        String chunkJson;
+        serializeJson(chunkDoc, chunkJson);
+        sendResponse(chunkJson);
+
+        delay(30);  // Small delay between chunks
+    }
+
+    // Send completion message
+    DynamicJsonDocument completeDoc(128);
+    completeDoc["type"] = "log_list_complete";
+    completeDoc["count"] = totalLogs;
+
+    String completeJson;
+    serializeJson(completeDoc, completeJson);
+    sendResponse(completeJson);
+
+    SDLogger::getInstance().infof("Log list transfer complete: %d files", totalLogs);
+}
+
+void BootBootsBluetoothService::sendLogFile(const String& filename, int maxEntries) {
+    SDLogger::getInstance().infof("Sending log file: %s (max entries: %d)", filename.c_str(), maxEntries);
+
+    int lineCount = 0;
+
+    // Process each log entry and send as a chunk
+    SDLogger::getInstance().processLogFile(filename, maxEntries, [this, &lineCount](const String& logLine) {
+        lineCount++;
+
+        // Create a chunk message for this log line
+        DynamicJsonDocument chunkDoc(512);
+        chunkDoc["type"] = "log_file_chunk";
+        chunkDoc["chunk"] = lineCount;
+        chunkDoc["data"] = logLine;
+
+        String chunkJson;
+        serializeJson(chunkDoc, chunkJson);
+
+        sendResponse(chunkJson);
+
+        // Small delay between chunks to avoid overwhelming BLE
+        delay(50);
+    });
+
+    // Send completion message
+    DynamicJsonDocument completeDoc(256);
+    completeDoc["type"] = "log_file_complete";
+    completeDoc["filename"] = filename;
+    completeDoc["total_chunks"] = lineCount;
+
+    String completeJson;
+    serializeJson(completeDoc, completeJson);
+    sendResponse(completeJson);
+
+    SDLogger::getInstance().infof("Log file transfer complete: %s (%d lines sent)", filename.c_str(), lineCount);
 }

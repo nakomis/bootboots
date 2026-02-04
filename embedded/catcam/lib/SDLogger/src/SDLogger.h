@@ -8,6 +8,7 @@
 #include <freertos/semphr.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
+#include <vector>
 
 enum LogLevel {
     LOG_TRACE = 0,
@@ -73,6 +74,10 @@ public:
     // Log retrieval
     String getRecentLogEntries(int maxLines = 50);
     void processRecentLogEntries(int maxLines, std::function<void(const String&)> processor);
+
+    // Previous log files
+    std::vector<String> listLogFiles();
+    void processLogFile(const String& filename, int maxLines, std::function<void(const String&)> processor);
 
     // Configuration
     void setLogLevel(LogLevel minLevel) { _minLogLevel = minLevel; }

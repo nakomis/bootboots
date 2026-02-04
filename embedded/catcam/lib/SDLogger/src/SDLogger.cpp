@@ -2,6 +2,7 @@
 #include <time.h>
 #include <sys/time.h>
 #include <functional>
+#include <algorithm>
 #include <SD_MMC.h>
 #include <FS.h>
 #include <Preferences.h>
@@ -104,6 +105,9 @@ bool SDLogger::init(const char* logDir) {
     infof("Log directory: %s", _logDir.c_str());
     infof("Current log file: %s", _currentLogFile.c_str());
     infof("Queue size: %d entries", QUEUE_SIZE);
+
+    // Clean up old log files on boot
+    cleanupOldLogs();
 
     return true;
 }
@@ -335,28 +339,25 @@ bool SDLogger::createLogDirectory() {
 }
 
 void SDLogger::cleanupOldLogs() {
-    // Simple cleanup - remove oldest files if we exceed max count
-    // This is a basic implementation; could be enhanced with proper sorting
-    File root = SD_MMC.open(_logDir);
-    if (!root || !root.isDirectory()) {
-        return;
+    // Get sorted list of log files (oldest first due to naming convention)
+    std::vector<String> logFiles = listLogFiles();
+
+    if ((int)logFiles.size() <= _maxFiles) {
+        return;  // Nothing to clean up
     }
 
-    int fileCount = 0;
-    File file = root.openNextFile();
-    while (file) {
-        if (!file.isDirectory() && String(file.name()).endsWith(".log")) {
-            fileCount++;
+    int filesToDelete = logFiles.size() - _maxFiles;
+    infof("Cleaning up old logs: %d files to delete (have %d, max %d)",
+          filesToDelete, logFiles.size(), _maxFiles);
+
+    // Delete oldest files (they're at the start of the sorted list)
+    for (int i = 0; i < filesToDelete; i++) {
+        String filepath = _logDir + "/" + logFiles[i];
+        if (SD_MMC.remove(filepath.c_str())) {
+            infof("Deleted old log: %s", logFiles[i].c_str());
+        } else {
+            warnf("Failed to delete log: %s", logFiles[i].c_str());
         }
-        file.close();
-        file = root.openNextFile();
-    }
-    root.close();
-
-    // If we have too many files, this is where we'd implement cleanup
-    // For now, just log the count
-    if (fileCount > _maxFiles) {
-        warnf("Log directory has %d files (max: %d) - cleanup needed", fileCount, _maxFiles);
     }
 }
 
@@ -638,4 +639,85 @@ uint32_t SDLogger::getQueueDepth() const {
         return 0;
     }
     return uxQueueMessagesWaiting(_logQueue);
+}
+
+std::vector<String> SDLogger::listLogFiles() {
+    std::vector<String> logFiles;
+
+    // Open /logs directory directly (same pattern as listImages uses for /images)
+    File dir = SD_MMC.open("/logs");
+    if (!dir || !dir.isDirectory()) {
+        return logFiles;
+    }
+
+    File entry;
+    while ((entry = dir.openNextFile())) {
+        String name = entry.name();
+        if (name.endsWith(".log")) {
+            logFiles.push_back(name);
+        }
+        entry.close();
+    }
+    dir.close();
+
+    // Sort alphabetically (which also sorts by boot number and date due to naming convention)
+    std::sort(logFiles.begin(), logFiles.end());
+
+    return logFiles;
+}
+
+void SDLogger::processLogFile(const String& filename, int maxLines, std::function<void(const String&)> processor) {
+    if (!_initialized) {
+        processor("error - Logger not initialized");
+        return;
+    }
+
+    String fullPath = _logDir + "/" + filename;
+
+    safeFileOperation([this, &fullPath, maxLines, &processor]() {
+        File file = SD_MMC.open(fullPath.c_str(), FILE_READ);
+        if (!file) {
+            processor("error - Failed to open log file");
+            return false;
+        }
+
+        if (maxLines == -1) {
+            // Process all lines from start to end
+            while (file.available()) {
+                String line = file.readStringUntil('\n');
+                if (line.length() > 0) {
+                    line.replace("\\", "\\\\");
+                    line.replace("\"", "\\\"");
+                    processor(line);
+                }
+            }
+            file.close();
+            return true;
+        }
+
+        // For limited lines, count total first then skip to the last N
+        int totalLines = 0;
+        while (file.available()) {
+            file.readStringUntil('\n');
+            totalLines++;
+        }
+
+        int linesToSkip = (totalLines > maxLines) ? (totalLines - maxLines) : 0;
+
+        file.seek(0);
+        int currentLine = 0;
+
+        while (file.available()) {
+            String line = file.readStringUntil('\n');
+            if (currentLine >= linesToSkip && line.length() > 0) {
+                line.replace("\\", "\\\\");
+                line.replace("\"", "\\\"");
+                processor(line);
+            }
+            currentLine++;
+        }
+
+        file.close();
+        return true;
+    });
 }

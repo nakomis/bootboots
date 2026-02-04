@@ -8,6 +8,8 @@ const char* CommandDispatcher::CHUNKED_COMMANDS[] = {
     "get_logs",
     "request_logs",
     "list_images",
+    "list_logs",
+    "get_log_file",
     nullptr  // Sentinel
 };
 

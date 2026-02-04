@@ -104,6 +104,10 @@ private:
     void sendImageList();
     void sendImage(const String& filename);
     void sendImageMetadata(const String& filename);
+
+    // Log file transfer methods
+    void sendLogList();
+    void sendLogFile(const String& filename, int maxEntries);
 };
 
 #endif
