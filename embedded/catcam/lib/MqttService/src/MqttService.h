@@ -90,6 +90,8 @@ public:
      */
     void pause();
 
+    void resume();
+
 private:
     WiFiClientSecure* _wifiClient;
     PubSubClient* _client;
@@ -102,6 +104,11 @@ private:
     String _commandTopic;
     String _responseTopic;
     String _statusTopic;
+
+    // Stored for resume after pause
+    const char* _caCert;
+    const char* _clientCert;
+    const char* _privateKey;
 
     bool _initialized;
     bool _connected;

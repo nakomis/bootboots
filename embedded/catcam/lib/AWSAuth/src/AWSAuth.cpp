@@ -76,6 +76,7 @@ bool AWSAuth::getCredentialsWithRoleAlias(const char* roleAlias) {
         if (error) {
             SDLogger::getInstance().errorf("AWSAuth: Failed to parse credentials JSON: %s", error.c_str());
             http.end();
+            if (_mqttService) _mqttService->resume();
             return false;
         }
 
@@ -87,6 +88,7 @@ bool AWSAuth::getCredentialsWithRoleAlias(const char* roleAlias) {
             SDLogger::getInstance().errorf("AWSAuth: No credentials object in response");
             SDLogger::getInstance().errorf("AWSAuth: Response: %s", response.c_str());
             http.end();
+            if (_mqttService) _mqttService->resume();
             return false;
         }
 
@@ -107,6 +109,7 @@ bool AWSAuth::getCredentialsWithRoleAlias(const char* roleAlias) {
         SDLogger::getInstance().infof("AWSAuth: Access Key: %s...", credentials.accessKeyId.substring(0, 8).c_str());
 
         http.end();
+        if (_mqttService) _mqttService->resume();
         return true;
     }
 
@@ -115,6 +118,7 @@ bool AWSAuth::getCredentialsWithRoleAlias(const char* roleAlias) {
     SDLogger::getInstance().errorf("AWSAuth: Response: %s", response.c_str());
 
     http.end();
+    if (_mqttService) _mqttService->resume();
     return false;
 }
 

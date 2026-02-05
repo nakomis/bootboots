@@ -22,6 +22,7 @@
 #include "DeterrentController.h"
 #include "CommandDispatcher.h"
 #include "MqttService.h"
+#include "MqttOTA.h"
 #include "secrets.h"
 
 SystemManager::SystemManager()
@@ -39,12 +40,14 @@ SystemManager::SystemManager()
     , _deterrentController(nullptr)
     , _commandDispatcher(nullptr)
     , _mqttService(nullptr)
+    , _mqttOTA(nullptr)
     , _lastPcfBlink(0)
     , _pcfLedState(false)
 {
 }
 
 SystemManager::~SystemManager() {
+    delete _mqttOTA;
     delete _mqttService;
     delete _commandDispatcher;
     delete _deterrentController;
@@ -242,6 +245,14 @@ bool SystemManager::initComponents(const Config& config, SystemState& state,
     } else {
         SDLogger::getInstance().warnf("MQTT Service not initialized - WiFi not connected");
     }
+
+    // Initialize MQTT OTA handler (registers ota_update/ota_cancel commands with dispatcher)
+    _mqttOTA = new MqttOTA();
+    _mqttOTA->setOTAUpdate(_otaUpdate);
+    _mqttOTA->setMqttService(_mqttService);
+    _mqttOTA->setBluetoothOTA(_bluetoothOTA);
+    _mqttOTA->registerCommands(_commandDispatcher);
+    SDLogger::getInstance().infof("MQTT OTA handler initialized");
 
     // Initialize Motion Detector (requires PCF8574Manager)
     if (_pcfManager && state.pcf8574Ready) {

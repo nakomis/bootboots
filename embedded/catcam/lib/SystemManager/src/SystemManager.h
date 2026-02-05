@@ -20,6 +20,7 @@ class MotionDetector;
 class DeterrentController;
 class CommandDispatcher;
 class MqttService;
+class MqttOTA;
 struct SystemState;
 
 /**
@@ -109,6 +110,7 @@ public:
     DeterrentController* getDeterrentController() { return _deterrentController; }
     CommandDispatcher* getCommandDispatcher() { return _commandDispatcher; }
     MqttService* getMqttService() { return _mqttService; }
+    MqttOTA* getMqttOTA() { return _mqttOTA; }
 
 private:
     // Owned components (created and destroyed by SystemManager)
@@ -126,6 +128,7 @@ private:
     DeterrentController* _deterrentController;
     CommandDispatcher* _commandDispatcher;
     MqttService* _mqttService;
+    MqttOTA* _mqttOTA;
 
     // PCF8574 LED blinking state
     unsigned long _lastPcfBlink;

@@ -40,6 +40,9 @@ MqttService::MqttService()
     , _connected(false)
     , _lastReconnectAttempt(0)
     , _lastStatusPublish(0)
+    , _caCert(nullptr)
+    , _clientCert(nullptr)
+    , _privateKey(nullptr)
 {
     _instance = this;
 }
@@ -68,6 +71,9 @@ bool MqttService::init(const char* endpoint, const char* caCert, const char* cli
 
     _endpoint = endpoint;
     _thingName = thingName;
+    _caCert = caCert;
+    _clientCert = clientCert;
+    _privateKey = privateKey;
     setupTopics();
 
     // Create secure WiFi client
@@ -80,7 +86,7 @@ bool MqttService::init(const char* endpoint, const char* caCert, const char* cli
     _client = new PubSubClient(*_wifiClient);
     _client->setServer(endpoint, MQTT_PORT);
     _client->setCallback(messageCallback);
-    _client->setBufferSize(1024);  // Increase buffer for larger messages
+    _client->setBufferSize(2048);  // Large buffer for OTA URLs (S3 signed URLs can be ~700 bytes)
 
     // Create response sender
     _responseSender = new MqttResponseSender(_client, _responseTopic);
@@ -222,6 +228,39 @@ void MqttService::pause() {
     _initialized = false;  // Will need to reinit on resume
 
     SDLogger::getInstance().infof("MQTT: Paused, free heap: %d bytes", ESP.getFreeHeap());
+}
+
+void MqttService::resume() {
+    if (_initialized) {
+        return;  // Already running
+    }
+
+    if (!_caCert || !_clientCert || !_privateKey) {
+        SDLogger::getInstance().errorf("MQTT: Cannot resume - no stored certificates");
+        return;
+    }
+
+    SDLogger::getInstance().infof("MQTT: Resuming service, free heap: %d bytes", ESP.getFreeHeap());
+
+    // Recreate secure WiFi client with stored certificates
+    _wifiClient = new WiFiClientSecure();
+    _wifiClient->setCACert(_caCert);
+    _wifiClient->setCertificate(_clientCert);
+    _wifiClient->setPrivateKey(_privateKey);
+
+    // Recreate MQTT client
+    _client = new PubSubClient(*_wifiClient);
+    _client->setServer(_endpoint.c_str(), MQTT_PORT);
+    _client->setCallback(messageCallback);
+    _client->setBufferSize(2048);
+
+    // Recreate response sender
+    _responseSender = new MqttResponseSender(_client, _responseTopic);
+
+    _initialized = true;
+    _lastReconnectAttempt = 0;  // Allow immediate reconnect
+
+    SDLogger::getInstance().infof("MQTT: Resumed, will reconnect on next handle()");
 }
 
 void MqttService::publishStatus() {

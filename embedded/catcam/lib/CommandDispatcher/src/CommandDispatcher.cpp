@@ -1,6 +1,7 @@
 #include "CommandDispatcher.h"
 #include "SystemState.h"
 #include "SDLogger.h"
+#include "../../../include/version.h"
 
 // Commands that require chunking - only work via BLE
 const char* CommandDispatcher::CHUNKED_COMMANDS[] = {
@@ -27,6 +28,7 @@ CommandDispatcher::CommandDispatcher()
     registerHandler("set_setting", [this](CommandContext& ctx) { return handleSetSetting(ctx); });
     registerHandler("take_photo", [this](CommandContext& ctx) { return handleTakePhoto(ctx); });
     registerHandler("reboot", [this](CommandContext& ctx) { return handleReboot(ctx); });
+    registerHandler("get_version", [this](CommandContext& ctx) { return handleGetVersion(ctx); });
 }
 
 void CommandDispatcher::registerHandler(const String& command, CommandHandler handler) {
@@ -48,7 +50,7 @@ bool CommandDispatcher::processCommand(const String& jsonCommand, IResponseSende
         return false;
     }
 
-    DynamicJsonDocument doc(512);
+    DynamicJsonDocument doc(2048);
     DeserializationError error = deserializeJson(doc, jsonCommand);
 
     if (error) {
@@ -335,5 +337,19 @@ bool CommandDispatcher::handleReboot(CommandContext& ctx) {
         ESP.restart();
     }
 
+    return true;
+}
+
+bool CommandDispatcher::handleGetVersion(CommandContext& ctx) {
+    DynamicJsonDocument response(256);
+    response["type"] = "version";
+    response["version"] = FIRMWARE_VERSION;
+    response["project"] = PROJECT_NAME;
+
+    String responseStr;
+    serializeJson(response, responseStr);
+    ctx.sender->sendResponse(responseStr);
+
+    SDLogger::getInstance().infof("Version request via %s: %s", ctx.sender->getName(), FIRMWARE_VERSION);
     return true;
 }

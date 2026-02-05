@@ -121,6 +121,7 @@ private:
     bool handleSetSetting(CommandContext& ctx);
     bool handleTakePhoto(CommandContext& ctx);
     bool handleReboot(CommandContext& ctx);
+    bool handleGetVersion(CommandContext& ctx);
 
     // Helper to send error response
     void sendError(IResponseSender* sender, const String& message);
