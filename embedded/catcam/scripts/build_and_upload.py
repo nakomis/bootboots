@@ -157,6 +157,142 @@ class FirmwareBuilder:
             print(f"❌ Upload error: {e}")
             return False
 
+def find_git_root(project_root):
+    """Find the git repository root from the project directory."""
+    result = subprocess.run(
+        ["git", "-C", str(project_root), "rev-parse", "--show-toplevel"],
+        capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        return None
+    return Path(result.stdout.strip())
+
+
+def check_uncommitted_changes(project_root):
+    """Check for uncommitted changes in embedded/catcam/ and prompt if found.
+    Returns True if the tree was clean, False if there were uncommitted changes."""
+    git_root = find_git_root(project_root)
+    if not git_root:
+        print("⚠️  Not a git repository, skipping uncommitted changes check")
+        return True
+
+    # Get the path relative to git root
+    try:
+        relative_path = project_root.resolve().relative_to(git_root.resolve())
+    except ValueError:
+        relative_path = Path("embedded/catcam")
+
+    # Check for uncommitted changes (staged + unstaged + untracked)
+    result = subprocess.run(
+        ["git", "-C", str(git_root), "status", "--porcelain", str(relative_path)],
+        capture_output=True, text=True
+    )
+
+    changes = result.stdout.strip()
+    if not changes:
+        return True
+
+    print(f"⚠️  Uncommitted changes in {relative_path}/:")
+    for line in changes.splitlines():
+        print(f"   {line}")
+    print()
+
+    try:
+        answer = input("Continue with uncommitted changes? [y/N] ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        sys.exit(1)
+
+    if answer != 'y':
+        print("Aborted.")
+        sys.exit(0)
+
+    return False
+
+
+def commit_version_bump(project_root, version):
+    """Commit version.h and push."""
+    git_root = find_git_root(project_root)
+    if not git_root:
+        return False
+
+    try:
+        relative_path = project_root.resolve().relative_to(git_root.resolve())
+    except ValueError:
+        relative_path = Path("embedded/catcam")
+
+    version_file = str(relative_path / "include" / "version.h")
+
+    result = subprocess.run(
+        ["git", "-C", str(git_root), "add", version_file],
+        capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        print(f"❌ Failed to stage {version_file}: {result.stderr}")
+        return False
+
+    result = subprocess.run(
+        ["git", "-C", str(git_root), "commit", "-m", f"Device version bumped to {version}"],
+        capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        print(f"❌ Failed to commit: {result.stderr}")
+        return False
+
+    result = subprocess.run(
+        ["git", "-C", str(git_root), "push"],
+        capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        print(f"❌ Failed to push: {result.stderr}")
+        return False
+
+    print(f"📝 Committed and pushed version bump to {version}")
+    return True
+
+
+def create_version_tag(project_root, version):
+    """Create a git tag for the version and push it."""
+    git_root = find_git_root(project_root)
+    if not git_root:
+        print("⚠️  Not a git repository, skipping tag creation")
+        return False
+
+    tag_name = f"device/{version}"
+
+    # Check if tag already exists
+    result = subprocess.run(
+        ["git", "-C", str(git_root), "tag", "-l", tag_name],
+        capture_output=True, text=True
+    )
+    if result.stdout.strip():
+        print(f"⚠️  Tag {tag_name} already exists, skipping tag creation")
+        return False
+
+    # Create tag
+    result = subprocess.run(
+        ["git", "-C", str(git_root), "tag", tag_name],
+        capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        print(f"❌ Failed to create tag {tag_name}: {result.stderr}")
+        return False
+
+    print(f"🏷️  Created tag: {tag_name}")
+
+    # Push tag
+    result = subprocess.run(
+        ["git", "-C", str(git_root), "push", "origin", tag_name],
+        capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        print(f"❌ Failed to push tag {tag_name}: {result.stderr}")
+        return False
+
+    print(f"🏷️  Pushed tag: {tag_name}")
+    return True
+
+
 def ensure_aws_profile():
     """Check if AWS_PROFILE is set, prompt user if not."""
     profile = os.environ.get('AWS_PROFILE')
@@ -224,6 +360,9 @@ Examples:
 
     builder = FirmwareBuilder(project_root)
 
+    # Check for uncommitted changes
+    tree_was_clean = check_uncommitted_changes(project_root)
+
     # Show current version
     current_version = builder.get_current_version()
     print(f"📦 Current version: {current_version}")
@@ -232,6 +371,10 @@ Examples:
     if not args.no_bump:
         version = builder.bump_version(args.version_type)
         print(f"📦 New version: {version}")
+
+        # If tree was clean, commit and push the version bump
+        if tree_was_clean:
+            commit_version_bump(project_root, version)
     else:
         version = current_version
         print(f"📦 Using current version: {version}")
@@ -258,6 +401,9 @@ Examples:
             print(f"   Project: {builder.project_name}")
             print(f"   Version: {version}")
             print()
+            # Create and push git tag
+            create_version_tag(project_root, version)
+
             print("📝 Note: Manifest will be updated automatically by Lambda")
             print("🎉 Ready for OTA deployment via web interface!")
         else:
