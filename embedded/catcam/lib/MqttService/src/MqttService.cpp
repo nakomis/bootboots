@@ -18,8 +18,12 @@ MqttResponseSender::MqttResponseSender(PubSubClient* client, const String& respo
 
 void MqttResponseSender::sendResponse(const String& response) {
     if (_client && _client->connected()) {
-        _client->publish(_responseTopic.c_str(), response.c_str());
-        SDLogger::getInstance().tracef("MQTT published to %s: %s",
+        SDLogger::getInstance().debugf("MQTT publishing to %s: %s",
+                                        _responseTopic.c_str(), response.c_str());
+        if (!_client->publish(_responseTopic.c_str(), response.c_str())) {
+            SDLogger::getInstance().debugf("MQTT publish failed");
+        }
+        SDLogger::getInstance().debugf("MQTT published to %s: %s",
                                         _responseTopic.c_str(), response.c_str());
     } else {
         SDLogger::getInstance().warnf("MQTT not connected, cannot send response");
@@ -100,9 +104,9 @@ bool MqttService::init(const char* endpoint, const char* caCert, const char* cli
 }
 
 void MqttService::setupTopics() {
-    _commandTopic = "catcam/" + _thingName + "/commands";
-    _responseTopic = "catcam/" + _thingName + "/responses";
-    _statusTopic = "catcam/" + _thingName + "/status";
+    _commandTopic = "bootboots/" + _thingName + "/commands";
+    _responseTopic = "bootboots/" + _thingName + "/responses";
+    _statusTopic = "bootboots/" + _thingName + "/status";
 }
 
 bool MqttService::connect() {

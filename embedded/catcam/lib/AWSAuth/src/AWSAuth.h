@@ -59,7 +59,7 @@ public:
     // Refresh credentials if needed
     bool refreshCredentialsIfNeeded(const char* roleAlias);
 
-    // Set MQTT service - will be paused before SSL requests to free memory
+    // Set MQTT service - will be paused/resumed around SSL requests to free memory
     void setMqttService(class MqttService* mqttService) { _mqttService = mqttService; }
 
     // Utility methods

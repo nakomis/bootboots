@@ -56,6 +56,7 @@ public:
     void applySettings(const CameraSettings& settings);
     NamedImage* getImage();
     void deInit();
+    bool isReady() const { return _initialized; }
     
     // PSRAM buffer management
     void copyImageToPSRAM(NamedImage* namedImage);
@@ -65,6 +66,7 @@ public:
     int getLedDelayMillis() const { return ledDelayMillis; }
 
 private:
+    bool _initialized = false;
     int failureCount = 0;
     int ledDelayMillis = 100;
     Preferences preferences;

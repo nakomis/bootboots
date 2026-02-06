@@ -143,6 +143,7 @@ bool SystemManager::initComponents(const Config& config, SystemState& state,
                                                         _imageStorage, _awsAuth);
             _captureController->setAWSConfig(config.awsRoleAlias, config.apiHost, config.apiPath);
             _captureController->init(state.cameraSettings);
+            state.cameraReady = _camera->isReady();
 
             // Set callbacks for background task handling during LED animations
             _captureController->setCallbacks(

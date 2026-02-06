@@ -106,9 +106,9 @@ bool CommandDispatcher::handlePing(CommandContext& ctx) {
 
     String responseStr;
     serializeJson(response, responseStr);
+    SDLogger::getInstance().infof("Ping received, sending pong to %s", ctx.sender->getName());
     ctx.sender->sendResponse(responseStr);
-
-    SDLogger::getInstance().infof("Ping received, sending pong");
+    SDLogger::getInstance().infof("Pong sent to %s", ctx.sender->getName());
     return true;
 }
 

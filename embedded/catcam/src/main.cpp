@@ -17,6 +17,7 @@
 #include "CommandDispatcher.h"
 #include "Camera.h"
 #include "version.h"
+#include "secrets.h"
 
 #ifndef OTA_PASSWORD
 #define OTA_PASSWORD "bootboots-ota-2025"
@@ -158,6 +159,7 @@ void setup() {
     systemState.initialized = true;
 
     SDLogger::getInstance().infof("=== BootBoots System Ready ===");
+    SDLogger::getInstance().info(BANNER);
 
     // Log system startup
     if (systemState.sdCardReady) {

@@ -2,14 +2,14 @@
 #define VERSION_H
 
 // Auto-generated version information
-#define FIRMWARE_VERSION "1.0.298"
+#define FIRMWARE_VERSION "1.0.312"
 #define BUILD_TIMESTAMP __DATE__ " " __TIME__
 #define PROJECT_NAME "BootBoots"
 
 // Version components for programmatic access
 #define VERSION_MAJOR 1
 #define VERSION_MINOR 0
-#define VERSION_PATCH 298
+#define VERSION_PATCH 312
 
 // Build a version string
 #define VERSION_STRING PROJECT_NAME " v" FIRMWARE_VERSION " (" BUILD_TIMESTAMP ")"

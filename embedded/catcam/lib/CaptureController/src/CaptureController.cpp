@@ -23,6 +23,9 @@ bool CaptureController::init(const CameraSettings& settings) {
     if (_camera) {
         _camera->init(settings);
         delay(500);  // Give camera time to stabilize
+        if (!_camera->isReady()) {
+            SDLogger::getInstance().errorf("Camera initialization failed - photo capture will be unavailable");
+        }
     } else {
         SDLogger::getInstance().errorf("Camera not provided");
         return false;
@@ -70,8 +73,8 @@ void CaptureController::runCountdown() {
 }
 
 String CaptureController::capturePhoto() {
-    if (!_camera) {
-        SDLogger::getInstance().errorf("Camera not initialized");
+    if (!_camera || !_camera->isReady()) {
+        SDLogger::getInstance().errorf("Camera not available - cannot capture photo");
         return "";
     }
 
@@ -308,8 +311,8 @@ DetectionResult CaptureController::parseInferenceResponse(const String& response
 }
 
 String CaptureController::captureTrainingPhoto() {
-    if (!_camera) {
-        SDLogger::getInstance().errorf("Camera not initialized");
+    if (!_camera || !_camera->isReady()) {
+        SDLogger::getInstance().errorf("Camera not available - cannot capture photo");
         return "";
     }
 
@@ -389,8 +392,8 @@ String CaptureController::captureTrainingPhoto() {
 DetectionResult CaptureController::captureAndDetect() {
     DetectionResult result;
 
-    if (!_camera) {
-        SDLogger::getInstance().errorf("Camera not initialized");
+    if (!_camera || !_camera->isReady()) {
+        SDLogger::getInstance().errorf("Camera not available - cannot capture photo");
         return result;
     }
 

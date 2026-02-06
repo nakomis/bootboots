@@ -16,7 +16,7 @@ class MqttResponseSender : public IResponseSender {
 public:
     MqttResponseSender(PubSubClient* client, const String& responseTopic);
 
-    void sendResponse(const String& response) override;
+    void sendResponse(const String& response);
     bool supportsChunking() const override { return false; }
     const char* getName() const override { return "MQTT"; }
 

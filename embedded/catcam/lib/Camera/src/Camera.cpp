@@ -48,12 +48,14 @@ void Camera::init(const CameraSettings& settings) {
     if (err != ESP_OK) {
         SDLogger::getInstance().errorf("Camera init failed with error 0x%x", err);
         failureCount++;
+        _initialized = false;
         return;
     }
 
     // Apply sensor settings (brightness, contrast, etc.)
     applySettings(settings);
 
+    _initialized = true;
     SDLogger::getInstance().infof("ESP32-CAM initialized successfully");
     failureCount = 0;
 }
