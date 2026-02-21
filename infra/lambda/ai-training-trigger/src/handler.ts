@@ -36,6 +36,9 @@ export async function handler(event: TrainingConfig = {}): Promise<TriggerTraini
     const dataPrepFunction = process.env.DATA_PREP_FUNCTION!;
     const numClasses = parseInt(process.env.NUM_CLASSES || '7');
     const region = process.env.AWS_REGION || 'eu-west-2';
+    const trainingScriptBucket = process.env.TRAINING_SCRIPT_BUCKET!;
+    const trainingScriptKey = process.env.TRAINING_SCRIPT_KEY!;
+    const trainingScriptUri = `s3://${trainingScriptBucket}/${trainingScriptKey}`;
 
     // Hyperparameters with defaults optimized for this use case
     const epochs = event.epochs || 50;
@@ -108,9 +111,6 @@ export async function handler(event: TrainingConfig = {}): Promise<TriggerTraini
 
                 // Data augmentation (critical for small dataset)
                 'augmentation': 'True',
-                'augmentation_random_flip': 'horizontal_and_vertical',
-                'augmentation_random_rotation': '0.3',
-                'augmentation_random_zoom': '0.2',
 
                 // Early stopping
                 'early_stopping': 'True',
@@ -119,12 +119,10 @@ export async function handler(event: TrainingConfig = {}): Promise<TriggerTraini
 
                 // Model settings
                 'num_classes': numClasses.toString(),
-                'image_resize_interpolation': 'bilinear',
-                'eval_metric': 'accuracy',
 
-                // JumpStart specific
-                'sagemaker_program': 'transfer_learning.py',
-                'sagemaker_submit_directory': `/opt/ml/input/data/code`,
+                // Training script location (CDK asset, zip of infra/training/)
+                'sagemaker_program': 'train.py',
+                'sagemaker_submit_directory': trainingScriptUri,
             },
             InputDataConfig: [
                 {

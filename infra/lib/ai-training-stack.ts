@@ -1,5 +1,7 @@
+import * as path from 'path';
 import * as cdk from 'aws-cdk-lib';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as s3assets from 'aws-cdk-lib/aws-s3-assets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
@@ -74,6 +76,14 @@ export class AiTrainingStack extends cdk.Stack {
         this.modelBucket.grantReadWrite(this.sagemakerRole);
         imagesBucket.grantRead(this.sagemakerRole);
 
+        // Package the training script as a CDK asset (zip) uploaded to the
+        // bootstrap bucket on every `cdk deploy`. The trigger Lambda passes
+        // the S3 URI to SageMaker as sagemaker_submit_directory.
+        const trainingScriptAsset = new s3assets.Asset(this, 'TrainingScriptAsset', {
+            path: path.join(__dirname, '../training'),
+        });
+        trainingScriptAsset.grantRead(this.sagemakerRole);
+
         // Log group for data prep Lambda
         const dataPrepLogGroup = new logs.LogGroup(this, 'DataPrepLogGroup', {
             logGroupName: '/aws/lambda/bootboots-data-prep',
@@ -137,16 +147,8 @@ export class AiTrainingStack extends cdk.Stack {
                 SAGEMAKER_ROLE_ARN: this.sagemakerRole.roleArn,
                 DATA_PREP_FUNCTION: dataPrepLambda.functionName,
                 NUM_CLASSES: CAT_CLASSES.length.toString(),
-                // JumpStart model settings
-                // Available models (trade-off between accuracy and speed):
-                //   Model           | Size  | Accuracy | Speed   | MODEL_ID
-                //   ================|=======|==========|=========|=============================================================
-                //   MobileNet v2    | 14MB  | Good     | Fast    | tensorflow-ic-imagenet-mobilenet-v2-100-224-classification-4
-                //   EfficientNet B0 | 29MB  | Better   | Medium  | tensorflow-ic-imagenet-efficientnet-b0-classification-4
-                //   ResNet50        | 98MB  | Better   | Slower  | tensorflow-ic-imagenet-resnet-50-classification-4
-                //   EfficientNet B4 | 75MB  | Best     | Slowest | tensorflow-ic-imagenet-efficientnet-b4-classification-4
-                MODEL_ID: 'tensorflow-ic-imagenet-mobilenet-v2-100-224-classification-4',
-                MODEL_VERSION: '*',
+                TRAINING_SCRIPT_BUCKET: trainingScriptAsset.s3BucketName,
+                TRAINING_SCRIPT_KEY: trainingScriptAsset.s3ObjectKey,
             },
             bundling: {
                 minify: true,
