@@ -1,0 +1,36 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<!-- Created with Fritzing (https://fritzing.org/) -->
+<svg xmlns="http://www.w3.org/2000/svg" baseProfile="tiny" height="0.16548in" version="1.2" viewBox="0 0 84.5949 11.9146" width="1.17493in" x="0in"  y="0in">
+    <desc >
+        <referenceFile >SSR.svg</referenceFile>
+    </desc>
+    <g partID="319432" >
+        <g gorn="0.1.0" id="copper1" >
+            <circle connectorname="1" cx="7.71477" cy="5.95728" fill="none" gorn="0.1.0.0" id="connector0pad" r="2.0778" stroke="#F7BD13" stroke-width="1.32095" />
+            <circle connectorname="2" cx="22.0014" cy="5.95728" fill="none" gorn="0.1.0.1" id="connector1pad" r="2.0778" stroke="#F7BD13" stroke-width="1.32095" />
+            <circle connectorname="3" cx="68.4329" cy="5.95728" fill="none" gorn="0.1.0.2" id="connector2pad" r="2.0778" stroke="#F7BD13" stroke-width="1.32095" />
+            <circle connectorname="4" cx="76.9368" cy="5.95728" fill="none" gorn="0.1.0.3" id="connector3pad" r="2.0778" stroke="#F7BD13" stroke-width="1.32095" />
+            <g gorn="0.1.0.4" id="copper0" >
+                <circle connectorname="1" cx="7.71477" cy="5.95728" fill="none" gorn="0.1.0.4.0" id="connector0pad" r="2.0778" stroke="#F7BD13" stroke-width="1.32095" />
+                <circle connectorname="2" cx="22.0014" cy="5.95728" fill="none" gorn="0.1.0.4.1" id="connector1pad" r="2.0778" stroke="#F7BD13" stroke-width="1.32095" />
+                <circle connectorname="3" cx="68.4329" cy="5.95728" fill="none" gorn="0.1.0.4.2" id="connector2pad" r="2.0778" stroke="#F7BD13" stroke-width="1.32095" />
+                <circle connectorname="4" cx="76.9368" cy="5.95728" fill="none" gorn="0.1.0.4.3" id="connector3pad" r="2.0778" stroke="#F7BD13" stroke-width="1.32095" />
+            </g>
+        </g>
+    </g>
+    <g partID="319431" >
+        <g gorn="0.2.0" id="silkscreen" >
+            <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="0.288" x2="84.3069"  y1="0.287999" y2="0.287999"/>
+            <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="84.3069" x2="84.3069"  y1="0.287999" y2="8.79192"/>
+            <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="84.3069" x2="84.3069"  y1="8.79192" y2="11.6266"/>
+            <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="84.3069" x2="0.288"  y1="11.6266" y2="11.6266"/>
+            <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="0.288" x2="0.288"  y1="11.6266" y2="8.79192"/>
+            <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="0.288" x2="0.288"  y1="8.79192" y2="0.287999"/>
+            <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="4.1715" x2="0.288"  y1="8.79192" y2="8.79192"/>
+            <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="11.2581" x2="18.4581"  y1="8.79192" y2="8.79192"/>
+            <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="25.5447" x2="64.8896"  y1="8.79192" y2="8.79192"/>
+            <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="71.9762" x2="73.3935"  y1="8.79192" y2="8.79192"/>
+            <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="84.3069" x2="80.4801"  y1="8.79192" y2="8.79192"/>
+        </g>
+    </g>
+</svg>
