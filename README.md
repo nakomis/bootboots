@@ -29,19 +29,19 @@ An IoT system using an ESP32-S3 CAM device with AI-powered cat recognition and a
 
 ## Overview
 
-We have four cats. Our neighbour also has a cat — Mr Boots — who has worked out that our cat flap is unlocked and that our cats' food bowl is, from his perspective, a free buffet. For a while the solution was shooing him out whenever we spotted him, but he's persistent, fast, and frankly quite smug about the whole thing. So I built this.
+I have four cats. My neighbour also has a cat — Mr Boots — who has worked out that my cat flap is unlocked and that my cats' food bowl is, from his perspective, a free buffet. For a while the solution was shooing him out whenever I spotted him, but he's persistent, fast, and frankly quite smug about the whole thing. So I built this.
 
 Meet the culprit. Boots is a sleek all-black cat with bright green eyes and an expression of complete innocence that frankly cannot be trusted.
 
 <div align="center"><img src="3d/bootboots.jpg" width="360" alt="Mr Boots"/><br/><em>Mr Boots — looking like he's never stolen a meal in his life</em></div>
 
-The system needs to tell Boots apart from our own cats, who are allowed in and must never be on the receiving end of a water mist. Introducing the household:
+The system needs to tell Boots apart from my own cats, who are allowed in and must never be on the receiving end of a water mist. Introducing the household:
 
-| <img src="docs/cats/chi.jpg" width="200" alt="Chi"/> | <img src="docs/cats/tau.jpg" width="200" alt="Tau"/> | <img src="docs/cats/kappa.jpg" width="200" alt="Kappa"/> |
+| <img src="docs/mu.jpeg" width="200" alt="Mu"/> | <img src="docs/cats/tau.jpg" width="200" alt="Tau"/> | <img src="docs/cats/chi.jpg" width="200" alt="Chi"/> |
 |:---:|:---:|:---:|
-| **Chi** — long-haired dark tabby; patriarch of the family and apparently very interested in electronics | **Tau** — black and white tuxedo; perches in high places and judges everyone | **Kappa** — Chi and Tau's son; inherited his dad's fur and his mum's attitude |
-| <img src="docs/mu.jpeg" width="200" alt="Mu"/> | <img src="docs/cats/wolf.jpg" width="200" alt="Wolf"/> | |
-| **Mu** — fluffy ginger/cream with a permanently regal expression | **Wolf** — not a real cat; a stuffed toy pressed into service as a test subject because he's much easier to pose than the others | |
+| **Mu** — Maine Coon; undisputed matriarch of the household and absolutely aware of it | **Tau** — black and white tuxedo; perches in high places and judges everyone | **Chi** — Maine Coon dark tabby; patriarch of the family and apparently very interested in electronics |
+| <img src="docs/cats/kappa.jpg" width="200" alt="Kappa"/> | <img src="docs/cats/wolf.jpg" width="200" alt="Wolf"/> | |
+| **Kappa** — Chi and Tau's son; inherited his dad's fur and his mum's attitude | **Wolf** — not a real cat; a stuffed toy pressed into service as a test subject because he's much easier to pose than the others | |
 
 The AI model is trained to recognise Boots versus NotBoots (everyone else, including no-cat frames), so the system only fires the water mist when it's confident the visitor is Boots. The whole pipeline — camera capture, cloud inference via a SageMaker model, and a deterrent sequence of LEDs and a short water mist — runs autonomously. Boots has so far remained unimpressed, but the data is promising.
 
