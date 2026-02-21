@@ -63,6 +63,30 @@ print(f"Training dir : {TRAINING_DIR}")
 print(f"Validation dir: {VALIDATION_DIR}")
 
 # ---------------------------------------------------------------------------
+# Pre-scan: remove corrupt images so the dataset loader doesn't crash
+# ---------------------------------------------------------------------------
+def remove_corrupt_images(directory: str) -> int:
+    """Walk directory tree, delete any image that TF can't decode."""
+    removed = 0
+    for root, _dirs, files in os.walk(directory):
+        for fname in files:
+            if not fname.lower().endswith((".jpg", ".jpeg", ".png")):
+                continue
+            fpath = os.path.join(root, fname)
+            try:
+                raw = tf.io.read_file(fpath)
+                tf.image.decode_jpeg(raw, channels=3)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[corrupt] Removing {fpath}: {exc}")
+                os.remove(fpath)
+                removed += 1
+    return removed
+
+n_removed_train = remove_corrupt_images(TRAINING_DIR)
+n_removed_val   = remove_corrupt_images(VALIDATION_DIR)
+print(f"Removed corrupt images: {n_removed_train} from training, {n_removed_val} from validation")
+
+# ---------------------------------------------------------------------------
 # Datasets
 # ---------------------------------------------------------------------------
 train_ds = tf.keras.utils.image_dataset_from_directory(

@@ -1,6 +1,7 @@
 import {
     S3Client,
     CopyObjectCommand,
+    GetObjectCommand,
     ListObjectsV2Command,
     DeleteObjectsCommand,
 } from '@aws-sdk/client-s3';
@@ -95,15 +96,17 @@ export async function handler(): Promise<PrepareDataResult> {
         // Copy training images
         for (const record of trainingRecords) {
             try {
-                await copyImage(
+                const copied = await copyImage(
                     sourceBucket,
                     sourcePrefix,
                     targetBucket,
                     `training/${cat}/`,
                     record.imageName
                 );
-                classDistribution[cat].training++;
-                totalTraining++;
+                if (copied) {
+                    classDistribution[cat].training++;
+                    totalTraining++;
+                }
             } catch (error) {
                 errors.push(`Failed to copy training image ${record.imageName}: ${error}`);
             }
@@ -112,15 +115,17 @@ export async function handler(): Promise<PrepareDataResult> {
         // Copy validation images
         for (const record of validationRecords) {
             try {
-                await copyImage(
+                const copied = await copyImage(
                     sourceBucket,
                     sourcePrefix,
                     targetBucket,
                     `validation/${cat}/`,
                     record.imageName
                 );
-                classDistribution[cat].validation++;
-                totalValidation++;
+                if (copied) {
+                    classDistribution[cat].validation++;
+                    totalValidation++;
+                }
             } catch (error) {
                 errors.push(`Failed to copy validation image ${record.imageName}: ${error}`);
             }
@@ -173,17 +178,47 @@ async function fetchLabeledRecords(): Promise<CatadataRecord[]> {
     return records;
 }
 
+/**
+ * Check if an S3 object is a valid JPEG by reading just its first 3 bytes
+ * (must start FF D8 FF) and last 2 bytes (must end FF D9).
+ * This avoids downloading the full image.
+ */
+async function isValidJpeg(bucket: string, key: string): Promise<boolean> {
+    try {
+        const [startRes, endRes] = await Promise.all([
+            s3.send(new GetObjectCommand({ Bucket: bucket, Key: key, Range: 'bytes=0-2' })),
+            s3.send(new GetObjectCommand({ Bucket: bucket, Key: key, Range: 'bytes=-2' })),
+        ]);
+        const start = Buffer.from(await startRes.Body!.transformToByteArray());
+        const end   = Buffer.from(await endRes.Body!.transformToByteArray());
+        return start[0] === 0xFF && start[1] === 0xD8 && start[2] === 0xFF
+            && end[0] === 0xFF && end[1] === 0xD9;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Copy an image from the source bucket to the training bucket.
+ * Returns false (and logs) if the image is a corrupt JPEG, so the caller
+ * can skip it rather than counting it in the class distribution.
+ */
 async function copyImage(
     sourceBucket: string,
     sourcePrefix: string,
     targetBucket: string,
     targetPrefix: string,
     imageName: string
-): Promise<void> {
+): Promise<boolean> {
     // Handle both full paths and just filenames
     const sourceKey = imageName.startsWith(sourcePrefix)
         ? imageName
         : `${sourcePrefix}${imageName}`;
+
+    if (!await isValidJpeg(sourceBucket, sourceKey)) {
+        console.warn(`Skipping corrupt image: ${sourceKey}`);
+        return false;
+    }
 
     const filename = imageName.split('/').pop()!;
     const targetKey = `${targetPrefix}${filename}`;
@@ -193,6 +228,7 @@ async function copyImage(
         Bucket: targetBucket,
         Key: targetKey,
     }));
+    return true;
 }
 
 async function clearExistingData(bucket: string, prefix: string): Promise<void> {
