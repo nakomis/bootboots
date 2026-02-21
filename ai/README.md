@@ -35,8 +35,6 @@ The system trains a transfer learning model (MobileNet v2 base) to classify imag
 
 ## Project Structure
 
-Infrastructure lives in the main `infra/` directory:
-
 ```
 infra/
 ├── bin/
@@ -45,16 +43,29 @@ infra/
 │   ├── ai-training-stack.ts     # Training & inference infrastructure
 │   └── ...
 ├── lambda/
-│   ├── ai-data-prep/            # Prepares training data
+│   ├── ai-data-prep/            # Prepares training data from catadata table
 │   │   └── src/handler.ts
-│   └── ai-training-trigger/     # Triggers SageMaker job
+│   └── ai-training-trigger/     # Triggers SageMaker training job
 │       └── src/handler.ts
+├── training/
+│   └── train.py                 # Custom MobileNet v2 training script
 └── ...
 
 ai/
 ├── README.md                    # This guide
 └── scripts/                     # Utility scripts (optional)
 ```
+
+### Training Script
+
+`infra/training/train.py` is a self-contained Python/Keras script that runs inside the SageMaker TensorFlow container. It:
+- Loads images from the `training/` and `validation/` S3 input channels
+- Fine-tunes MobileNet v2 (ImageNet weights) with a custom classification head
+- Applies data augmentation, dropout, L2 regularisation, and early stopping
+- Saves a versioned SavedModel to `/opt/ml/model/1/` (TF Serving format)
+- Writes `class_names.json` alongside the model for inference mapping
+
+**CDK packages `infra/training/` as a zip asset and uploads it to S3 automatically on every `cdk deploy`.** The trigger Lambda passes the S3 URI to SageMaker as `sagemaker_submit_directory`. No manual script management needed.
 
 ## Quick Start
 
@@ -129,28 +140,25 @@ AWS_PROFILE=nakom.is-sandbox npx cdk deploy BootBootsAiTrainingStack \
 
 ### Hyperparameters
 
-The training uses optimized settings for this dataset:
+Defaults are baked into the trigger Lambda; override by passing a payload (see Custom Training Parameters below).
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `epochs` | 50 | Training iterations |
-| `learningRate` | 0.0001 | Lower rate for fine-tuning |
+| Lambda parameter | Default | Description |
+|-----------------|---------|-------------|
+| `epochs` | 50 | Max training epochs (early stopping usually triggers sooner) |
+| `learningRate` | 0.0001 | Adam optimiser learning rate |
 | `batchSize` | 16 | Images per batch |
-| `trainOnlyTopLayer` | false | Fine-tune entire network |
-| `dropoutRate` | 0.3 | Regularization |
+| `trainOnlyTopLayer` | false | `false` = fine-tune whole network, `true` = classifier head only |
 
-### Data Augmentation
+Fixed in `train.py` (edit the script to change):
 
-Enabled by default to handle small dataset:
-- Random horizontal/vertical flip
-- Random rotation (±30%)
-- Random zoom (±20%)
-
-### Early Stopping
-
-Training stops automatically when validation accuracy plateaus:
-- Patience: 10 epochs
-- Min delta: 0.001
+| Setting | Value | Description |
+|---------|-------|-------------|
+| Dropout | 0.3 | Applied before final Dense layer |
+| L2 regularisation | 0.0001 | Applied to Dense layer weights |
+| Augmentation | on | Random flip, rotation ±30%, zoom ±20% |
+| Early stopping patience | 10 epochs | Monitors `val_accuracy`, restores best weights |
+| Early stopping min delta | 0.001 | Minimum improvement to reset patience counter |
+| Image size | 224×224 | MobileNet v2 native input size |
 
 ## Addressing Class Imbalance
 
@@ -187,22 +195,25 @@ The endpoint is configured for pay-per-request:
 
 ## Custom Training Parameters
 
-Invoke the training Lambda with custom config:
+Pass a JSON payload to override defaults (use `--invocation-type Event` for async):
 
 ```bash
 AWS_PROFILE=nakom.is-sandbox aws lambda invoke \
   --function-name bootboots-trigger-training \
   --region eu-west-2 \
-  --payload '{"epochs": 100, "learningRate": 0.00005, "skipDataPrep": false}' \
+  --invocation-type Event \
+  --payload '{"epochs": 100, "learningRate": 0.00005, "batchSize": 32}' \
+  --cli-binary-format raw-in-base64-out \
   response.json
 ```
 
-Options:
-- `skipDataPrep`: Skip data reorganization (use existing)
-- `epochs`: Number of training epochs
-- `learningRate`: Learning rate
-- `batchSize`: Batch size
-- `trainOnlyTopLayer`: Only train classifier layer
+| Option | Type | Description |
+|--------|------|-------------|
+| `skipDataPrep` | bool | Skip S3 data reorganisation (reuse existing training/validation split) |
+| `epochs` | int | Max training epochs |
+| `learningRate` | float | Adam learning rate |
+| `batchSize` | int | Images per batch |
+| `trainOnlyTopLayer` | bool | Only train the classifier head (faster, less accurate) |
 
 ## Troubleshooting
 
@@ -243,8 +254,8 @@ Options:
 ## Next Steps
 
 1. ~~Deploy the training stack~~ ✓ Done
-2. ~~Run training with current data~~ ✓ First training run completed Feb 2026
-3. Evaluate results - check validation accuracy, especially for Mu and Wolf
-4. Iterate on hyperparameters if needed
-5. Deploy model to serverless endpoint
+2. ~~Write custom training script~~ ✓ Done (`infra/training/train.py`, Feb 2026)
+3. Evaluate first training run - check validation accuracy, especially for Mu and Wolf
+4. Iterate on hyperparameters or collect more Mu/Wolf images if needed
+5. Deploy model to serverless endpoint (see step 4 of Quick Start)
 6. Label more images for Mu and Wolf, retrain to improve accuracy on those classes
