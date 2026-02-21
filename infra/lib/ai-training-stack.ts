@@ -76,11 +76,21 @@ export class AiTrainingStack extends cdk.Stack {
         this.modelBucket.grantReadWrite(this.sagemakerRole);
         imagesBucket.grantRead(this.sagemakerRole);
 
-        // Package the training script as a CDK asset (zip) uploaded to the
-        // bootstrap bucket on every `cdk deploy`. The trigger Lambda passes
-        // the S3 URI to SageMaker as sagemaker_submit_directory.
+        // Package the training script as a tar.gz CDK asset uploaded to the
+        // bootstrap bucket on every `cdk deploy`. Docker bundling is used so
+        // that SageMaker's TF container receives a proper tar.gz (it does not
+        // handle plain zip files). CDK re-bundles automatically when the
+        // content hash of infra/training/ changes.
         const trainingScriptAsset = new s3assets.Asset(this, 'TrainingScriptAsset', {
             path: path.join(__dirname, '../training'),
+            bundling: {
+                image: cdk.DockerImage.fromRegistry('public.ecr.aws/docker/library/alpine:3.18'),
+                command: [
+                    'sh', '-c',
+                    'tar -czf /asset-output/sourcedir.tar.gz -C /asset-input .',
+                ],
+                outputType: cdk.BundlingOutput.ARCHIVED,
+            },
         });
         trainingScriptAsset.grantRead(this.sagemakerRole);
 
