@@ -10,9 +10,9 @@ import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import { Construct } from 'constructs';
 
 /**
- * Cat classes for the model - order matters as it maps to probability array indices
+ * Binary classification: Boots (neighbour's cat to deter) vs NotBoots (everyone else)
  */
-export const CAT_CLASSES = ['Boots', 'Chi', 'Kappa', 'Mu', 'NoCat', 'Tau', 'Wolf'] as const;
+export const CAT_CLASSES = ['Boots', 'NotBoots'] as const;
 
 export interface AiTrainingStackProps extends cdk.StackProps {
     /**
@@ -117,7 +117,7 @@ export class AiTrainingStack extends cdk.Stack {
                 CATADATA_TABLE: 'catadata',
                 CAT_CLASSES: CAT_CLASSES.join(','),
                 VALIDATION_SPLIT: '0.2', // 20% for validation
-                MAX_NOCAT_SAMPLES: '200', // Undersample NoCat class
+                MAX_NOTBOOTS_SAMPLES: '600', // Cap NotBoots at ~3× Boots count to limit imbalance
             },
             bundling: {
                 minify: true,

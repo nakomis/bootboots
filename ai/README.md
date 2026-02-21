@@ -4,9 +4,11 @@ This guide covers training a cat recognition model using SageMaker and deploying
 
 ## Overview
 
-The system trains a transfer learning model (MobileNet v2 base) to classify images into 7 classes:
-- **Boots**, **Chi**, **Kappa**, **Mu**, **Tau**, **Wolf** (the cats)
-- **NoCat** (no cat detected)
+The system trains a transfer learning model (MobileNet v2 base) as a **binary classifier**:
+- **Boots** — neighbour's cat to deter (trigger water spray)
+- **NotBoots** — everyone else: household cats (Chi, Kappa, Mu, Tau, Wolf) and no-cat frames
+
+> **Previous multi-class model** (7 classes) is preserved at git tag `multi-cat-recognition`.
 
 ### Architecture
 
@@ -162,25 +164,24 @@ Fixed in `train.py` (edit the script to change):
 
 ## Addressing Class Imbalance
 
-Current data distribution (as of Feb 2026, including old images migrated from `bootbootstraining`):
-- NoCat: 2067 images (overrepresented → undersampled to 200)
-- Tau: 255, Kappa: 235, Chi: 196, Boots: 190
-- Mu: 62, Wolf: 59 (still underrepresented)
+Binary class distribution (as of Feb 2026):
+- **Boots**: ~190 images
+- **NotBoots**: ~2874 images (Chi 196, Tau 255, Kappa 235, Mu 62, Wolf 59, NoCat 2067) → capped at 600
 
-**Source buckets:**
+The data prep Lambda caps NotBoots at `MAX_NOTBOOTS_SAMPLES` (default 600, ~3× Boots) by randomly sampling from the full NotBoots pool, ensuring variety across all cat types and NoCat frames.
+
+**Source images:**
 - New images (catcam): `bootboots-images-{account}-{region}/catcam-training/` (timestamp-named `.jpg` files)
-- Old images (pre-2026): also copied into `catcam-training/` prefix as numeric-named `.jpeg` files (migrated from `bootbootstraining` bucket in Feb 2026)
-
-The data prep Lambda reads `imageName` from the `catadata` DynamoDB table and looks for all images under the `catcam-training/` prefix of the images bucket - both old and new formats are handled.
+- Old images (pre-2026): numeric-named `.jpeg` files in the same prefix (migrated from `bootbootstraining` bucket in Feb 2026; were truncated JPEGs, patched with FF D9 EOI marker by the data prep Lambda on copy)
 
 **Implemented strategies:**
-1. **Undersampling** - NoCat limited to 200 images
-2. **Data augmentation** - Synthetic variations
-3. **Stratified split** - Proportional validation set
+1. **Undersampling NotBoots** — capped at `MAX_NOTBOOTS_SAMPLES` (default 600)
+2. **Data augmentation** — synthetic variations
+3. **Stratified split** — proportional validation set
 
-**Recommendations:**
-- Collect more images for Mu and Wolf (priority)
-- Consider adding class weights (modify training trigger Lambda)
+**To improve Boots detection:**
+- Collect more Boots images from the catcam (he visits regularly)
+- More diverse angles/lighting in Boots training data
 
 ## Serverless Inference
 

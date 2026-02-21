@@ -35,41 +35,37 @@ export async function handler(): Promise<PrepareDataResult> {
     const sourceBucket = process.env.SOURCE_BUCKET!;
     const sourcePrefix = process.env.SOURCE_PREFIX!;
     const targetBucket = process.env.TARGET_BUCKET!;
-    const catClasses = process.env.CAT_CLASSES!.split(',');
     const validationSplit = parseFloat(process.env.VALIDATION_SPLIT || '0.2');
-    const maxNoCatSamples = parseInt(process.env.MAX_NOCAT_SAMPLES || '200');
+    const maxNotBootsSamples = parseInt(process.env.MAX_NOTBOOTS_SAMPLES || '600');
 
     const errors: string[] = [];
-    const classDistribution: Record<string, { training: number; validation: number }> = {};
-
-    // Initialize class distribution
-    for (const cat of catClasses) {
-        classDistribution[cat] = { training: 0, validation: 0 };
-    }
+    const classDistribution: Record<string, { training: number; validation: number }> = {
+        Boots: { training: 0, validation: 0 },
+        NotBoots: { training: 0, validation: 0 },
+    };
 
     console.log('Fetching labeled records from DynamoDB...');
 
-    // Fetch all labeled records from DynamoDB
     const labeledRecords = await fetchLabeledRecords();
     console.log(`Found ${labeledRecords.length} labeled records`);
 
-    // Group records by class
-    const recordsByClass: Record<string, CatadataRecord[]> = {};
-    for (const cat of catClasses) {
-        recordsByClass[cat] = [];
-    }
+    // Split into binary classes: Boots vs everything else
+    const bootRecords: CatadataRecord[] = [];
+    const notBootsRecords: CatadataRecord[] = [];
 
     for (const record of labeledRecords) {
-        if (catClasses.includes(record.cat)) {
-            recordsByClass[record.cat].push(record);
+        if (record.cat === 'Boots') {
+            bootRecords.push(record);
+        } else if (record.cat) {
+            notBootsRecords.push({ ...record, cat: 'NotBoots' });
         }
     }
 
-    // Log class distribution before processing
-    console.log('Class distribution before processing:');
-    for (const cat of catClasses) {
-        console.log(`  ${cat}: ${recordsByClass[cat].length}`);
-    }
+    console.log(`Before capping — Boots: ${bootRecords.length}, NotBoots: ${notBootsRecords.length}`);
+
+    // Cap NotBoots to limit class imbalance (shuffle first for variety across all cat types)
+    const cappedNotBoots = shuffleArray(notBootsRecords).slice(0, maxNotBootsSamples);
+    console.log(`After capping — NotBoots: ${cappedNotBoots.length} (max ${maxNotBootsSamples})`);
 
     // Clear existing training/validation data
     await clearExistingData(targetBucket, 'training/');
@@ -78,17 +74,7 @@ export async function handler(): Promise<PrepareDataResult> {
     let totalTraining = 0;
     let totalValidation = 0;
 
-    // Process each class
-    for (const cat of catClasses) {
-        let records = recordsByClass[cat];
-
-        // Undersample NoCat if needed
-        if (cat === 'NoCat' && records.length > maxNoCatSamples) {
-            console.log(`Undersampling NoCat from ${records.length} to ${maxNoCatSamples}`);
-            records = shuffleArray(records).slice(0, maxNoCatSamples);
-        }
-
-        // Shuffle and split into training/validation
+    for (const [className, records] of [['Boots', bootRecords], ['NotBoots', cappedNotBoots]] as const) {
         const shuffled = shuffleArray(records);
         const splitIndex = Math.floor(shuffled.length * (1 - validationSplit));
         const trainingRecords = shuffled.slice(0, splitIndex);
@@ -97,17 +83,8 @@ export async function handler(): Promise<PrepareDataResult> {
         // Copy training images
         for (const record of trainingRecords) {
             try {
-                const copied = await copyImage(
-                    sourceBucket,
-                    sourcePrefix,
-                    targetBucket,
-                    `training/${cat}/`,
-                    record.imageName
-                );
-                if (copied) {
-                    classDistribution[cat].training++;
-                    totalTraining++;
-                }
+                const copied = await copyImage(sourceBucket, sourcePrefix, targetBucket, `training/${className}/`, record.imageName);
+                if (copied) { classDistribution[className].training++; totalTraining++; }
             } catch (error) {
                 errors.push(`Failed to copy training image ${record.imageName}: ${error}`);
             }
@@ -116,23 +93,14 @@ export async function handler(): Promise<PrepareDataResult> {
         // Copy validation images
         for (const record of validationRecords) {
             try {
-                const copied = await copyImage(
-                    sourceBucket,
-                    sourcePrefix,
-                    targetBucket,
-                    `validation/${cat}/`,
-                    record.imageName
-                );
-                if (copied) {
-                    classDistribution[cat].validation++;
-                    totalValidation++;
-                }
+                const copied = await copyImage(sourceBucket, sourcePrefix, targetBucket, `validation/${className}/`, record.imageName);
+                if (copied) { classDistribution[className].validation++; totalValidation++; }
             } catch (error) {
                 errors.push(`Failed to copy validation image ${record.imageName}: ${error}`);
             }
         }
 
-        console.log(`${cat}: ${classDistribution[cat].training} training, ${classDistribution[cat].validation} validation`);
+        console.log(`${className}: ${classDistribution[className].training} training, ${classDistribution[className].validation} validation`);
     }
 
     console.log(`Data preparation complete: ${totalTraining} training, ${totalValidation} validation images`);

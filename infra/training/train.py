@@ -11,7 +11,7 @@ Output:
 
 Class order is determined alphabetically by Keras, which matches the
 CAT_CLASSES order defined in the CDK stack:
-  Boots, Chi, Kappa, Mu, NoCat, Tau, Wolf
+  Boots, NotBoots
 """
 
 import json
