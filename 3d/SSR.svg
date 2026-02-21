@@ -1,40 +1,33 @@
 <?xml version='1.0' encoding='UTF-8' standalone='no'?>
 <!-- Created with Fritzing (https://fritzing.org/) -->
-<svg xmlns="http://www.w3.org/2000/svg" baseProfile="tiny" height="0.16548in" version="1.2" viewBox="0 0 83.7446 11.9146" width="1.16312in" x="0in"  xmlns:svg="http://www.w3.org/2000/svg" y="0in">
- <g partID="319430">
-  <g id="copper0" >
-   <circle connectorname="1" cx="7.71477" cy="5.95728" fill="none" id="connector0pad" r="2.21953" stroke="#F7BD13" stroke-width="1.32095" />
-   <circle connectorname="2" cx="22.1148" cy="5.95728" fill="none" id="connector1pad" r="2.21953" stroke="#F7BD13" stroke-width="1.32095" />
-   <circle connectorname="3" cx="68.8865" cy="5.95728" fill="none" id="connector2pad" r="2.21953" stroke="#F7BD13" stroke-width="1.32095" />
-   <circle connectorname="4" cx="76.0865" cy="5.95728" fill="none" id="connector3pad" r="2.21953" stroke="#F7BD13" stroke-width="1.32095" />
-  </g>
- </g>d
+<svg xmlns="http://www.w3.org/2000/svg" baseProfile="tiny" height="0.16548in" version="1.2" viewBox="0 0 84.5949 11.9146" width="1.17493in" x="0in"  xmlns:svg="http://www.w3.org/2000/svg" y="0in">
  <g partID="319432">
   <g id="copper1" >
-   <circle connectorname="1" cx="7.71477" cy="5.95728" fill="none" id="connector0pad" r="2.21953" stroke="#F7BD13" stroke-width="1.32095" />
-   <circle connectorname="2" cx="22.1148" cy="5.95728" fill="none" id="connector1pad" r="2.21953" stroke="#F7BD13" stroke-width="1.32095" />
-   <circle connectorname="3" cx="68.8865" cy="5.95728" fill="none" id="connector2pad" r="2.21953" stroke="#F7BD13" stroke-width="1.32095" />
-   <circle connectorname="4" cx="76.0865" cy="5.95728" fill="none" id="connector3pad" r="2.21953" stroke="#F7BD13" stroke-width="1.32095" />
+   <circle connectorname="1" cx="7.71477" cy="5.95728" fill="none" id="connector0pad" r="2.0778" stroke="#F7BD13" stroke-width="1.32095" />
+   <circle connectorname="2" cx="22.0014" cy="5.95728" fill="none" id="connector1pad" r="2.0778" stroke="#F7BD13" stroke-width="1.32095" />
+   <circle connectorname="3" cx="68.4329" cy="5.95728" fill="none" id="connector2pad" r="2.0778" stroke="#F7BD13" stroke-width="1.32095" />
+   <circle connectorname="4" cx="76.9368" cy="5.95728" fill="none" id="connector3pad" r="2.0778" stroke="#F7BD13" stroke-width="1.32095" />
    <g id="copper0" >
-    <circle connectorname="1" cx="7.71477" cy="5.95728" fill="none" id="connector0pad" r="2.21953" stroke="#F7BD13" stroke-width="1.32095" />
-    <circle connectorname="2" cx="22.1148" cy="5.95728" fill="none" id="connector1pad" r="2.21953" stroke="#F7BD13" stroke-width="1.32095" />
-    <circle connectorname="3" cx="68.8865" cy="5.95728" fill="none" id="connector2pad" r="2.21953" stroke="#F7BD13" stroke-width="1.32095" />
-    <circle connectorname="4" cx="76.0865" cy="5.95728" fill="none" id="connector3pad" r="2.21953" stroke="#F7BD13" stroke-width="1.32095" />
+    <circle connectorname="1" cx="7.71477" cy="5.95728" fill="none" id="connector0pad" r="2.0778" stroke="#F7BD13" stroke-width="1.32095" />
+    <circle connectorname="2" cx="22.0014" cy="5.95728" fill="none" id="connector1pad" r="2.0778" stroke="#F7BD13" stroke-width="1.32095" />
+    <circle connectorname="3" cx="68.4329" cy="5.95728" fill="none" id="connector2pad" r="2.0778" stroke="#F7BD13" stroke-width="1.32095" />
+    <circle connectorname="4" cx="76.9368" cy="5.95728" fill="none" id="connector3pad" r="2.0778" stroke="#F7BD13" stroke-width="1.32095" />
    </g>
   </g>
  </g>
  <g partID="319431">
   <g id="silkscreen" >
-   <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="0.288" x2="83.4566"  y1="0.287999" y2="0.287999"/>
-   <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="83.4566" x2="83.4566"  y1="0.287999" y2="8.79192"/>
-   <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="83.4566" x2="83.4566"  y1="8.79192" y2="11.6266"/>
-   <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="83.4566" x2="0.288"  y1="11.6266" y2="11.6266"/>
+   <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="0.288" x2="84.3069"  y1="0.287999" y2="0.287999"/>
+   <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="84.3069" x2="84.3069"  y1="0.287999" y2="8.79192"/>
+   <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="84.3069" x2="84.3069"  y1="8.79192" y2="11.6266"/>
+   <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="84.3069" x2="0.288"  y1="11.6266" y2="11.6266"/>
    <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="0.288" x2="0.288"  y1="11.6266" y2="8.79192"/>
    <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="0.288" x2="0.288"  y1="8.79192" y2="0.287999"/>
-   <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="3.97304" x2="0.288"  y1="8.79192" y2="8.79192"/>
-   <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="11.3431" x2="18.4297"  y1="8.79192" y2="8.79192"/>
-   <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="25.7998" x2="65.3148"  y1="8.79192" y2="8.79192"/>
-   <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="83.4566" x2="79.7715"  y1="8.79192" y2="8.79192"/>
+   <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="4.1715" x2="0.288"  y1="8.79192" y2="8.79192"/>
+   <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="11.2581" x2="18.4581"  y1="8.79192" y2="8.79192"/>
+   <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="25.5447" x2="64.8896"  y1="8.79192" y2="8.79192"/>
+   <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="71.9762" x2="73.3935"  y1="8.79192" y2="8.79192"/>
+   <line class="other" stroke="#f0f0f0" stroke-linecap="round" stroke-width="0.576" x1="84.3069" x2="80.4801"  y1="8.79192" y2="8.79192"/>
   </g>
  </g>
 </svg>
