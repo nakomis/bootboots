@@ -74,12 +74,19 @@ This creates:
 
 ### 2. Trigger Training
 
+Use `--invocation-type Event` (async) - the data prep step takes ~90 seconds which can cause the CLI to time out if invoked synchronously, even though the Lambda itself completes fine.
+
 ```bash
 AWS_PROFILE=nakom.is-sandbox aws lambda invoke \
   --function-name bootboots-trigger-training \
   --region eu-west-2 \
-  response.json && cat response.json
+  --invocation-type Event \
+  --payload '{}' \
+  --cli-binary-format raw-in-base64-out \
+  response.json
 ```
+
+A `StatusCode: 202` response means the job was accepted. Monitor via SageMaker console or the commands below.
 
 This will:
 1. Read labeled images from `catadata` DynamoDB table
@@ -147,10 +154,16 @@ Training stops automatically when validation accuracy plateaus:
 
 ## Addressing Class Imbalance
 
-Current data distribution:
-- NoCat: 1055 images (overrepresented)
-- Tau: 188, Kappa: 188, Chi: 156, Boots: 117
-- Wolf: 21, Mu: 10 (underrepresented)
+Current data distribution (as of Feb 2026, including old images migrated from `bootbootstraining`):
+- NoCat: 2067 images (overrepresented → undersampled to 200)
+- Tau: 255, Kappa: 235, Chi: 196, Boots: 190
+- Mu: 62, Wolf: 59 (still underrepresented)
+
+**Source buckets:**
+- New images (catcam): `bootboots-images-{account}-{region}/catcam-training/` (timestamp-named `.jpg` files)
+- Old images (pre-2026): also copied into `catcam-training/` prefix as numeric-named `.jpeg` files (migrated from `bootbootstraining` bucket in Feb 2026)
+
+The data prep Lambda reads `imageName` from the `catadata` DynamoDB table and looks for all images under the `catcam-training/` prefix of the images bucket - both old and new formats are handled.
 
 **Implemented strategies:**
 1. **Undersampling** - NoCat limited to 200 images
@@ -158,7 +171,7 @@ Current data distribution:
 3. **Stratified split** - Proportional validation set
 
 **Recommendations:**
-- Collect more images for Mu and Wolf
+- Collect more images for Mu and Wolf (priority)
 - Consider adding class weights (modify training trigger Lambda)
 
 ## Serverless Inference
@@ -196,6 +209,10 @@ Options:
 ### Training job fails immediately
 - Check IAM role has S3 and ECR permissions
 - Verify training data exists: `aws s3 ls s3://bootboots-training-data-975050268859/training/`
+- If error is `AccessDeniedException: sagemaker:AddTags` - the trigger Lambda's IAM policy is missing `sagemaker:AddTags`. Add it to the policy in `infra/lib/ai-training-stack.ts` and redeploy.
+
+### CDK deploy fails with Docker error
+- CDK requires Docker running to bundle Lambda assets. Open Docker Desktop and retry.
 
 ### Poor accuracy
 - Check class distribution in data prep output
@@ -225,9 +242,9 @@ Options:
 
 ## Next Steps
 
-1. Deploy the training stack
-2. Label more images for Mu and Wolf
-3. Run training with current data
-4. Evaluate results
-5. Iterate on hyperparameters if needed
-6. Deploy model to serverless endpoint
+1. ~~Deploy the training stack~~ ✓ Done
+2. ~~Run training with current data~~ ✓ First training run completed Feb 2026
+3. Evaluate results - check validation accuracy, especially for Mu and Wolf
+4. Iterate on hyperparameters if needed
+5. Deploy model to serverless endpoint
+6. Label more images for Mu and Wolf, retrain to improve accuracy on those classes

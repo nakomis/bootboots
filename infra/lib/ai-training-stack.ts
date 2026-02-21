@@ -162,6 +162,7 @@ export class AiTrainingStack extends cdk.Stack {
                 'sagemaker:CreateTrainingJob',
                 'sagemaker:DescribeTrainingJob',
                 'sagemaker:ListTrainingJobs',
+                'sagemaker:AddTags',
             ],
             resources: ['*'],
         }));
