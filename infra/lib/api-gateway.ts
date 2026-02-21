@@ -9,6 +9,7 @@ import * as targets from 'aws-cdk-lib/aws-route53-targets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3n from 'aws-cdk-lib/aws-s3-notifications';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 
 export class ApiGatewayStack extends cdk.Stack {
   public api: apigateway.RestApi; 
@@ -32,7 +33,20 @@ export class ApiGatewayStack extends cdk.Stack {
         autoDeleteObjects: true,
     });
 
-    const inferLambdaLogGroup = new logs.LogGroup(this, 'BootBootsInferLambdaLogGroup', {
+    // DynamoDB table for catcam inference events (near-misses and detections)
+    const catcamEventsTable = new dynamodb.Table(this, 'CatcamEventsTable', {
+        tableName: 'catcam-events',
+        partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
+        billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+    catcamEventsTable.addGlobalSecondaryIndex({
+        indexName: 'timestamp-index',
+        partitionKey: { name: 'timestamp', type: dynamodb.AttributeType.STRING },
+        projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+const inferLambdaLogGroup = new logs.LogGroup(this, 'BootBootsInferLambdaLogGroup', {
         logGroupName: '/aws/lambda/BootBootsInferLambda',
         retention: logs.RetentionDays.SIX_MONTHS,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
@@ -54,6 +68,8 @@ export class ApiGatewayStack extends cdk.Stack {
         memorySize: 512,
         environment: {
             IMAGES_BUCKET_NAME: imagesBucket.bucketName,
+            CATCAM_EVENTS_TABLE_NAME: catcamEventsTable.tableName,
+            EVENTS_MIN_CONFIDENCE: '0.5',
         },
         bundling: {
             minify: true,
@@ -79,6 +95,9 @@ export class ApiGatewayStack extends cdk.Stack {
         resources: [`arn:aws:dynamodb:${this.region}:${this.account}:table/catadata`],
     }));
 
+    // Grant DynamoDB write permissions for catcam-events table
+    catcamEventsTable.grantWriteData(inferLambda);
+
     // Create log group for video notification Lambda
     const videoNotificationLogGroup = new logs.LogGroup(this, 'BootBootsVideoNotificationLogGroup', {
         logGroupName: '/aws/lambda/BootBootsVideoNotification',
@@ -97,6 +116,7 @@ export class ApiGatewayStack extends cdk.Stack {
         environment: {
             NOTIFICATION_EMAIL: 'bootboots@nakomis.com',
             SENDER_EMAIL: 'bootboots@nakomis.com',
+            NOTIFICATION_PHONE: process.env.NOTIFICATION_PHONE ?? '',
         },
         bundling: {
             minify: true,
@@ -115,12 +135,49 @@ export class ApiGatewayStack extends cdk.Stack {
         resources: ['*'], // SES doesn't support resource-level permissions for SendEmail
     }));
 
+    // Grant SNS SMS permissions to the video notification Lambda
+    videoNotificationLambda.addToRolePolicy(new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['sns:Publish'],
+        resources: ['*'], // SNS direct SMS doesn't support resource-level restrictions
+    }));
+
     // Add S3 event notification for catcam-videos/ prefix
     imagesBucket.addEventNotification(
         s3.EventType.OBJECT_CREATED,
         new s3n.LambdaDestination(videoNotificationLambda),
         { prefix: 'catcam-videos/' }
     );
+
+    // Create log group for events-query Lambda
+    const eventsQueryLogGroup = new logs.LogGroup(this, 'BootBootsEventsQueryLogGroup', {
+        logGroupName: '/aws/lambda/BootBootsEventsQuery',
+        retention: logs.RetentionDays.ONE_MONTH,
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    // Create the events-query Lambda (GET /events)
+    const eventsQueryLambda = new NodejsFunction(this, 'BootBootsEventsQueryFunction', {
+        functionName: 'BootBootsEventsQuery',
+        runtime: cdk.aws_lambda.Runtime.NODEJS_22_X,
+        entry: `${__dirname}/../lambda/events-query/src/handler.ts`,
+        logGroup: eventsQueryLogGroup,
+        timeout: cdk.Duration.seconds(10),
+        memorySize: 256,
+        environment: {
+            CATCAM_EVENTS_TABLE_NAME: catcamEventsTable.tableName,
+            IMAGES_BUCKET_NAME: imagesBucket.bucketName,
+        },
+        bundling: {
+            minify: true,
+            sourceMap: false,
+            target: 'node22',
+        },
+    });
+
+    // Grant the events-query Lambda read access to catcam-events and images bucket
+    catcamEventsTable.grantReadData(eventsQueryLambda);
+    imagesBucket.grantRead(eventsQueryLambda);
 
     // Create IAM role for API Gateway to access S3
     const apiGatewayS3Role = new iam.Role(this, 'ApiGatewayS3Role', {
@@ -292,6 +349,17 @@ export class ApiGatewayStack extends cdk.Stack {
           statusCode: '500',
         },
       ],
+    });
+
+    // Create the /events resource for querying catcam events
+    const eventsResource = this.api.root.addResource('events');
+    eventsResource.addMethod('GET', new apigateway.LambdaIntegration(eventsQueryLambda), {
+        authorizationType: apigateway.AuthorizationType.IAM,
+        apiKeyRequired: false,
+        methodResponses: [
+            { statusCode: '200' },
+            { statusCode: '500' },
+        ],
     });
 
     // Output the upload-video endpoint URL

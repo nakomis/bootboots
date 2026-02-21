@@ -3,10 +3,12 @@ import { Logger } from '@aws-lambda-powertools/logger';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
+import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 
 const logger = new Logger({ serviceName: 'video-notification' });
 const s3Client = new S3Client({ region: process.env.AWS_REGION });
 const sesClient = new SESClient({ region: process.env.AWS_REGION });
+const snsClient = new SNSClient({ region: process.env.AWS_REGION });
 
 const SIGNED_URL_EXPIRY_SECONDS = 30 * 24 * 60 * 60; // 30 days
 
@@ -164,6 +166,27 @@ This is an automated message from the BootBoots Cat Deterrent System.
                 filename,
                 size: sizeDisplay
             });
+
+            // Send SMS via SNS direct SMS
+            const notificationPhone = process.env.NOTIFICATION_PHONE;
+
+            if (notificationPhone) {
+                const smsBody = `Boots detected! Video (${sizeDisplay}, ${uploadTime}): ${signedUrl}`;
+
+                await snsClient.send(new PublishCommand({
+                    PhoneNumber: notificationPhone,
+                    Message: smsBody,
+                    MessageAttributes: {
+                        'AWS.SNS.SMS.SMSType': {
+                            DataType: 'String',
+                            StringValue: 'Transactional',
+                        },
+                    },
+                }));
+                logger.info('SMS notification sent successfully', { phone: notificationPhone });
+            } else {
+                logger.warn('Skipping SMS: NOTIFICATION_PHONE not set');
+            }
 
         } catch (error: any) {
             logger.error('Failed to process video notification', {

@@ -13,7 +13,11 @@ const dynamoClient = new DynamoDBClient({ region: process.env.AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
 
 // Cat names in order corresponding to the probability array indices
-const CAT_NAMES = ['Boots', 'Chi', 'Kappa', 'Mu', 'Tau', 'Wolf'];
+// [0]=Boots, [1]=NotBoots (binary classifier)
+const CAT_NAMES = ['Boots', 'NotBoots'];
+
+// Minimum Boots confidence to record an event in catcam-events table
+const EVENTS_MIN_CONFIDENCE = parseFloat(process.env.EVENTS_MIN_CONFIDENCE ?? '0.5');
 
 // Function to get the most likely cat from probabilities
 function getMostLikelyCat(probabilities: number[]): { name: string; confidence: number; index: number } {
@@ -32,6 +36,32 @@ function getMostLikelyCat(probabilities: number[]): { name: string; confidence: 
         confidence: maxProbability,
         index: maxIndex
     };
+}
+
+// Function to record an inference event in catcam-events table
+async function createCatcamEventRecord(s3Key: string, bootsConfidence: number): Promise<void> {
+    const eventsTable = process.env.CATCAM_EVENTS_TABLE_NAME;
+    if (!eventsTable) {
+        throw new Error('CATCAM_EVENTS_TABLE_NAME environment variable is not set');
+    }
+
+    const putCommand = new PutCommand({
+        TableName: eventsTable,
+        Item: {
+            id: randomUUID(),
+            timestamp: new Date().toISOString(),
+            imageName: s3Key,
+            bootsConfidence,
+        }
+    });
+
+    try {
+        await docClient.send(putCommand);
+        logger.info('Recorded catcam event', { imageName: s3Key, bootsConfidence });
+    } catch (error) {
+        logger.error('Failed to record catcam event', { error, imageName: s3Key });
+        throw error;
+    }
 }
 
 // Function to create a catadata record for training images
@@ -337,6 +367,17 @@ export async function handler(event: APIGatewayProxyEvent, _context: Context): P
             } catch (s3Error) {
                 logger.error('Failed to save SageMaker response to S3', { error: s3Error });
                 // Continue with response even if S3 save fails
+            }
+
+            // Record event in catcam-events if Boots confidence meets threshold
+            const bootsConfidence = sagemakerResult?.probabilities?.[0] ?? mostLikelyCat.confidence;
+            if (s3ImageKey && bootsConfidence >= EVENTS_MIN_CONFIDENCE) {
+                try {
+                    await createCatcamEventRecord(s3ImageKey, bootsConfidence);
+                } catch (dbError) {
+                    logger.error('Failed to record catcam event, continuing', { error: dbError });
+                    // Non-fatal: inference result is still returned
+                }
             }
 
             // Return successful response with most likely cat information
