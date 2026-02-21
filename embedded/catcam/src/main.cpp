@@ -116,9 +116,11 @@ void setup() {
     systemState.trainingMode = preferences.getBool("trainingMode", false);
     systemState.triggerThresh = preferences.getFloat("triggerThresh", 0.80f);
     systemState.dryRun = preferences.getBool("dryRun", false);
+    systemState.claudeInfer = preferences.getBool("claudeInfer", false);
     SDLogger::getInstance().infof("Training mode loaded from NVS: %s", systemState.trainingMode ? "ON" : "OFF");
     SDLogger::getInstance().infof("Trigger threshold loaded from NVS: %.2f", systemState.triggerThresh);
     SDLogger::getInstance().infof("Dry-run mode loaded from NVS: %s", systemState.dryRun ? "ON" : "OFF");
+    SDLogger::getInstance().infof("Claude inference loaded from NVS: %s", systemState.claudeInfer ? "ON" : "OFF");
     preferences.end();
 
     // Load camera settings from NVS
@@ -191,6 +193,25 @@ void setup() {
             ctx.sender->sendResponse(responseStr);
             return true;
         });
+
+        // set_claude_infer {"enabled": true} — enable/disable parallel Claude vision inference
+        dispatcher->registerHandler("set_claude_infer", [](CommandContext& ctx) {
+            bool value = ctx.request["enabled"] | false;
+            systemState.claudeInfer = value;
+            preferences.begin("bootboots", false);
+            preferences.putBool("claudeInfer", value);
+            preferences.end();
+            SDLogger::getInstance().infof("Claude inference %s", value ? "ON" : "OFF");
+
+            DynamicJsonDocument response(256);
+            response["type"] = "setting_updated";
+            response["setting"] = "claude_infer";
+            response["value"] = value;
+            String responseStr;
+            serializeJson(response, responseStr);
+            ctx.sender->sendResponse(responseStr);
+            return true;
+        });
     }
 
     // Sync training mode to capture controller
@@ -248,7 +269,7 @@ void loop() {
             // Normal mode: capture photo and run inference with deterrent
             else if (deterrentController) {
                 // Capture photo and run inference
-                DetectionResult result = captureController->captureAndDetect();
+                DetectionResult result = captureController->captureAndDetect(systemState.claudeInfer);
                 if (result.success && deterrentController->shouldActivate(result, systemState.triggerThresh)) {
                     SDLogger::getInstance().criticalf("Boots detected (%.1f%%) - activating deterrent! (dryRun=%s)",
                         result.confidence * 100.0f, systemState.dryRun ? "ON" : "OFF");

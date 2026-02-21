@@ -10,7 +10,7 @@ CatCamHttpClient::CatCamHttpClient()
 
 }
 
-String CatCamHttpClient::postImage(NamedImage* namedImage, const char* host, const char* path, AWSAuth* awsAuth, bool trainingMode) {
+String CatCamHttpClient::postImage(NamedImage* namedImage, const char* host, const char* path, AWSAuth* awsAuth, bool trainingMode, bool claudeInfer) {
     if (!namedImage || !namedImage->image || namedImage->size == 0) {
         SDLogger::getInstance().errorf("CatCamHttpClient: Invalid image data");
         return "{\"error\": \"Invalid image data\"}";
@@ -23,10 +23,12 @@ String CatCamHttpClient::postImage(NamedImage* namedImage, const char* host, con
 
     size_t imageSize = namedImage->size;
 
-    // Construct the actual path, appending training mode query param if needed
+    // Construct the actual path, appending query params as needed
     String actualPath = String(path);
     if (trainingMode) {
         actualPath += "?mode=training";
+    } else if (claudeInfer) {
+        actualPath += "?claude=1";
     }
 
     SDLogger::getInstance().infof("CatCamHttpClient: Posting image (%d bytes) to https://%s%s", imageSize, host, actualPath.c_str());

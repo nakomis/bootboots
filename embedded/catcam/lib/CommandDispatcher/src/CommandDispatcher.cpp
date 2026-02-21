@@ -160,6 +160,7 @@ bool CommandDispatcher::handleGetSettings(CommandContext& ctx) {
     response["training_mode"] = _systemState->trainingMode;
     response["trigger_threshold"] = _systemState->triggerThresh;
     response["dry_run"] = _systemState->dryRun;
+    response["claude_infer"] = _systemState->claudeInfer;
 
     JsonObject cam = response.createNestedObject("camera");
     cam["frame_size"] = _systemState->cameraSettings.frameSize;

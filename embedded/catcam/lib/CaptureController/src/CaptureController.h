@@ -81,7 +81,7 @@ public:
      * Quick response path - captures photo, uploads to AWS, returns structured result
      * @return DetectionResult with inference results
      */
-    DetectionResult captureAndDetect();
+    DetectionResult captureAndDetect(bool claudeInfer = false);
 
     /**
      * Record a video with LED countdown

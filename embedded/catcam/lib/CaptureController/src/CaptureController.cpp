@@ -390,7 +390,7 @@ String CaptureController::captureTrainingPhoto() {
     return basename + ".jpg";
 }
 
-DetectionResult CaptureController::captureAndDetect() {
+DetectionResult CaptureController::captureAndDetect(bool claudeInfer) {
     DetectionResult result;
 
     if (!_camera || !_camera->isReady()) {
@@ -445,7 +445,7 @@ DetectionResult CaptureController::captureAndDetect() {
 
         // Post image to inference endpoint
         CatCamHttpClient httpClient;
-        response = httpClient.postImage(image, _apiHost, _apiPath, _awsAuth);
+        response = httpClient.postImage(image, _apiHost, _apiPath, _awsAuth, false, claudeInfer);
 
         // Save server response to SD card
         if (_imageStorage) {
