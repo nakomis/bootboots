@@ -2,6 +2,7 @@ import {
     S3Client,
     CopyObjectCommand,
     GetObjectCommand,
+    PutObjectCommand,
     ListObjectsV2Command,
     DeleteObjectsCommand,
 } from '@aws-sdk/client-s3';
@@ -178,30 +179,18 @@ async function fetchLabeledRecords(): Promise<CatadataRecord[]> {
     return records;
 }
 
-/**
- * Check if an S3 object is a valid JPEG by reading just its first 3 bytes
- * (must start FF D8 FF) and last 2 bytes (must end FF D9).
- * This avoids downloading the full image.
- */
-async function isValidJpeg(bucket: string, key: string): Promise<boolean> {
-    try {
-        const [startRes, endRes] = await Promise.all([
-            s3.send(new GetObjectCommand({ Bucket: bucket, Key: key, Range: 'bytes=0-2' })),
-            s3.send(new GetObjectCommand({ Bucket: bucket, Key: key, Range: 'bytes=-2' })),
-        ]);
-        const start = Buffer.from(await startRes.Body!.transformToByteArray());
-        const end   = Buffer.from(await endRes.Body!.transformToByteArray());
-        return start[0] === 0xFF && start[1] === 0xD8 && start[2] === 0xFF
-            && end[0] === 0xFF && end[1] === 0xD9;
-    } catch {
-        return false;
-    }
-}
+const JPEG_HEADER = Buffer.from([0xFF, 0xD8, 0xFF]);
+const JPEG_EOI    = Buffer.from([0xFF, 0xD9]);
 
 /**
  * Copy an image from the source bucket to the training bucket.
- * Returns false (and logs) if the image is a corrupt JPEG, so the caller
- * can skip it rather than counting it in the class distribution.
+ *
+ * - If the image is a well-formed JPEG (starts FF D8 FF, ends FF D9):
+ *   use a server-side S3 copy (fast, no data transfer).
+ * - If it has a valid JPEG header but is missing the EOI marker (FF D9):
+ *   download, append FF D9, and re-upload. Many old catcam images were
+ *   captured with a truncated stream and only need this two-byte fix.
+ * - Otherwise: skip and return false so the caller doesn't count it.
  */
 async function copyImage(
     sourceBucket: string,
@@ -210,23 +199,50 @@ async function copyImage(
     targetPrefix: string,
     imageName: string
 ): Promise<boolean> {
-    // Handle both full paths and just filenames
     const sourceKey = imageName.startsWith(sourcePrefix)
         ? imageName
         : `${sourcePrefix}${imageName}`;
+    const filename  = imageName.split('/').pop()!;
+    const targetKey = `${targetPrefix}${filename}`;
 
-    if (!await isValidJpeg(sourceBucket, sourceKey)) {
-        console.warn(`Skipping corrupt image: ${sourceKey}`);
+    // Peek at start and end bytes using cheap range GETs
+    const [startRes, endRes] = await Promise.all([
+        s3.send(new GetObjectCommand({ Bucket: sourceBucket, Key: sourceKey, Range: 'bytes=0-2' })),
+        s3.send(new GetObjectCommand({ Bucket: sourceBucket, Key: sourceKey, Range: 'bytes=-2' })),
+    ]);
+    const start = Buffer.from(await startRes.Body!.transformToByteArray());
+    const end   = Buffer.from(await endRes.Body!.transformToByteArray());
+
+    const hasJpegHeader = start[0] === 0xFF && start[1] === 0xD8 && start[2] === 0xFF;
+    const hasEoi        = end[0] === 0xFF && end[1] === 0xD9;
+
+    if (!hasJpegHeader) {
+        console.warn(`Skipping non-JPEG file: ${sourceKey}`);
         return false;
     }
 
-    const filename = imageName.split('/').pop()!;
-    const targetKey = `${targetPrefix}${filename}`;
+    if (hasEoi) {
+        // Already valid - use a fast server-side copy
+        await s3.send(new CopyObjectCommand({
+            CopySource: encodeURIComponent(`${sourceBucket}/${sourceKey}`),
+            Bucket: targetBucket,
+            Key: targetKey,
+            ContentType: 'image/jpeg',
+        }));
+        return true;
+    }
 
-    await s3.send(new CopyObjectCommand({
-        CopySource: encodeURIComponent(`${sourceBucket}/${sourceKey}`),
+    // Truncated JPEG - download, append EOI, re-upload
+    console.log(`Patching truncated JPEG: ${sourceKey}`);
+    const fullRes = await s3.send(new GetObjectCommand({ Bucket: sourceBucket, Key: sourceKey }));
+    const original = Buffer.from(await fullRes.Body!.transformToByteArray());
+    const patched  = Buffer.concat([original, JPEG_EOI]);
+
+    await s3.send(new PutObjectCommand({
         Bucket: targetBucket,
         Key: targetKey,
+        Body: patched,
+        ContentType: 'image/jpeg',
     }));
     return true;
 }
