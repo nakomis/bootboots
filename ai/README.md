@@ -256,7 +256,7 @@ AWS_PROFILE=nakom.is-sandbox aws lambda invoke \
 
 1. ~~Deploy the training stack~~ ✓ Done
 2. ~~Write custom training script~~ ✓ Done (`infra/training/train.py`, Feb 2026)
-3. Evaluate first training run - check validation accuracy, especially for Mu and Wolf
-4. Iterate on hyperparameters or collect more Mu/Wolf images if needed
-5. Deploy model to serverless endpoint (see step 4 of Quick Start)
-6. Label more images for Mu and Wolf, retrain to improve accuracy on those classes
+3. ~~Switch to binary Boots/NotBoots classifier~~ ✓ Done (Feb 2026, 94.9% val accuracy)
+4. ~~Deploy model to serverless endpoint~~ ✓ Done (endpoint: `bootboots`)
+5. Integrate inference endpoint into the catcam spray trigger pipeline
+6. Collect more Boots catcam images to further improve recall
