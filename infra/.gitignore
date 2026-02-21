@@ -6,3 +6,6 @@ node_modules
 # CDK asset staging directory
 .cdk.staging
 cdk.out
+
+# Local secrets (do not commit — copy from secrets.json.template)
+secrets.json

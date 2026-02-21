@@ -10,6 +10,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3n from 'aws-cdk-lib/aws-s3-notifications';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 
 export class ApiGatewayStack extends cdk.Stack {
   public api: apigateway.RestApi; 
@@ -70,6 +71,9 @@ const inferLambdaLogGroup = new logs.LogGroup(this, 'BootBootsInferLambdaLogGrou
             IMAGES_BUCKET_NAME: imagesBucket.bucketName,
             CATCAM_EVENTS_TABLE_NAME: catcamEventsTable.tableName,
             EVENTS_MIN_CONFIDENCE: '0.5',
+            ANTHROPIC_API_KEY: ssm.StringParameter.valueForSecureStringParameter(
+                this, '/bootboots/anthropic-api-key', 1
+            ),
         },
         bundling: {
             minify: true,

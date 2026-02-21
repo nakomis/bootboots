@@ -5,12 +5,14 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { randomUUID } from 'crypto';
+import Anthropic from '@anthropic-ai/sdk';
 
 const logger = new Logger();
 const sagemakerClient = new SageMakerRuntimeClient({ region: process.env.AWS_REGION });
 const s3Client = new S3Client({ region: process.env.AWS_REGION });
 const dynamoClient = new DynamoDBClient({ region: process.env.AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
+const anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // Cat names in order corresponding to the probability array indices
 // [0]=Boots, [1]=NotBoots (binary classifier)
@@ -39,20 +41,25 @@ function getMostLikelyCat(probabilities: number[]): { name: string; confidence: 
 }
 
 // Function to record an inference event in catcam-events table
-async function createCatcamEventRecord(s3Key: string, bootsConfidence: number): Promise<void> {
+async function createCatcamEventRecord(s3Key: string, bootsConfidence: number, claudeResult?: ClaudeResult): Promise<void> {
     const eventsTable = process.env.CATCAM_EVENTS_TABLE_NAME;
     if (!eventsTable) {
         throw new Error('CATCAM_EVENTS_TABLE_NAME environment variable is not set');
     }
 
+    const item: Record<string, any> = {
+        id: randomUUID(),
+        timestamp: new Date().toISOString(),
+        imageName: s3Key,
+        bootsConfidence,
+    };
+    if (claudeResult) {
+        item.claudeResult = claudeResult;
+    }
+
     const putCommand = new PutCommand({
         TableName: eventsTable,
-        Item: {
-            id: randomUUID(),
-            timestamp: new Date().toISOString(),
-            imageName: s3Key,
-            bootsConfidence,
-        }
+        Item: item,
     });
 
     try {
@@ -61,6 +68,52 @@ async function createCatcamEventRecord(s3Key: string, bootsConfidence: number): 
     } catch (error) {
         logger.error('Failed to record catcam event', { error, imageName: s3Key });
         throw error;
+    }
+}
+
+interface ClaudeResult {
+    cat: string;
+    confidence: string;
+    reasoning: string;
+}
+
+const CLAUDE_SYSTEM_PROMPT = `You are a cat identification system for a home monitoring project. Identify which cat is visible in the image from the following list:
+
+- Boots: solid black, short-to-medium coat, bright green eyes. This is the neighbour's cat and the primary target of the system.
+- Chi: Maine Coon, dark brown/black tabby pattern, long fluffy fur, green eyes.
+- Tau: black and white tuxedo pattern (black head/back, white chest/belly), short hair.
+- Kappa: very dark brown/near-black, long fluffy fur (son of Chi and Tau, inherited Chi's coat).
+- Mu: Maine Coon, ginger/cream coloured, long fluffy fur, regal expression.
+- Wolf: a grey/white stuffed toy cat — not a real cat.
+
+Respond with valid JSON only, no other text:
+{"cat": "<name>", "confidence": "high|medium|low", "reasoning": "<one sentence>"}
+
+If no cat is clearly visible, respond with:
+{"cat": "Unknown", "confidence": "low", "reasoning": "<brief description of what is visible>"}`;
+
+async function invokeClaudeVision(imageBuffer: Buffer): Promise<ClaudeResult> {
+    const base64Image = imageBuffer.toString('base64');
+
+    const response = await anthropicClient.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 150,
+        system: CLAUDE_SYSTEM_PROMPT,
+        messages: [{
+            role: 'user',
+            content: [{
+                type: 'image',
+                source: { type: 'base64', media_type: 'image/jpeg', data: base64Image },
+            }],
+        }],
+    });
+
+    const text = response.content[0].type === 'text' ? response.content[0].text : '';
+    try {
+        return JSON.parse(text) as ClaudeResult;
+    } catch {
+        logger.warn('Could not parse Claude response as JSON', { text });
+        return { cat: 'Unknown', confidence: 'low', reasoning: text.substring(0, 200) };
     }
 }
 
@@ -191,10 +244,14 @@ export async function handler(event: APIGatewayProxyEvent, _context: Context): P
                 };
             }
 
-            // Check for training mode
+            // Check for training mode and Claude inference flag
             const trainingMode = event.queryStringParameters?.mode === 'training';
+            const claudeInfer = event.queryStringParameters?.claude === '1';
             if (trainingMode) {
                 logger.info('Training mode detected - will skip SageMaker inference');
+            }
+            if (claudeInfer) {
+                logger.info('Claude vision inference enabled for this request');
             }
 
             // Validate request body exists
@@ -324,7 +381,7 @@ export async function handler(event: APIGatewayProxyEvent, _context: Context): P
                 };
             }
 
-            // Prepare SageMaker endpoint invocation
+            // Invoke SageMaker (and optionally Claude) in parallel
             const endpointName = 'bootboots';
             const invokeCommand = new InvokeEndpointCommand({
                 EndpointName: endpointName,
@@ -332,15 +389,26 @@ export async function handler(event: APIGatewayProxyEvent, _context: Context): P
                 Body: imageBuffer
             });
 
-            logger.info('Invoking SageMaker endpoint', { endpointName });
+            logger.info('Invoking SageMaker endpoint', { endpointName, claudeInfer });
 
-            // Invoke SageMaker endpoint
-            const sagemakerResponse = await sagemakerClient.send(invokeCommand);
-            
+            const [sagemakerResponse, claudeResult] = await Promise.all([
+                sagemakerClient.send(invokeCommand),
+                claudeInfer
+                    ? invokeClaudeVision(imageBuffer).catch((err) => {
+                        logger.error('Claude inference failed, continuing without it', { error: err });
+                        return undefined;
+                    })
+                    : Promise.resolve(undefined),
+            ]);
+
+            if (claudeResult) {
+                logger.info('Claude vision result', { claudeResult });
+            }
+
             // Parse SageMaker response
             const responseBody = new TextDecoder().decode(sagemakerResponse.Body);
             let sagemakerResult;
-            
+
             try {
                 sagemakerResult = JSON.parse(responseBody);
             } catch (parseError) {
@@ -348,7 +416,7 @@ export async function handler(event: APIGatewayProxyEvent, _context: Context): P
                 sagemakerResult = { result: responseBody };
             }
 
-            logger.info('SageMaker endpoint response received', { 
+            logger.info('SageMaker endpoint response received', {
                 contentType: sagemakerResponse.ContentType,
                 resultPreview: JSON.stringify(sagemakerResult).substring(0, 200)
             });
@@ -373,7 +441,7 @@ export async function handler(event: APIGatewayProxyEvent, _context: Context): P
             const bootsConfidence = sagemakerResult?.probabilities?.[0] ?? mostLikelyCat.confidence;
             if (s3ImageKey && bootsConfidence >= EVENTS_MIN_CONFIDENCE) {
                 try {
-                    await createCatcamEventRecord(s3ImageKey, bootsConfidence);
+                    await createCatcamEventRecord(s3ImageKey, bootsConfidence, claudeResult ?? undefined);
                 } catch (dbError) {
                     logger.error('Failed to record catcam event, continuing', { error: dbError });
                     // Non-fatal: inference result is still returned
