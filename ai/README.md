@@ -252,6 +252,55 @@ AWS_PROFILE=nakom.is-sandbox aws lambda invoke \
 - Medium (1000/day): ~$15
 - Training runs: ~$0.50 each
 
+## Local Inference
+
+Run the latest trained model against local JPEG images without deploying anything.
+
+### Setup (one-time)
+
+```bash
+# Use Python 3.11 (TensorFlow doesn't support 3.13)
+ASDF_PYTHON_VERSION=3.11.14 pip install tensorflow boto3
+
+# Or if you have a virtualenv:
+ASDF_PYTHON_VERSION=3.11.14 python -m venv ~/.venvs/bootboots
+source ~/.venvs/bootboots/bin/activate
+pip install tensorflow boto3
+```
+
+### Run
+
+```bash
+cd infra  # repo root / wherever you have AWS credentials
+export AWS_PROFILE=nakom.is-sandbox
+
+# Classify one or more images (downloads + caches model automatically)
+ASDF_PYTHON_VERSION=3.11.14 python ai/scripts/infer_local.py path/to/image.jpg
+
+# Multiple images at once
+ASDF_PYTHON_VERSION=3.11.14 python ai/scripts/infer_local.py ignored/testimages/**/*.jpg
+
+# Force re-download the model (e.g. after a new training run)
+ASDF_PYTHON_VERSION=3.11.14 python ai/scripts/infer_local.py --refresh image.jpg
+
+# Use a specific training job instead of the latest
+ASDF_PYTHON_VERSION=3.11.14 python ai/scripts/infer_local.py --job bootboots-2026-02-21T16-29-42 image.jpg
+```
+
+### Example output
+
+```
+chi.jpg
+  Boots=2.3%  NotBoots=97.7%
+  => NotBoots (97.7%)
+
+boots_catcam.jpg
+  Boots=96.1%  NotBoots=3.9%
+  => Boots (96.1%)
+```
+
+The model is cached at `~/.cache/bootboots/model/<job-name>/` after the first download.
+
 ## Next Steps
 
 1. ~~Deploy the training stack~~ ✓ Done
