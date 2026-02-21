@@ -243,8 +243,9 @@ void CaptureController::parseAndLogInferenceResponse(const String& response) {
     DynamicJsonDocument doc(2048);
     DeserializationError jsonError = deserializeJson(doc, response);
 
-    // Cat names matching model output indices
-    const char* CAT_NAMES[] = { "Boots", "Chi", "Kappa", "Mu", "Tau", "NoCat" };
+    // Binary model: [0]=Boots, [1]=NotBoots
+    const char* CAT_NAMES[] = { "Boots", "NotBoots" };
+    const size_t NUM_CLASSES = 2;
 
     if (jsonError) {
         SDLogger::getInstance().warnf("Failed to parse response JSON: %s", jsonError.c_str());
@@ -261,7 +262,7 @@ void CaptureController::parseAndLogInferenceResponse(const String& response) {
         JsonObject data = doc["data"];
         if (data.containsKey("probabilities") && data["probabilities"].is<JsonArray>()) {
             JsonArray probabilities = data["probabilities"];
-            for (size_t i = 0; i < probabilities.size() && i < 6; i++) {
+            for (size_t i = 0; i < probabilities.size() && i < NUM_CLASSES; i++) {
                 float score = probabilities[i].as<float>();
                 char scoreStr[32];
                 snprintf(scoreStr, sizeof(scoreStr), "%s=%.1f%% ", CAT_NAMES[i], score * 100.0);

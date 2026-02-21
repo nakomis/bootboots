@@ -265,8 +265,7 @@ bool SystemManager::initComponents(const Config& config, SystemState& state,
         if (_captureController && _awsAuth) {
             _deterrentController = new DeterrentController(_pcfManager, _captureController, _awsAuth);
             _deterrentController->setUploadConfig("api.bootboots.sandbox.nakomis.com");
-            SDLogger::getInstance().infof("Deterrent Controller initialized (threshold: %.0f%%, duration: %lu ms)",
-                                           DeterrentController::CONFIDENCE_THRESHOLD * 100.0f,
+            SDLogger::getInstance().infof("Deterrent Controller initialized (duration: %lu ms, threshold configurable via MQTT)",
                                            DeterrentController::DETERRENT_DURATION_MS);
             SDLogger::getInstance().infof("Video upload enabled to api.bootboots.sandbox.nakomis.com");
         } else {

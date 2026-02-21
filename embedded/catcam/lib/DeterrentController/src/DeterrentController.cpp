@@ -19,16 +19,15 @@ void DeterrentController::setUploadConfig(const char* apiHost) {
     _apiHost = apiHost;
 }
 
-bool DeterrentController::shouldActivate(const DetectionResult& result) const {
-    return true;
+bool DeterrentController::shouldActivate(const DetectionResult& result, float triggerThresh) const {
     if (!result.success) {
         return false;
     }
 
     // Check if Boots was detected with sufficient confidence
-    if (result.detectedIndex == BOOTS_INDEX && result.confidence >= CONFIDENCE_THRESHOLD) {
+    if (result.detectedIndex == BOOTS_INDEX && result.confidence >= triggerThresh) {
         SDLogger::getInstance().infof("DeterrentController: Boots detected (%.1f%% >= %.1f%% threshold)",
-            result.confidence * 100.0f, CONFIDENCE_THRESHOLD * 100.0f);
+            result.confidence * 100.0f, triggerThresh * 100.0f);
         return true;
     }
 
@@ -38,85 +37,121 @@ bool DeterrentController::shouldActivate(const DetectionResult& result) const {
             result.detectedName.c_str(), result.detectedIndex);
     } else {
         SDLogger::getInstance().infof("DeterrentController: Boots confidence %.1f%% < %.1f%% threshold - no deterrent",
-            result.confidence * 100.0f, CONFIDENCE_THRESHOLD * 100.0f);
+            result.confidence * 100.0f, triggerThresh * 100.0f);
     }
 
     return false;
 }
 
-void DeterrentController::activate(SystemState& state) {
+void DeterrentController::activate(SystemState& state, bool dryRun) {
     if (_isActive) {
         SDLogger::getInstance().warnf("DeterrentController: Already active, ignoring activation request");
         return;
     }
 
-    SDLogger::getInstance().criticalf("DeterrentController: *** ACTIVATING DETERRENT SEQUENCE ***");
+    SDLogger::getInstance().criticalf("DeterrentController: *** ACTIVATING DETERRENT SEQUENCE (dryRun=%s) ***",
+        dryRun ? "ON" : "OFF");
     _isActive = true;
-
-    // Track activation in system state
     state.atomizerActivations++;
 
-    // Start mister
+    // Step 1: LED strips ON
     if (_pcfManager) {
-        if (_pcfManager->setAtomizerState(true)) {
-            SDLogger::getInstance().infof("DeterrentController: Mister ACTIVATED");
-        } else {
-            SDLogger::getInstance().errorf("DeterrentController: Failed to activate mister");
-        }
+        _pcfManager->setLedStrip(true);
+        SDLogger::getInstance().infof("DeterrentController: LED strips ON");
     }
 
-    // Record video for 8 seconds (this is blocking)
-    if (_captureController) {
-        int durationSeconds = DETERRENT_DURATION_MS / 1000;
-        SDLogger::getInstance().infof("DeterrentController: Recording %d second video at %d fps",
-            durationSeconds, VIDEO_FPS);
+    // Steps 2-7: Record video; atomizer fires after PRE_SPRAY_DELAY_MS into the recording
+    VideoRecorder* videoRecorder = _captureController ? _captureController->getVideoRecorder() : nullptr;
+    String videoFilename;
 
-        // Use the captureController's video recording without LED countdown
-        // We need to use the VideoRecorder directly for no-countdown recording
-        VideoRecorder* videoRecorder = _captureController->getVideoRecorder();
-        if (videoRecorder) {
-            VideoConfig config = VideoRecorder::getDefaultConfig();
-            config.frameSize = FRAMESIZE_VGA;
-            config.quality = 12;
-            config.fps = VIDEO_FPS;
-            config.durationSeconds = durationSeconds;
-            config.outputDir = "/videos";
+    if (videoRecorder) {
+        const int totalDurationSec = (PRE_SPRAY_DELAY_MS + DETERRENT_DURATION_MS) / 1000 + 1; // ~10s
+        SDLogger::getInstance().infof("DeterrentController: Recording %ds video at %d fps",
+            totalDurationSec, VIDEO_FPS);
 
-            VideoResult result = videoRecorder->recordWithProgress(config,
-                [](uint32_t currentFrame, uint32_t totalFrames, uint32_t elapsedMs) {
-                    static uint32_t lastSecond = 0;
-                    uint32_t currentSecond = elapsedMs / 1000;
-                    if (currentSecond != lastSecond) {
-                        lastSecond = currentSecond;
-                        SDLogger::getInstance().tracef("Deterrent recording: frame %d/%d (%.1fs)",
-                            currentFrame, totalFrames, elapsedMs / 1000.0f);
-                    }
+        VideoConfig config = VideoRecorder::getDefaultConfig();
+        config.frameSize = FRAMESIZE_VGA;
+        config.quality = 12;
+        config.fps = VIDEO_FPS;
+        config.durationSeconds = totalDurationSec;
+        config.outputDir = "/videos";
+
+        PCF8574Manager* pcf = _pcfManager;
+        bool atomiserFired = false;
+        bool atomiserStopped = false;
+
+        VideoResult result = videoRecorder->recordWithProgress(config,
+            [pcf, dryRun, &atomiserFired, &atomiserStopped](uint32_t currentFrame, uint32_t totalFrames, uint32_t elapsedMs) {
+                static uint32_t lastSecond = 0;
+                uint32_t currentSecond = elapsedMs / 1000;
+                if (currentSecond != lastSecond) {
+                    lastSecond = currentSecond;
+                    SDLogger::getInstance().tracef("Deterrent recording: frame %d/%d (%.1fs)",
+                        currentFrame, totalFrames, elapsedMs / 1000.0f);
                 }
-            );
 
-            if (result.success) {
-                SDLogger::getInstance().infof("DeterrentController: Video saved: %s (%d frames, %d bytes)",
-                    result.filename.c_str(), result.totalFrames, result.fileSize);
+                // Fire atomizer after pre-spray delay
+                if (!atomiserFired && elapsedMs >= PRE_SPRAY_DELAY_MS) {
+                    if (!dryRun && pcf) {
+                        pcf->setAtomizerState(true);
+                        SDLogger::getInstance().infof("DeterrentController: Atomizer ON (T=%.1fs)", elapsedMs / 1000.0f);
+                    } else {
+                        SDLogger::getInstance().infof("DeterrentController: Dry-run — skipping atomizer");
+                    }
+                    atomiserFired = true;
+                }
 
-                // // Upload video to cloud
-                // if (uploadVideo(result.filename)) {
-                //     SDLogger::getInstance().infof("DeterrentController: Video uploaded successfully");
-                // } else {
-                //     SDLogger::getInstance().warnf("DeterrentController: Video upload failed (video still saved locally)");
-                // }
-            } else {
-                SDLogger::getInstance().errorf("DeterrentController: Video recording failed: %s",
-                    result.errorMessage.c_str());
+                // Stop atomizer after deterrent duration
+                if (!atomiserStopped && elapsedMs >= PRE_SPRAY_DELAY_MS + DETERRENT_DURATION_MS) {
+                    if (!dryRun && pcf) {
+                        pcf->setAtomizerState(false);
+                        SDLogger::getInstance().infof("DeterrentController: Atomizer OFF (T=%.1fs)", elapsedMs / 1000.0f);
+                    }
+                    atomiserStopped = true;
+                }
             }
+        );
+
+        // Safety: ensure atomizer is off regardless of recording outcome
+        if (_pcfManager) {
+            _pcfManager->setAtomizerState(false);
+        }
+
+        if (result.success) {
+            videoFilename = result.filename;
+            SDLogger::getInstance().infof("DeterrentController: Video saved: %s (%d frames, %d bytes)",
+                result.filename.c_str(), result.totalFrames, result.fileSize);
+        } else {
+            SDLogger::getInstance().errorf("DeterrentController: Video recording failed: %s",
+                result.errorMessage.c_str());
+        }
+    } else {
+        // No video recorder — still run the atomizer sequence with manual delays
+        SDLogger::getInstance().warnf("DeterrentController: No video recorder — running atomizer-only sequence");
+        delay(PRE_SPRAY_DELAY_MS);
+        if (!dryRun && _pcfManager) {
+            _pcfManager->setAtomizerState(true);
+            SDLogger::getInstance().infof("DeterrentController: Atomizer ON");
+        }
+        delay(DETERRENT_DURATION_MS);
+        if (_pcfManager) {
+            _pcfManager->setAtomizerState(false);
+            SDLogger::getInstance().infof("DeterrentController: Atomizer OFF");
         }
     }
 
-    // Stop mister
+    // Step 8: LED strips OFF
     if (_pcfManager) {
-        if (_pcfManager->setAtomizerState(false)) {
-            SDLogger::getInstance().infof("DeterrentController: Mister DEACTIVATED");
+        _pcfManager->setLedStrip(false);
+        SDLogger::getInstance().infof("DeterrentController: LED strips OFF");
+    }
+
+    // Step 9: Upload video
+    if (!videoFilename.isEmpty()) {
+        if (uploadVideo(videoFilename)) {
+            SDLogger::getInstance().infof("DeterrentController: Video uploaded successfully");
         } else {
-            SDLogger::getInstance().errorf("DeterrentController: Failed to deactivate mister");
+            SDLogger::getInstance().warnf("DeterrentController: Video upload failed (saved locally: %s)", videoFilename.c_str());
         }
     }
 

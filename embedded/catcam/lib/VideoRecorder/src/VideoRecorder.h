@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <SD_MMC.h>
 #include <esp_camera.h>
+#include <functional>
 
 // Video recording configuration
 struct VideoConfig {
@@ -24,8 +25,8 @@ struct VideoResult {
     String errorMessage;
 };
 
-// Callback for progress updates during recording
-typedef void (*VideoProgressCallback)(uint32_t currentFrame, uint32_t totalFrames, uint32_t elapsedMs);
+// Callback for progress updates during recording (std::function supports capturing lambdas)
+using VideoProgressCallback = std::function<void(uint32_t currentFrame, uint32_t totalFrames, uint32_t elapsedMs)>;
 
 class VideoRecorder {
 public:

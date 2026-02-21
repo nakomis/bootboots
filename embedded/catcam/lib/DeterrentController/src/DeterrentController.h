@@ -20,10 +20,10 @@ struct DetectionResult;
 class DeterrentController {
 public:
     // Configuration constants
-    static constexpr float CONFIDENCE_THRESHOLD = 0.80f;  // 80% confidence required
-    static constexpr unsigned long DETERRENT_DURATION_MS = 8000;  // 8 seconds
+    static constexpr unsigned long DETERRENT_DURATION_MS = 8000;  // Atomizer on duration (ms)
+    static constexpr unsigned long PRE_SPRAY_DELAY_MS = 1000;     // LEDs+video before atomizer fires
     static constexpr int VIDEO_FPS = 10;
-    static constexpr int BOOTS_INDEX = 0;  // Boots is index 0 in model output
+    static constexpr int BOOTS_INDEX = 0;  // Boots is index 0 in binary model output [0]=Boots, [1]=NotBoots
 
     /**
      * Constructor
@@ -42,18 +42,26 @@ public:
     /**
      * Check if deterrent should be activated based on detection result
      * @param result Detection result from captureAndDetect()
-     * @return true if Boots detected with >= 80% confidence
+     * @param triggerThresh Boots confidence required to fire (0.0-1.0)
+     * @return true if Boots detected with >= triggerThresh confidence
      */
-    bool shouldActivate(const DetectionResult& result) const;
+    bool shouldActivate(const DetectionResult& result, float triggerThresh) const;
 
     /**
-     * Activate the deterrent sequence (BLOCKING)
-     * - Starts mister via PCF8574
-     * - Records 8-second video
-     * - Stops mister after recording completes
+     * Activate the deterrent sequence (BLOCKING ~10s):
+     * 1. LED strips ON
+     * 2. Video recording starts
+     * 3. 1s delay
+     * 4. Atomizer ON (unless dryRun)
+     * 5. 8s delay
+     * 6. Atomizer OFF
+     * 7. Video recording stops
+     * 8. LED strips OFF
+     * 9. Video uploaded to cloud
      * @param state System state for tracking activations
+     * @param dryRun If true, skip atomizer but run all other steps
      */
-    void activate(SystemState& state);
+    void activate(SystemState& state, bool dryRun = false);
 
     /**
      * Emergency stop - immediately deactivate mister

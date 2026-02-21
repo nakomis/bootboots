@@ -158,6 +158,8 @@ bool CommandDispatcher::handleGetSettings(CommandContext& ctx) {
     DynamicJsonDocument response(1024);
     response["type"] = "settings";
     response["training_mode"] = _systemState->trainingMode;
+    response["trigger_threshold"] = _systemState->triggerThresh;
+    response["dry_run"] = _systemState->dryRun;
 
     JsonObject cam = response.createNestedObject("camera");
     cam["frame_size"] = _systemState->cameraSettings.frameSize;

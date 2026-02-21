@@ -56,6 +56,10 @@ struct SystemState {
     // Training mode - captures photos without inference/deterrent
     bool trainingMode = false;
 
+    // Deterrent settings (persisted to NVS, configurable via MQTT)
+    float triggerThresh = 0.80f;  // Boots confidence required to fire deterrent (0-1)
+    bool dryRun = false;          // When true, skip atomizer but run all other steps
+
     // Camera sensor settings
     CameraSettings cameraSettings;
 };

@@ -111,10 +111,14 @@ void setup() {
     // Record system start time
     systemState.systemStartTime = millis();
 
-    // Load training mode from NVS
+    // Load training mode and deterrent settings from NVS
     preferences.begin("bootboots", false);
     systemState.trainingMode = preferences.getBool("trainingMode", false);
+    systemState.triggerThresh = preferences.getFloat("triggerThresh", 0.80f);
+    systemState.dryRun = preferences.getBool("dryRun", false);
     SDLogger::getInstance().infof("Training mode loaded from NVS: %s", systemState.trainingMode ? "ON" : "OFF");
+    SDLogger::getInstance().infof("Trigger threshold loaded from NVS: %.2f", systemState.triggerThresh);
+    SDLogger::getInstance().infof("Dry-run mode loaded from NVS: %s", systemState.dryRun ? "ON" : "OFF");
     preferences.end();
 
     // Load camera settings from NVS
@@ -147,6 +151,46 @@ void setup() {
     if (dispatcher) {
         dispatcher->setTrainingModeCallback(saveTrainingMode);
         dispatcher->setCameraSettingCallback(saveCameraSetting);
+
+        // set_trigger_threshold {"value": 0.85} — update Boots confidence threshold
+        dispatcher->registerHandler("set_trigger_threshold", [](CommandContext& ctx) {
+            float value = ctx.request["value"] | 0.80f;
+            if (value < 0.0f) value = 0.0f;
+            if (value > 1.0f) value = 1.0f;
+            systemState.triggerThresh = value;
+            preferences.begin("bootboots", false);
+            preferences.putFloat("triggerThresh", value);
+            preferences.end();
+            SDLogger::getInstance().infof("Trigger threshold set to %.2f (%.0f%%)", value, value * 100.0f);
+
+            DynamicJsonDocument response(256);
+            response["type"] = "setting_updated";
+            response["setting"] = "trigger_threshold";
+            response["value"] = value;
+            String responseStr;
+            serializeJson(response, responseStr);
+            ctx.sender->sendResponse(responseStr);
+            return true;
+        });
+
+        // set_dry_run {"enabled": true} — enable/disable dry-run mode
+        dispatcher->registerHandler("set_dry_run", [](CommandContext& ctx) {
+            bool value = ctx.request["enabled"] | false;
+            systemState.dryRun = value;
+            preferences.begin("bootboots", false);
+            preferences.putBool("dryRun", value);
+            preferences.end();
+            SDLogger::getInstance().infof("Dry-run mode %s", value ? "ON" : "OFF");
+
+            DynamicJsonDocument response(256);
+            response["type"] = "setting_updated";
+            response["setting"] = "dry_run";
+            response["value"] = value;
+            String responseStr;
+            serializeJson(response, responseStr);
+            ctx.sender->sendResponse(responseStr);
+            return true;
+        });
     }
 
     // Sync training mode to capture controller
@@ -205,12 +249,12 @@ void loop() {
             else if (deterrentController) {
                 // Capture photo and run inference
                 DetectionResult result = captureController->captureAndDetect();
-                if (result.success && deterrentController->shouldActivate(result)) {
-                    SDLogger::getInstance().criticalf("Boots detected (%.1f%%) - activating deterrent!",
-                        result.confidence * 100.0f);
+                if (result.success && deterrentController->shouldActivate(result, systemState.triggerThresh)) {
+                    SDLogger::getInstance().criticalf("Boots detected (%.1f%%) - activating deterrent! (dryRun=%s)",
+                        result.confidence * 100.0f, systemState.dryRun ? "ON" : "OFF");
                     systemState.deterrentActivationCount++;
                     systemState.bootsDetections++;
-                    deterrentController->activate(systemState);  // BLOCKING 8 seconds
+                    deterrentController->activate(systemState, systemState.dryRun);  // BLOCKING ~10s
                 } else if (result.success) {
                     systemState.totalDetections++;
                     if (result.detectedIndex != DeterrentController::BOOTS_INDEX) {
