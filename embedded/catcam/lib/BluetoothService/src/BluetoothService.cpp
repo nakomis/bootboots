@@ -124,6 +124,7 @@ String BootBootsBluetoothService::formatSystemStatusJson(const SystemState& stat
     doc["system"]["wifi_connected"] = state.wifiConnected;
     doc["system"]["sd_card_ready"] = state.sdCardReady;
     doc["system"]["i2c_ready"] = state.i2cReady;
+    doc["system"]["pcf8574_ready"] = state.pcf8574Ready;
     doc["system"]["atomizer_enabled"] = state.atomizerEnabled;
     
     doc["statistics"]["total_detections"] = state.totalDetections;
