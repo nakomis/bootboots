@@ -56,6 +56,12 @@ struct SystemState {
     // Training mode - captures photos without inference/deterrent
     bool trainingMode = false;
 
+    // Peripheral states — tracked for BLE status broadcast and test UI
+    bool pirActive = false;       // Live PIR sensor reading (P0)
+    bool flashLedOn = false;      // Flash LED state (P7)
+    bool ledStripOn = false;      // LED strip state (P5+P6)
+    bool sprayOn = false;         // Atomiser/spray state (P3)
+
     // Deterrent settings (persisted to NVS, configurable via MQTT)
     float triggerThresh = 0.80f;  // Boots confidence required to fire deterrent (0-1)
     bool dryRun = false;          // When true, skip atomizer but run all other steps

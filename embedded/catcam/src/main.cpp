@@ -212,6 +212,67 @@ void setup() {
             ctx.sender->sendResponse(responseStr);
             return true;
         });
+
+        // set_peripheral {"peripheral": "flash_led"|"led_strip"|"spray", "state": true|false}
+        // Direct peripheral control for hardware testing via the test UI.
+        dispatcher->registerHandler("set_peripheral", [](CommandContext& ctx) {
+            String peripheral = ctx.request["peripheral"] | "";
+            bool state = ctx.request["state"] | false;
+
+            if (peripheral.isEmpty()) {
+                DynamicJsonDocument errDoc(128);
+                errDoc["type"] = "error";
+                errDoc["message"] = "Missing 'peripheral' field";
+                String errStr; serializeJson(errDoc, errStr);
+                ctx.sender->sendResponse(errStr);
+                return false;
+            }
+
+            PCF8574Manager* pcf = systemManager.getPcfManager();
+            if (!pcf || !systemState.pcf8574Ready) {
+                DynamicJsonDocument errDoc(128);
+                errDoc["type"] = "error";
+                errDoc["message"] = "PCF8574 not available";
+                String errStr; serializeJson(errDoc, errStr);
+                ctx.sender->sendResponse(errStr);
+                return false;
+            }
+
+            bool ok = false;
+            if (peripheral == "flash_led") {
+                ok = pcf->setFlashLED(state);
+                if (ok) systemState.flashLedOn = state;
+            } else if (peripheral == "led_strip") {
+                // Control both LED strip channels together
+                bool ok1 = pcf->setPinState(PCF8574Manager::LED_STRIP_1_PIN, state);
+                bool ok2 = pcf->setPinState(PCF8574Manager::LED_STRIP_2_PIN, state);
+                ok = ok1 && ok2;
+                if (ok) systemState.ledStripOn = state;
+            } else if (peripheral == "spray") {
+                ok = pcf->setAtomizerState(state);
+                if (ok) systemState.sprayOn = state;
+            } else {
+                DynamicJsonDocument errDoc(128);
+                errDoc["type"] = "error";
+                errDoc["message"] = "Unknown peripheral: " + peripheral;
+                String errStr; serializeJson(errDoc, errStr);
+                ctx.sender->sendResponse(errStr);
+                return false;
+            }
+
+            SDLogger::getInstance().infof("Peripheral '%s' set %s via %s",
+                peripheral.c_str(), state ? "ON" : "OFF", ctx.sender->getName());
+
+            DynamicJsonDocument response(256);
+            response["type"] = "peripheral_updated";
+            response["peripheral"] = peripheral;
+            response["state"] = state;
+            response["ok"] = ok;
+            String responseStr;
+            serializeJson(response, responseStr);
+            ctx.sender->sendResponse(responseStr);
+            return true;
+        });
     }
 
     // Sync training mode to capture controller
@@ -283,6 +344,14 @@ void loop() {
                     }
                 }
             }
+        }
+    }
+
+    // Poll PIR sensor state so the BLE status broadcast reflects live readings
+    if (systemState.pcf8574Ready) {
+        PCF8574Manager* pcf = systemManager.getPcfManager();
+        if (pcf) {
+            systemState.pirActive = pcf->readPIRSensor();
         }
     }
 
