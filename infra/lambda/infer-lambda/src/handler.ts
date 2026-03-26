@@ -401,11 +401,18 @@ export async function handler(event: APIGatewayProxyEvent, _context: Context): P
             }
 
             // Invoke SageMaker (and optionally Claude) in parallel
+            // The serving_default signature accepts b64-encoded JPEG bytes wrapped
+            // in TF Serving's instances format.  TF Serving decodes the b64 string
+            // to bytes and passes the raw JPEG to our serve_jpeg tf.function, which
+            // decodes and resizes to (224,224,3) before running the model.
             const endpointName = 'bootboots';
+            const sagemakerBody = JSON.stringify({
+                instances: [{ b64: imageBuffer.toString('base64') }]
+            });
             const invokeCommand = new InvokeEndpointCommand({
                 EndpointName: endpointName,
-                ContentType: 'image/jpeg',
-                Body: imageBuffer
+                ContentType: 'application/json',
+                Body: Buffer.from(sagemakerBody),
             });
 
             logger.info('Invoking SageMaker endpoint', { endpointName, claudeInfer });

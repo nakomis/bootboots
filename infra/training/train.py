@@ -184,9 +184,26 @@ history = model.fit(
 # ---------------------------------------------------------------------------
 # Save
 # ---------------------------------------------------------------------------
+# Wrap the model with a JPEG-decoding serving signature so the SageMaker
+# TF Serving endpoint accepts raw image bytes (content-type: application/json
+# with instances as b64-encoded JPEG strings).  Without this the SavedModel's
+# default signature requires a pre-resized float32 tensor, which TF Serving
+# cannot produce from raw JPEG bytes and will reject with a 415 error.
+@tf.function(input_signature=[
+    tf.TensorSpec(shape=[None], dtype=tf.string, name="image_bytes")
+])
+def serve_jpeg(image_bytes):
+    def decode_one(img_bytes):
+        img = tf.image.decode_jpeg(img_bytes, channels=3)
+        img = tf.image.resize(img, IMG_SIZE)
+        return tf.cast(img, tf.float32)
+
+    images = tf.map_fn(decode_one, image_bytes, fn_output_signature=tf.float32)
+    return {"probabilities": model(images, training=False)}
+
 # TF Serving expects a versioned SavedModel: <model_dir>/1/
 saved_model_path = os.path.join(MODEL_DIR, "1")
-model.save(saved_model_path)
+model.save(saved_model_path, signatures={"serving_default": serve_jpeg})
 print(f"SavedModel written to {saved_model_path}")
 
 # Save class names so the inference Lambda can map indices to names
