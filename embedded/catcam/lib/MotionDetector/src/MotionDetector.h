@@ -2,12 +2,10 @@
 
 #include <Arduino.h>
 
-class PCF8574Manager;
-
 /**
- * MotionDetector - Detects PIR motion sensor events via PCF8574
+ * MotionDetector - Detects PIR motion sensor events via a direct GPIO pin
  *
- * Polls the PIR sensor on the PCF8574 spare pin (P3) with:
+ * Polls the PIR sensor on a configurable GPIO pin with:
  * - Edge-triggered detection (only triggers on LOW->HIGH transition)
  * - 200ms debounce to filter noise
  * - 30-second cooldown between activations
@@ -20,9 +18,9 @@ public:
 
     /**
      * Constructor
-     * @param pcfManager Pointer to PCF8574Manager for reading PIR sensor
+     * @param pirPin GPIO pin number the PIR sensor is connected to (active HIGH)
      */
-    explicit MotionDetector(PCF8574Manager* pcfManager);
+    explicit MotionDetector(int pirPin);
 
     /**
      * Update the motion detector state
@@ -54,8 +52,14 @@ public:
      */
     void resetCooldown();
 
+    /**
+     * Read the current raw PIR sensor state
+     * @return true if PIR is active (HIGH)
+     */
+    bool readRawState() const;
+
 private:
-    PCF8574Manager* _pcfManager;
+    int _pirPin;
 
     // State tracking
     bool _lastPinState;           // Previous pin state for edge detection

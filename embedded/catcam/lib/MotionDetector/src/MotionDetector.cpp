@@ -1,26 +1,24 @@
 #include "MotionDetector.h"
-#include "PCF8574Manager.h"
 #include <SDLogger.h>
 
-MotionDetector::MotionDetector(PCF8574Manager* pcfManager)
-    : _pcfManager(pcfManager)
+MotionDetector::MotionDetector(int pirPin)
+    : _pirPin(pirPin)
     , _lastPinState(false)
     , _motionDetected(false)
     , _lastDebounce(0)
     , _cooldownStart(0)
     , _inCooldown(false)
 {
+    pinMode(_pirPin, INPUT);
 }
 
 void MotionDetector::update() {
-    SDLogger::getInstance().debugf("MotionDetector: Rising updating");
-    if (!_pcfManager) {
-        return;
-    }
-
-    // Read current PIR sensor state (active HIGH)
-    bool currentState = _pcfManager->readPIRSensor();
+    bool currentState = readRawState();
     unsigned long now = millis();
+
+    if (currentState) {
+        SDLogger::getInstance().debug("MotionDetector: PIR sensor state: ACTIVE");
+    }
 
     // Check for rising edge (LOW -> HIGH transition)
     if (currentState && !_lastPinState) {
@@ -81,4 +79,8 @@ void MotionDetector::resetCooldown() {
     _inCooldown = false;
     _cooldownStart = 0;
     SDLogger::getInstance().debugf("MotionDetector: Cooldown reset");
+}
+
+bool MotionDetector::readRawState() const {
+    return digitalRead(_pirPin) == HIGH;
 }

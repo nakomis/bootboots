@@ -348,10 +348,10 @@ void loop() {
     }
 
     // Poll PIR sensor state so the BLE status broadcast reflects live readings
-    if (systemState.pcf8574Ready) {
-        PCF8574Manager* pcf = systemManager.getPcfManager();
-        if (pcf) {
-            systemState.pirActive = pcf->readPIRSensor();
+    {
+        MotionDetector* motionDetector = systemManager.getMotionDetector();
+        if (motionDetector) {
+            systemState.pirActive = motionDetector->readRawState();
         }
     }
 
