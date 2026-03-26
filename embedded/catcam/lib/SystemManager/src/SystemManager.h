@@ -134,6 +134,9 @@ private:
     unsigned long _lastPcfBlink;
     bool _pcfLedState;
 
+    // Periodic BLE status broadcast
+    unsigned long _lastBleStatusBroadcast;
+
     // WiFi status monitoring
     void updateWifiStatus(SystemState& state);
 };
