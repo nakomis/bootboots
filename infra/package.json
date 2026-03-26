@@ -20,6 +20,7 @@
     "typescript": "~5.6.3"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
     "@aws-lambda-powertools/logger": "^2.27.0",
     "aws-cdk-lib": "2.201.0",
     "cdk-iot-core-certificates-v3": "^0.0.14",

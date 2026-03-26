@@ -45,7 +45,7 @@ if os.path.exists(hp_path):
 epochs               = int(hp.get("epochs", 50))
 learning_rate        = float(hp.get("learning_rate", 0.0001))
 batch_size           = int(hp.get("batch_size", 16))
-num_classes          = int(hp.get("num_classes", 7))
+num_classes          = int(hp.get("num_classes", 2))
 dropout_rate         = float(hp.get("dropout_rate", 0.3))
 l2_reg               = float(hp.get("regularizers_l2", 0.0001))
 train_only_top       = hp.get("train_only_top_layer", "False").lower() == "true"
