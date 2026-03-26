@@ -273,6 +273,38 @@ void setup() {
             ctx.sender->sendResponse(responseStr);
             return true;
         });
+
+        // simulate_detection — trigger full deterrent sequence (LEDs, video, upload) with a
+        // synthetic Boots result. Does not capture a photo or call SageMaker. Respects dryRun.
+        dispatcher->registerHandler("simulate_detection", [](CommandContext& ctx) {
+            DeterrentController* dc = systemManager.getDeterrentController();
+            if (!dc) {
+                DynamicJsonDocument errDoc(128);
+                errDoc["type"] = "error";
+                errDoc["message"] = "Deterrent controller not available";
+                String errStr; serializeJson(errDoc, errStr);
+                ctx.sender->sendResponse(errStr);
+                return false;
+            }
+
+            SDLogger::getInstance().infof("=== Simulating Boots Detection ===");
+
+            // Acknowledge before blocking so the UI can show in-progress state
+            DynamicJsonDocument startDoc(128);
+            startDoc["type"] = "simulation_started";
+            String startStr; serializeJson(startDoc, startStr);
+            ctx.sender->sendResponse(startStr);
+
+            systemState.deterrentActivationCount++;
+            systemState.bootsDetections++;
+            dc->activate(systemState, systemState.dryRun);  // BLOCKING ~10s
+
+            DynamicJsonDocument doneDoc(128);
+            doneDoc["type"] = "simulation_complete";
+            String doneStr; serializeJson(doneDoc, doneStr);
+            ctx.sender->sendResponse(doneStr);
+            return true;
+        });
     }
 
     // Sync training mode to capture controller
