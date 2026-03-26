@@ -4,6 +4,7 @@ import { SageMakerRuntimeClient, InvokeEndpointCommand } from '@aws-sdk/client-s
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import { randomUUID } from 'crypto';
 import Anthropic from '@anthropic-ai/sdk';
 
@@ -12,7 +13,24 @@ const sagemakerClient = new SageMakerRuntimeClient({ region: process.env.AWS_REG
 const s3Client = new S3Client({ region: process.env.AWS_REGION });
 const dynamoClient = new DynamoDBClient({ region: process.env.AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
-const anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const ssmClient = new SSMClient({ region: process.env.AWS_REGION });
+
+// Cached Anthropic client — resolved once per Lambda container lifetime
+let anthropicClient: Anthropic | undefined;
+
+async function getAnthropicClient(): Promise<Anthropic> {
+    if (anthropicClient) return anthropicClient;
+
+    const paramPath = process.env.ANTHROPIC_API_KEY_SSM_PATH;
+    if (!paramPath) throw new Error('ANTHROPIC_API_KEY_SSM_PATH env var not set');
+
+    const result = await ssmClient.send(new GetParameterCommand({ Name: paramPath, WithDecryption: true }));
+    const apiKey = result.Parameter?.Value;
+    if (!apiKey) throw new Error(`SSM parameter ${paramPath} is empty`);
+
+    anthropicClient = new Anthropic({ apiKey });
+    return anthropicClient;
+}
 
 // Cat names in order corresponding to the probability array indices
 // [0]=Boots, [1]=NotBoots (binary classifier)
@@ -94,8 +112,9 @@ If no cat is clearly visible, respond with:
 
 async function invokeClaudeVision(imageBuffer: Buffer): Promise<ClaudeResult> {
     const base64Image = imageBuffer.toString('base64');
+    const client = await getAnthropicClient();
 
-    const response = await anthropicClient.messages.create({
+    const response = await client.messages.create({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 150,
         system: CLAUDE_SYSTEM_PROMPT,

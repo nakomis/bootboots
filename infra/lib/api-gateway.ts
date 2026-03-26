@@ -71,9 +71,7 @@ const inferLambdaLogGroup = new logs.LogGroup(this, 'BootBootsInferLambdaLogGrou
             IMAGES_BUCKET_NAME: imagesBucket.bucketName,
             CATCAM_EVENTS_TABLE_NAME: catcamEventsTable.tableName,
             EVENTS_MIN_CONFIDENCE: '0.5',
-            ANTHROPIC_API_KEY: ssm.StringParameter.valueForSecureStringParameter(
-                this, '/bootboots/anthropic-api-key', 1
-            ),
+            ANTHROPIC_API_KEY_SSM_PATH: '/bootboots/anthropic-api-key',
         },
         bundling: {
             minify: true,
@@ -81,6 +79,13 @@ const inferLambdaLogGroup = new logs.LogGroup(this, 'BootBootsInferLambdaLogGrou
             target: 'node22',
         },
     });
+
+    // Grant SSM read permission for the Anthropic API key (fetched at runtime)
+    inferLambda.addToRolePolicy(new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['ssm:GetParameter'],
+        resources: [`arn:aws:ssm:${this.region}:${this.account}:parameter/bootboots/anthropic-api-key`],
+    }));
 
     // Grant SageMaker invoke permissions to the Lambda function
     inferLambda.addToRolePolicy(new iam.PolicyStatement({
