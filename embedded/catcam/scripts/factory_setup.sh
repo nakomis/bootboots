@@ -102,12 +102,14 @@ wait_for_download_mode() {
 # Step 1: Build Bootloader
 echo -e "${BLUE}[1/5] Building bootloader...${NC}"
 cd "$BOOTLOADER_DIR"
-if ! pio run; then
+if ! pio run -e esp32s3cam; then
     echo -e "${RED}✗ Bootloader build failed${NC}"
     exit 1
 fi
 
-BOOTLOADER_BIN="$BOOTLOADER_DIR/.pio/build/esp32cam/firmware.bin"
+BOOTLOADER_2ND="$BOOTLOADER_DIR/.pio/build/esp32s3cam/bootloader.bin"
+BOOTLOADER_PARTITIONS="$BOOTLOADER_DIR/.pio/build/esp32s3cam/partitions.bin"
+BOOTLOADER_BIN="$BOOTLOADER_DIR/.pio/build/esp32s3cam/firmware.bin"
 BOOTLOADER_SIZE=$(stat -f%z "$BOOTLOADER_BIN" 2>/dev/null || stat -c%s "$BOOTLOADER_BIN" 2>/dev/null)
 echo -e "${GREEN}✓ Bootloader built: $(numfmt --to=iec-i --suffix=B $BOOTLOADER_SIZE 2>/dev/null || echo "${BOOTLOADER_SIZE} bytes")${NC}"
 echo
@@ -115,27 +117,29 @@ echo
 # Step 2: Build Catcam App
 echo -e "${BLUE}[2/5] Building catcam application...${NC}"
 cd "$CATCAM_DIR"
-if ! pio run; then
+if ! pio run -e esp32s3cam; then
     echo -e "${RED}✗ Catcam build failed${NC}"
-    exit 1
 fi
 
-CATCAM_BIN="$CATCAM_DIR/.pio/build/esp32cam/firmware.bin"
+CATCAM_BIN="$CATCAM_DIR/.pio/build/esp32s3cam/firmware.bin"
 CATCAM_SIZE=$(stat -f%z "$CATCAM_BIN" 2>/dev/null || stat -c%s "$CATCAM_BIN" 2>/dev/null)
 echo -e "${GREEN}✓ Catcam built: $(numfmt --to=iec-i --suffix=B $CATCAM_SIZE 2>/dev/null || echo "${CATCAM_SIZE} bytes")${NC}"
 echo
 
-# Step 3: Flash Bootloader to Factory Partition
-echo -e "${BLUE}[3/5] Flashing bootloader to factory partition (0x10000)...${NC}"
+# Step 3: Flash Bootloader (2nd stage + partition table + factory firmware)
+echo -e "${BLUE}[3/5] Flashing bootloader to factory partition...${NC}"
 wait_for_download_mode
 
 if ! python3 "$ESPTOOL" \
-    --chip esp32 \
+    --chip esp32s3 \
     --port "$SERIAL_PORT" \
     --baud "$BAUD_RATE" \
     --before default_reset \
     --after hard_reset \
-    write_flash 0x10000 "$BOOTLOADER_BIN"; then
+    write_flash -z --flash_mode dout --flash_freq 80m --flash_size 16MB \
+    0x0 "$BOOTLOADER_2ND" \
+    0x8000 "$BOOTLOADER_PARTITIONS" \
+    0x10000 "$BOOTLOADER_BIN"; then
     echo -e "${RED}✗ Bootloader flash failed${NC}"
     exit 1
 fi
@@ -144,16 +148,17 @@ echo -e "${GREEN}✓ Bootloader flashed successfully${NC}"
 echo
 
 # Step 4: Flash Catcam App to OTA0 Partition
-echo -e "${BLUE}[4/5] Flashing catcam app to OTA0 partition (0x80000)...${NC}"
+echo -e "${BLUE}[4/5] Flashing catcam app to OTA0 partition (0x110000)...${NC}"
 wait_for_download_mode
 
 if ! python3 "$ESPTOOL" \
-    --chip esp32 \
+    --chip esp32s3 \
     --port "$SERIAL_PORT" \
     --baud "$BAUD_RATE" \
     --before default_reset \
     --after hard_reset \
-    write_flash 0x80000 "$CATCAM_BIN"; then
+    write_flash -z --flash_mode dout --flash_freq 80m --flash_size 16MB \
+    0x110000 "$CATCAM_BIN"; then
     echo -e "${RED}✗ Catcam flash failed${NC}"
     exit 1
 fi
@@ -179,9 +184,9 @@ echo -e "${GREEN}  ✓ Factory Setup Complete!${NC}"
 echo -e "${GREEN}============================================================${NC}"
 echo
 echo -e "${GREEN}Partition Layout:${NC}"
-echo "  Factory (448KB @ 0x10000):  Bootloader"
-echo "  OTA0 (3.56MB @ 0x80000):    Catcam App v$(grep 'FIRMWARE_VERSION' "$CATCAM_DIR/include/version.h" | cut -d'"' -f2)"
-echo "  SPIFFS (40KB @ 0x3F0000):   Logs"
+echo "  Factory (1MB @ 0x10000):    Bootloader"
+echo "  OTA0 (7MB @ 0x110000):      Catcam App v$(grep 'FIRMWARE_VERSION' "$CATCAM_DIR/include/version.h" | cut -d'"' -f2)"
+echo "  SPIFFS (@ 0x810000):        File storage"
 echo
 echo -e "${GREEN}Next Steps:${NC}"
 echo "  1. Monitor serial output to verify boot sequence"
