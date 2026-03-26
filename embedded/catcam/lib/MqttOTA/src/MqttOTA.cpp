@@ -1,5 +1,6 @@
 #include "MqttOTA.h"
 #include <ArduinoJson.h>
+#include <esp_bt.h>
 #include "../../OTAUpdate/src/OTAUpdate.h"
 #include "../../MqttService/src/MqttService.h"
 #include "../../BluetoothOTA/src/BluetoothOTA.h"
@@ -165,14 +166,27 @@ void MqttOTA::processOTAUpdate(IResponseSender* sender, const String& url, const
         _mqttService->pause();
     }
 
-    // Stop BLE advertising to free additional memory
+    // Fully shut down the BLE stack to recover ~50-80KB of internal SRAM.
+    // Stopping advertising alone only frees ~2KB, leaving the internal heap too
+    // fragmented for the SSL handshake (~40KB contiguous block needed).
+    // btStop() + esp_bt_mem_release() bypass the Arduino BLE wrapper (which hangs
+    // on deinit per esp32-snippets #1155) and go direct to ESP-IDF. The device
+    // always reboots after OTA so losing BLE here is fine.
     if (_bleOTA) {
         SDLogger::getInstance().infof("MqttOTA: Stopping BLE advertising");
         BLEDevice::stopAdvertising();
     }
 
-    delay(1000);
+    delay(500);  // Let any in-flight BLE packets flush
+
+    SDLogger::getInstance().infof("MqttOTA: Deinitialising BLE stack to free internal SRAM for SSL...");
+    btStop();
+    esp_bt_mem_release(ESP_BT_MODE_BLE);
+
+    delay(500);  // Let the BLE stack fully shut down
+
     SDLogger::getInstance().infof("MqttOTA: Free heap before download: %d bytes", ESP.getFreeHeap());
+    SDLogger::getInstance().infof("MqttOTA: Largest free block: %d bytes", heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
 
     // Download firmware to SD card - device will reboot on completion
     bool started = _otaUpdate->downloadToSD(url.c_str());
