@@ -62,6 +62,10 @@ public:
     // Set MQTT service - will be paused/resumed around SSL requests to free memory
     void setMqttService(class MqttService* mqttService) { _mqttService = mqttService; }
 
+    // Pause/resume MQTT connection to free SSL memory for HTTPS requests
+    void pauseMqtt();
+    void resumeMqtt();
+
     // Utility methods
     String urlEncode(const String& str);
 
