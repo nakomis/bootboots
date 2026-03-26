@@ -13,6 +13,7 @@ MotionDetector::MotionDetector(PCF8574Manager* pcfManager)
 }
 
 void MotionDetector::update() {
+    SDLogger::getInstance().debugf("MotionDetector: Rising updating");
     if (!_pcfManager) {
         return;
     }
