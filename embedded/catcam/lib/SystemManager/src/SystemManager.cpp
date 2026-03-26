@@ -43,7 +43,6 @@ SystemManager::SystemManager()
     , _mqttOTA(nullptr)
     , _lastPcfBlink(0)
     , _pcfLedState(false)
-    , _lastBleStatusBroadcast(0)
 {
 }
 
@@ -279,19 +278,10 @@ bool SystemManager::initComponents(const Config& config, SystemState& state,
     return true;
 }
 
-static const unsigned long BLE_STATUS_BROADCAST_INTERVAL_MS = 2000;
-
 void SystemManager::update(SystemState& state) {
     // Handle Bluetooth service
     if (_bluetoothService) {
         _bluetoothService->handle();
-
-        // Periodically push status notifications so the web app stays live
-        if (_bluetoothService->isConnected() &&
-            millis() - _lastBleStatusBroadcast >= BLE_STATUS_BROADCAST_INTERVAL_MS) {
-            _lastBleStatusBroadcast = millis();
-            _bluetoothService->updateSystemStatus(state);
-        }
     }
 
     if (_bluetoothOTA) {
