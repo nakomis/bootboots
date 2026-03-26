@@ -25,6 +25,7 @@ CommandDispatcher::CommandDispatcher()
     registerHandler("ping", [this](CommandContext& ctx) { return handlePing(ctx); });
     registerHandler("get_status", [this](CommandContext& ctx) { return handleGetStatus(ctx); });
     registerHandler("get_settings", [this](CommandContext& ctx) { return handleGetSettings(ctx); });
+    registerHandler("get_camera_settings", [this](CommandContext& ctx) { return handleGetCameraSettings(ctx); });
     registerHandler("set_setting", [this](CommandContext& ctx) { return handleSetSetting(ctx); });
     registerHandler("take_photo", [this](CommandContext& ctx) { return handleTakePhoto(ctx); });
     registerHandler("reboot", [this](CommandContext& ctx) { return handleReboot(ctx); });
@@ -155,12 +156,29 @@ bool CommandDispatcher::handleGetSettings(CommandContext& ctx) {
         return false;
     }
 
-    DynamicJsonDocument response(1024);
+    DynamicJsonDocument response(256);
     response["type"] = "settings";
     response["training_mode"] = _systemState->trainingMode;
     response["trigger_threshold"] = _systemState->triggerThresh;
     response["dry_run"] = _systemState->dryRun;
     response["claude_infer"] = _systemState->claudeInfer;
+
+    String responseStr;
+    serializeJson(response, responseStr);
+    ctx.sender->sendResponse(responseStr);
+
+    SDLogger::getInstance().infof("Get settings request via %s", ctx.sender->getName());
+    return true;
+}
+
+bool CommandDispatcher::handleGetCameraSettings(CommandContext& ctx) {
+    if (!_systemState) {
+        sendError(ctx.sender, "System state not available");
+        return false;
+    }
+
+    DynamicJsonDocument response(768);
+    response["type"] = "camera_settings";
 
     JsonObject cam = response.createNestedObject("camera");
     cam["frame_size"] = _systemState->cameraSettings.frameSize;
@@ -194,7 +212,7 @@ bool CommandDispatcher::handleGetSettings(CommandContext& ctx) {
     serializeJson(response, responseStr);
     ctx.sender->sendResponse(responseStr);
 
-    SDLogger::getInstance().infof("Get settings request via %s", ctx.sender->getName());
+    SDLogger::getInstance().infof("Get camera settings request via %s", ctx.sender->getName());
     return true;
 }
 
