@@ -385,7 +385,7 @@ export async function handler(event: APIGatewayProxyEvent, _context: Context): P
             const endpointName = 'bootboots';
             const invokeCommand = new InvokeEndpointCommand({
                 EndpointName: endpointName,
-                ContentType: 'application/x-image',
+                ContentType: 'image/jpeg',
                 Body: imageBuffer
             });
 
