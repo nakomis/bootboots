@@ -16,10 +16,6 @@ void MotionDetector::update() {
     bool currentState = readRawState();
     unsigned long now = millis();
 
-    if (currentState) {
-        SDLogger::getInstance().debug("MotionDetector: PIR sensor state: ACTIVE");
-    }
-
     // Check for rising edge (LOW -> HIGH transition)
     if (currentState && !_lastPinState) {
         // Potential motion detected - check debounce
