@@ -249,8 +249,19 @@ void setup() {
                 ok = ok1 && ok2;
                 if (ok) systemState.ledStripOn = state;
             } else if (peripheral == "spray") {
-                ok = pcf->setAtomizerState(state);
-                if (ok) systemState.sprayOn = state;
+                if (state) {
+                    ok = pcf->setAtomizerState(true);
+                    if (ok) {
+                        systemState.sprayOn = true;
+                        systemState.sprayAutoOffAt = millis() + 5000;
+                    }
+                } else {
+                    ok = pcf->setAtomizerState(false);
+                    if (ok) {
+                        systemState.sprayOn = false;
+                        systemState.sprayAutoOffAt = 0;
+                    }
+                }
             } else {
                 DynamicJsonDocument errDoc(128);
                 errDoc["type"] = "error";
@@ -385,6 +396,17 @@ void loop() {
         if (motionDetector) {
             systemState.pirActive = motionDetector->readRawState();
         }
+    }
+
+    // Auto-off for spray after 5 seconds
+    if (systemState.sprayOn && systemState.sprayAutoOffAt > 0 && millis() >= systemState.sprayAutoOffAt) {
+        PCF8574Manager* pcf = systemManager.getPcfManager();
+        if (pcf) {
+            pcf->setAtomizerState(false);
+        }
+        systemState.sprayOn = false;
+        systemState.sprayAutoOffAt = 0;
+        SDLogger::getInstance().infof("Spray auto-off after 5s");
     }
 
     // Handle Bluetooth, OTA, and WiFi status

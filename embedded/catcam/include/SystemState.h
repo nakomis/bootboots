@@ -40,7 +40,7 @@ struct SystemState {
     bool sdCardReady = false;
     bool i2cReady = false;
     bool pcf8574Ready = false;
-    bool atomizerEnabled = true;
+    bool atomizerEnabled = false;
     unsigned long lastDetection = 0;
     unsigned long lastStatusReport = 0;
     unsigned long systemStartTime = 0;
@@ -61,6 +61,7 @@ struct SystemState {
     bool flashLedOn = false;      // Flash LED state (P7)
     bool ledStripOn = false;      // LED strip state (P5+P6)
     bool sprayOn = false;         // Atomiser/spray state (P3)
+    unsigned long sprayAutoOffAt = 0;  // millis() time to auto-off spray (0 = no timer)
 
     // Deterrent settings (persisted to NVS, configurable via MQTT)
     float triggerThresh = 0.80f;  // Boots confidence required to fire deterrent (0-1)
