@@ -133,6 +133,7 @@ bool CommandDispatcher::handleGetStatus(CommandContext& ctx) {
     sys["wifi_connected"] = _systemState->wifiConnected;
     sys["sd_card_ready"] = _systemState->sdCardReady;
     sys["i2c_ready"] = _systemState->i2cReady;
+    sys["pcf8574_ready"] = _systemState->pcf8574Ready;
     sys["atomizer_enabled"] = _systemState->atomizerEnabled;
     sys["training_mode"] = _systemState->trainingMode;
 
@@ -141,6 +142,12 @@ bool CommandDispatcher::handleGetStatus(CommandContext& ctx) {
     stats["boots_detections"] = _systemState->bootsDetections;
     stats["atomizer_activations"] = _systemState->atomizerActivations;
     stats["false_positives_avoided"] = _systemState->falsePositivesAvoided;
+
+    JsonObject peripherals = response.createNestedObject("peripherals");
+    peripherals["pir_active"] = _systemState->pirActive;
+    peripherals["flash_led_on"] = _systemState->flashLedOn;
+    peripherals["led_strip_on"] = _systemState->ledStripOn;
+    peripherals["spray_on"] = _systemState->sprayOn;
 
     String responseStr;
     serializeJson(response, responseStr);
