@@ -209,6 +209,9 @@ const inferLambdaLogGroup = new logs.LogGroup(this, 'BootBootsInferLambdaLogGrou
           'Content-Type',
           'Authorization',
           'X-API-Key',
+          'X-Amz-Date',
+          'X-Amz-Security-Token',
+          'X-Amz-Content-Sha256',
         ],
       },
       // Disable the default endpoint to force usage of custom domain
@@ -358,6 +361,21 @@ const inferLambdaLogGroup = new logs.LogGroup(this, 'BootBootsInferLambdaLogGrou
           statusCode: '500',
         },
       ],
+    });
+
+    // Add Gateway Responses with CORS headers so 403/5xx errors are readable by the browser
+    const corsResponseHeaders = {
+      'Access-Control-Allow-Origin': "'https://sandbox.nakomis.com'",
+      'Access-Control-Allow-Headers': "'Content-Type,Authorization,X-API-Key,X-Amz-Date,X-Amz-Security-Token,X-Amz-Content-Sha256'",
+      'Access-Control-Allow-Methods': "'GET,POST,PUT,OPTIONS'",
+    };
+    this.api.addGatewayResponse('Default4xx', {
+      type: apigateway.ResponseType.DEFAULT_4XX,
+      responseHeaders: corsResponseHeaders,
+    });
+    this.api.addGatewayResponse('Default5xx', {
+      type: apigateway.ResponseType.DEFAULT_5XX,
+      responseHeaders: corsResponseHeaders,
     });
 
     // Create the /events resource for querying catcam events

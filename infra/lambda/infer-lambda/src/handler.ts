@@ -448,9 +448,12 @@ export async function handler(event: APIGatewayProxyEvent, _context: Context): P
             });
 
             // Determine the most likely cat from probabilities
+            // TF Serving REST API wraps outputs as {"predictions": [[p0, p1, ...]]}
+            // Fall back to "probabilities" key for any custom inference scripts
+            const probs = sagemakerResult?.predictions?.[0] ?? sagemakerResult?.probabilities;
             let mostLikelyCat = { name: 'Unknown', confidence: 0, index: -1 };
-            if (sagemakerResult && sagemakerResult.probabilities && Array.isArray(sagemakerResult.probabilities)) {
-                mostLikelyCat = getMostLikelyCat(sagemakerResult.probabilities);
+            if (probs && Array.isArray(probs)) {
+                mostLikelyCat = getMostLikelyCat(probs);
                 logger.info('Most likely cat detected', { mostLikelyCat });
             }
 
@@ -464,7 +467,7 @@ export async function handler(event: APIGatewayProxyEvent, _context: Context): P
             }
 
             // Record event in catcam-events if Boots confidence meets threshold
-            const bootsConfidence = sagemakerResult?.probabilities?.[0] ?? mostLikelyCat.confidence;
+            const bootsConfidence = probs?.[0] ?? mostLikelyCat.confidence;
             if (s3ImageKey && bootsConfidence >= EVENTS_MIN_CONFIDENCE) {
                 try {
                     await createCatcamEventRecord(s3ImageKey, bootsConfidence, claudeResult ?? undefined);

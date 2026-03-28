@@ -441,6 +441,12 @@ void BluetoothOTA::processOTAUpdate(const OTACommand& command) {
     btStop();
     esp_bt_mem_release(ESP_BT_MODE_BLE);
 
+    // Null out BLE characteristic pointers so any progress callbacks that fire
+    // during the download don't try to call notify() on the dead BLE stack.
+    // sendStatusUpdate() guards on _pStatusCharacteristic being non-null.
+    _pStatusCharacteristic = nullptr;
+    _pCommandCharacteristic = nullptr;
+
     // Give the BLE stack time to fully shut down
     delay(500);
 

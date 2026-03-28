@@ -6,3 +6,4 @@ misc/bucket/catcam-images
 WINDSURF_CONTEXT.md
 .python-version
 .vscode
+infra/training/*
