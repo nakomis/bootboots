@@ -132,11 +132,12 @@ def main() -> None:
     records = scan_dynamo(dynamodb, TABLE_NAME)
     print(f"Found {len(records)} labeled records")
 
-    # Group by class
+    # Group by class, excluding multi-cat images (ambiguous for training)
     from collections import defaultdict
     by_class: dict[str, list] = defaultdict(list)
     for r in records:
-        by_class[r["cat"]].append(r)
+        if r["cat"] != "Multi":
+            by_class[r["cat"]].append(r)
 
     print("\nClass distribution (raw):")
     for cls, recs in sorted(by_class.items(), key=lambda x: -len(x[1])):

@@ -133,6 +133,9 @@ def main() -> None:
     records = scan_dynamo(dynamodb, TABLE_NAME)
     print(f"Found {len(records)} labeled records")
 
+    # Exclude multi-cat images — ambiguous for binary training
+    records = [r for r in records if r["cat"] != "Multi"]
+
     boots = [r for r in records if r["cat"] == "Boots"]
     not_boots = [r for r in records if r["cat"] != "Boots"]
     for r in not_boots:
