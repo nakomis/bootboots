@@ -28,45 +28,44 @@ Train and test the cat classifier on your M-series Mac, without going anywhere n
                     │  └────────────────────┘                  │
                     └──────────────┬──────────────────────────┘
                                    │
-                          download_data.py
-                          (reads labels + downloads images)
+                    download_data_multiclass.py
+                    (reads labels + downloads images)
                                    │
                                    ▼
           ┌────────────────────────────────────────────────────┐
-          │                  local-training/data/               │
+          │             local-training/data_multiclass/         │
           │                                                      │
           │  training/         (≈79% of images)                 │
           │  ├── Boots/                                          │
-          │  └── NotBoots/                                       │
+          │  ├── Chi/                                            │
+          │  ├── Kappa/                                          │
+          │  ├── Mu/                                             │
+          │  ├── NoCat/                                          │
+          │  ├── Tau/                                            │
+          │  └── Wolf/                                           │
           │                                                      │
           │  validation/       (≈20% of images)                 │
-          │  ├── Boots/         ← used during training to        │
-          │  └── NotBoots/         measure accuracy each epoch   │
+          │  └── (same class dirs)                               │
+          │        ← used during training each epoch             │
           │                                                      │
           │  manual_test/      (1% of images)                   │
-          │  ├── Boots/         ← NEVER seen during training;    │
-          │  └── NotBoots/         you use these at the end      │
+          │  └── (same class dirs)                               │
+          │        ← NEVER seen during training                  │
           └───────────────┬────────────────────────────────────┘
                           │
-                    train_local.py
-                    (MobileNetV2 on Metal GPU)
+                    train_multiclass.py
+                    (EfficientNetV2B1 on Metal GPU)
                           │
                           ▼
           ┌────────────────────────────┐
-          │    local-training/models/  │
+          │  local-training/models_multiclass/ │
           │                            │
-          │  saved_model/              │
           │  best_model.keras          │
           │  class_names.json          │
           └──────────────┬─────────────┘
                          │
-                   predict.py
-                   (run on manual_test/ images)
-                         │
-                         ▼
-          Boots      87.3%  ████████████████░░░░  2025-07-29T…jpg
-          NotBoots   94.1%  ██████████████████░░  2026-01-18T…jpg
-          …
+               predict.py / serve.py
+               (manual testing + sandbox badge)
 ```
 
 ---
@@ -80,24 +79,33 @@ The catcam has used two naming schemes over time:
 | Pre-2026 (old) | Numeric | `540.jpeg` |
 | 2025 onwards | ISO timestamp | `2025-07-29T21-20-54-225Z.jpg` |
 
-`download_data.py` handles both transparently. The old images also had a bug where they were saved without a JPEG end-of-file marker — the script patches those automatically as it downloads them.
+`download_data_multiclass.py` handles both transparently. The old images also had
+a bug where they were saved without a JPEG end-of-file marker — the script patches
+those automatically as it downloads them.
 
 ---
 
-## The binary classifier
+## Model architecture
 
-Everything gets sorted into two buckets:
+The classifier is built on **EfficientNetV2B1** (ImageNet pretrained), with a
+GlobalAveragePooling → Dropout → Dense(7, softmax) head. Input resolution: 240×240.
 
-```
-All labeled cats
-      │
-      ├── cat == "Boots"  →  class: Boots
-      │
-      └── cat == anything else  →  class: NotBoots
-             (Chi, Tau, Kappa, Mu, Wolf, …)
-```
+At inference time the seven-class output collapses to a binary spray decision:
+`Boots → spray`, anything else → don't spray.
 
-The model learns one question: *"Is this Boots, or not?"*
+Data augmentation runs in the **data pipeline** (not inside the model), applied to
+training images only:
+
+| Augmentation | Value | Rationale |
+|---|---|---|
+| `RandomFlip` | horizontal only | Cats on a floor; vertical flips aren't realistic |
+| `RandomRotation` | ±15% | Fixed camera — extreme rotation unlikely |
+| `RandomZoom` | zoom in 0–30% | Handles cats not filling the frame |
+| `RandomContrast` | ±20% | Kitchen lighting varies by time of day |
+| `RandomBrightness` | ±20% | Same reason |
+
+Keeping augmentation out of the model means `export_for_sagemaker.py` can use a
+simple `tf.saved_model.save()` call — no serialisation workarounds needed.
 
 ---
 
@@ -126,24 +134,41 @@ pip install -r requirements.txt
 ### Step 1 — Download the data
 
 ```bash
-AWS_PROFILE=nakom.is-sandbox python download_data.py
+AWS_PROFILE=nakom.is-sandbox python download_data_multiclass.py
 ```
 
-This creates the `data/` directory structure shown in the diagram above.
+This creates the `data_multiclass/` directory structure shown in the diagram above.
 It's safe to re-run — already-downloaded images are skipped.
 
 Optional flags:
 ```
---dest data          Where to put the data (default: data)
---max-notboots 600   Cap NotBoots to limit class imbalance (default: no cap)
---manual-pct 1.0     Percentage held back for manual testing (default: 1.0)
---val-split 0.2      Fraction of remaining used for validation (default: 0.2)
+--dest data_multiclass   Where to put the data (default: data_multiclass)
+--max-nocat 600          Cap NoCat to limit class imbalance (default: 600)
+--manual-pct 1.0         Percentage held back for manual testing (default: 1.0)
+--val-split 0.2          Fraction of remaining used for validation (default: 0.2)
 ```
 
-### Step 2 — Train
+### Step 2 — Find a good learning rate (optional but recommended)
+
+Before committing to a full training run, find a good learning rate:
 
 ```bash
-python train_local.py
+python train_multiclass.py --find-lr
+```
+
+This runs a learning rate range test (1e-6 → 1e-1 over 100 steps), prints the
+suggested rate, and saves `lr_finder.png`. Look for the point of steepest descent
+before the loss diverges. Use that value (or 3–10× lower) as `--lr`.
+
+### Step 3 — Train
+
+```bash
+python train_multiclass.py
+```
+
+Or with a learning rate from the finder:
+```bash
+python train_multiclass.py --lr 3e-4
 ```
 
 You'll see output like this each epoch:
@@ -152,87 +177,76 @@ Epoch 12/50
  - loss: 0.3241 - accuracy: 0.8812 - val_loss: 0.2918 - val_accuracy: 0.9043
 ```
 
-`val_accuracy` is the one to watch — it's how well the model does on images it
-hasn't trained on. Training stops automatically once it stops improving
-(`--patience 10` means 10 epochs with no improvement).
+`val_accuracy` is the one to watch. Training stops automatically once it stops
+improving (`--patience 10` means 10 epochs with no improvement).
 
-The best model is saved to `models/` automatically.
+The best model is saved to `models_multiclass/` automatically.
 
 Optional flags:
 ```
+--lr 0.0001          Learning rate (default: 0.0001; use --find-lr first)
 --epochs 50          Max epochs before giving up (default: 50)
---batch-size 16      Images processed at once (larger = faster but needs more RAM)
+--batch-size 16      Images processed at once
 --patience 10        Early stopping patience in epochs (default: 10)
---train-base         Also fine-tune MobileNetV2 itself, not just the top layer
-                     (slower, sometimes squeezes out a few more % accuracy)
+--train-base         Also fine-tune the EfficientNetV2B1 base (slower, often better)
+--dropout 0.3        Dropout rate (default: 0.3)
+--l2 0.0001          L2 regularisation weight (default: 0.0001)
 ```
 
-### Step 3 — Test with the manual test set
+**Recommended starting point:** `--find-lr` first, then `--lr <suggested> --train-base`
+
+`--train-base` unfreezes the EfficientNetV2B1 backbone so it adapts to cat-specific
+visual patterns rather than relying purely on ImageNet features. It runs slower per
+epoch but reaches meaningfully higher accuracy — especially for visually similar
+classes (Boots/Kappa/Chi). Early stopping typically kicks in around epoch 20–25.
+
+### Step 4 — Troubleshooting
+
+| Problem | Things to try |
+|---------|--------------|
+| Low accuracy overall | Add `--train-base`; run `--find-lr` and set a better `--lr` |
+| Overfitting (train acc >> val acc) | Higher `--dropout 0.5`; higher `--l2 0.001` |
+| One class dominates | Adjust per-class caps in the download script |
+
+### Step 5 — Test with the manual test set
 
 ```bash
-python predict.py data/manual_test/Boots/
-python predict.py data/manual_test/NotBoots/
+python predict.py data_multiclass/manual_test/Boots/
+python predict.py data_multiclass/manual_test/Chi/
 ```
 
 Or test a specific image:
 ```bash
-python predict.py data/manual_test/Boots/2025-07-29T21-20-54-225Z.jpg
+python predict.py data_multiclass/manual_test/Boots/2025-07-29T21-20-54-225Z.jpg
 ```
-
-You'll see colour-coded output:
-```
-  Boots       92.4%  ██████████████████░░  2025-07-29T21-20-54-225Z.jpg
-  NotBoots    87.1%  █████████████████░░░  2026-01-18T00-12-34-882Z.jpg
-```
-
-Green = Boots prediction, yellow = NotBoots prediction.
-
-### Step 4 — Tweak and repeat
-
-Look at the results. If something's wrong (e.g. Boots is being misclassified as
-NotBoots), try adjusting the training:
-
-| Problem | Things to try |
-|---------|--------------|
-| Low accuracy overall | More epochs (`--epochs 100`), lower learning rate, add `--train-base` |
-| Overfitting (train acc >> val acc) | Higher dropout (`--dropout 0.5`), higher l2 (`--l2 0.001`) |
-| Class imbalance | Cap NotBoots (`--max-notboots 200`) to match Boots count more closely |
-
-**Recommended starting point (from experimentation):** `--train-base --batch-size 32`
-
-`--train-base` unfreezes all 2.25M MobileNetV2 parameters so the feature
-extractor adapts to cat-specific visual patterns, not just ImageNet features.
-It runs ~10× slower per epoch but reaches meaningfully higher accuracy —
-especially for visually similar classes (Boots/Kappa/Chi). Early stopping
-typically kicks in around epoch 20–25.
-
-Then re-run `train_local.py` and `predict.py` to see if it improved.
 
 ---
 
-## Files
+## Deploying to production
 
-| File | What it does |
-|------|-------------|
-| `download_data.py` | Downloads images from S3/DynamoDB and organises them into binary splits |
-| `download_data_multiclass.py` | Downloads images, keeping one class per cat |
-| `train_local.py` | Trains a binary (Boots/NotBoots) MobileNetV2 classifier |
-| `train_multiclass.py` | Trains a seven-class classifier (one class per cat) |
-| `predict.py` | Runs the trained model on one or more images |
-| `serve.py` | Flask inference server for the sandbox app badge |
-| `requirements.txt` | Python dependencies |
-| `data/` | Created by `download_data.py` — not committed to git |
-| `data_multiclass/` | Created by `download_data_multiclass.py` — not committed to git |
-| `models/` | Created by `train_local.py` — not committed to git |
-| `models_multiclass/` | Created by `train_multiclass.py` — not committed to git |
+Once you're happy with the model:
+
+```bash
+./deploy_model.sh
+```
+
+This script:
+1. Exports `models_multiclass/best_model.keras` to TF Serving SavedModel format
+2. Packages it as `model.tar.gz`
+3. Uploads to S3
+4. Creates a new SageMaker model + endpoint config (timestamped names)
+5. Updates the live `bootboots` endpoint in-place
+6. Waits for `InService`
+
+Remember to also update `CAT_NAMES` in `infra/lambda/infer-lambda/src/handler.ts`
+and redeploy the Lambda if the class list has changed.
 
 ---
 
 ## Sandbox app integration
 
 The sandbox labelling UI shows a prediction badge for each image using a local
-Flask inference server. The badge appears only when the server is running —
-entirely opt-in.
+inference server. The badge appears only when the server is running — entirely opt-in.
 
 ```
 Browser (sandbox.nakomis.com)            Your Mac
@@ -248,22 +262,34 @@ Browser (sandbox.nakomis.com)            Your Mac
                                          └────────────────────────────────┘
 ```
 
-The browser already has the image downloaded (as a blob URL). It fetches its own
-blob and POSTs the raw JPEG bytes to the server — no AWS credentials needed on the
-server side.
+Start the server:
+```bash
+./serve.sh
+```
 
-### Step 5 — Start the inference server
-
+Or manually:
 ```bash
 source .venv/bin/activate
-pip install flask flask-cors   # already in requirements.txt
 python serve.py
 ```
 
-The server loads the model and listens on `http://localhost:8765`. Open the sandbox
-app — a prediction badge will appear in the top-right corner of each image.
+---
 
-Switch to the binary model instead:
-```bash
-python serve.py --model models
-```
+## Files
+
+| File | What it does |
+|------|-------------|
+| `download_data_multiclass.py` | Downloads images from S3/DynamoDB, one class per cat |
+| `download_data.py` | Legacy binary (Boots/NotBoots) download script |
+| `train_multiclass.py` | Trains the EfficientNetV2B1 seven-class classifier |
+| `train_local.py` | Legacy binary (Boots/NotBoots) training script |
+| `predict.py` | Runs the trained model on one or more images |
+| `serve.py` | Inference server for the sandbox app badge (localhost:8765) |
+| `serve.sh` | Convenience script to start `serve.py` in the venv |
+| `export_for_sagemaker.py` | Exports `.keras` model to TF Serving SavedModel + `model.tar.gz` |
+| `deploy_model.sh` | Full deploy pipeline: export → S3 upload → SageMaker endpoint update |
+| `requirements.txt` | Python dependencies |
+| `data/` | Created by `download_data.py` — not committed to git |
+| `data_multiclass/` | Created by `download_data_multiclass.py` — not committed to git |
+| `models/` | Created by `train_local.py` — not committed to git |
+| `models_multiclass/` | Created by `train_multiclass.py` — not committed to git |
