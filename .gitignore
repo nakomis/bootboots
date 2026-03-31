@@ -12,5 +12,3 @@ local-training/data_multiclass/
 local-training/models/
 local-training/models_multiclass/
 local-training/.venv/
-local-training/serve/node_modules/
-local-training/serve/dist/
