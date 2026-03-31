@@ -52,40 +52,52 @@ def main() -> None:
         print("  and redeploy the Lambda before or after this model update.")
         print()
 
-    # Wrap the model in a tf.Module so that its variables are tracked as a
-    # direct attribute of the saved object.  If we instead pass `model` as the
-    # root and reference it only through a closure inside the signature
-    # tf.function, TF Serving cannot reliably wire the checkpoint variables
-    # back to the function graph — producing "Could not find variable" errors.
-    class ServingWrapper(tf.Module):
-        def __init__(self, keras_model: tf.keras.Model) -> None:
-            super().__init__()
-            self.model = keras_model
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
 
+        # Two-step export required for Keras 3 + TF 2.16:
+        #
+        # Keras 3 uses keras.Variable objects which tf.saved_model.save() does
+        # not traverse — any approach that calls tf.saved_model.save() directly
+        # on a Keras model (with or without a tf.Module wrapper) will silently
+        # omit variables and cause TF Serving to fail with "Could not find
+        # variable" errors.
+        #
+        # model.export() uses Keras's own serialisation path and handles its
+        # variable system correctly.  After reloading with tf.saved_model.load()
+        # the variables become ordinary tf.Variable objects that tf.saved_model
+        # .save() can track, so we can then add the JPEG-decoding signature.
+
+        # Step 1 — export via Keras (correct variable handling)
+        intermediate_path = tmp_path / "keras_export"
+        print(f"Exporting Keras model to {intermediate_path} ...")
+        model.export(str(intermediate_path))
+
+        # Step 2 — reload as a pure TF module (variables are now tf.Variables)
+        print("Reloading as TF module ...")
+        loaded = tf.saved_model.load(str(intermediate_path))
+
+        # Step 3 — define a JPEG-decoding serving function around the loaded module
         @tf.function(input_signature=[
             tf.TensorSpec(shape=[None], dtype=tf.string, name="image_bytes")
         ])
-        def serve_jpeg(self, image_bytes: tf.Tensor) -> dict:
+        def serve_jpeg(image_bytes: tf.Tensor) -> dict:
             def decode_one(img_bytes: tf.Tensor) -> tf.Tensor:
                 img = tf.image.decode_jpeg(img_bytes, channels=3)
                 img = tf.image.resize(img, IMG_SIZE)
                 return tf.cast(img, tf.float32)
             images = tf.map_fn(decode_one, image_bytes, fn_output_signature=tf.float32)
-            result = self.model(images, training=False)
+            result = loaded.serve(images)
             if isinstance(result, dict):
                 result = next(iter(result.values()))
             return {"probabilities": result}
 
-    wrapper = ServingWrapper(model)
-
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp_path = Path(tmp)
-
+        # Step 4 — save with the JPEG-decoding signature
         # TF Serving expects a versioned SavedModel at <model_dir>/1/
         saved_model_path = tmp_path / "1"
         print(f"Saving with serve_jpeg signature to {saved_model_path} ...")
-        tf.saved_model.save(wrapper, str(saved_model_path),
-                            signatures={"serving_default": wrapper.serve_jpeg})
+        tf.saved_model.save(loaded, str(saved_model_path),
+                            signatures={"serving_default": serve_jpeg})
 
         # class_names.json sits alongside the versioned directory
         shutil.copy(class_names_path, tmp_path / "class_names.json")
