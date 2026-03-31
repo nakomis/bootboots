@@ -176,11 +176,15 @@ bool DeterrentController::uploadVideo(const String& filepath) {
         return false;
     }
 
+    // Pause MQTT to free SSL memory before making HTTPS request
+    _awsAuth->pauseMqtt();
+
     // Refresh credentials if needed
     if (!_awsAuth->areCredentialsValid()) {
         SDLogger::getInstance().infof("DeterrentController: Refreshing AWS credentials...");
         if (!_awsAuth->getCredentialsWithRoleAlias("BootBootsRoleAlias")) {
             SDLogger::getInstance().errorf("DeterrentController: Failed to refresh AWS credentials");
+            _awsAuth->resumeMqtt();
             return false;
         }
     }
@@ -189,6 +193,7 @@ bool DeterrentController::uploadVideo(const String& filepath) {
     File videoFile = SD_MMC.open(filepath.c_str(), FILE_READ);
     if (!videoFile) {
         SDLogger::getInstance().errorf("DeterrentController: Failed to open video file: %s", filepath.c_str());
+        _awsAuth->resumeMqtt();
         return false;
     }
 
@@ -212,6 +217,7 @@ bool DeterrentController::uploadVideo(const String& filepath) {
     if (!videoBuffer) {
         SDLogger::getInstance().errorf("DeterrentController: Failed to allocate %d bytes for video upload", fileSize);
         videoFile.close();
+        _awsAuth->resumeMqtt();
         return false;
     }
 
@@ -222,6 +228,7 @@ bool DeterrentController::uploadVideo(const String& filepath) {
         SDLogger::getInstance().errorf("DeterrentController: Failed to read video file (read %d of %d bytes)",
             bytesRead, fileSize);
         free(videoBuffer);
+        _awsAuth->resumeMqtt();
         return false;
     }
 
@@ -233,6 +240,7 @@ bool DeterrentController::uploadVideo(const String& filepath) {
     if (!headers.isValid) {
         SDLogger::getInstance().errorf("DeterrentController: Failed to create SigV4 headers");
         free(videoBuffer);
+        _awsAuth->resumeMqtt();
         return false;
     }
 
@@ -245,6 +253,7 @@ bool DeterrentController::uploadVideo(const String& filepath) {
     if (!client.connect(_apiHost, 443)) {
         SDLogger::getInstance().errorf("DeterrentController: Connection to API failed");
         free(videoBuffer);
+        _awsAuth->resumeMqtt();
         return false;
     }
 
@@ -285,6 +294,7 @@ bool DeterrentController::uploadVideo(const String& filepath) {
                 bytesWritten, chunk);
             free(videoBuffer);
             client.stop();
+            _awsAuth->resumeMqtt();
             return false;
         }
 
@@ -303,6 +313,7 @@ bool DeterrentController::uploadVideo(const String& filepath) {
         if (millis() - timeout > 30000) {
             SDLogger::getInstance().errorf("DeterrentController: Response timeout");
             client.stop();
+            _awsAuth->resumeMqtt();
             return false;
         }
         delay(10);
@@ -324,6 +335,8 @@ bool DeterrentController::uploadVideo(const String& filepath) {
         client.read();
     }
     client.stop();
+
+    _awsAuth->resumeMqtt();
 
     if (statusCode == 200) {
         SDLogger::getInstance().infof("DeterrentController: Video upload successful (HTTP %d)", statusCode);

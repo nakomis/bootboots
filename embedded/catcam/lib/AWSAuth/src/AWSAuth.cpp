@@ -44,12 +44,7 @@ bool AWSAuth::initialize(const char* awsCertCA, const char* awsCertCRT, const ch
 bool AWSAuth::getCredentialsWithRoleAlias(const char* roleAlias) {
     // Use IoT Credentials Provider to get temporary AWS credentials
     // Endpoint format: https://<credentials-endpoint>/role-aliases/<role-alias>/credentials
-
-    // Pause MQTT to free SSL memory before making our own SSL request
-    if (_mqttService) {
-        SDLogger::getInstance().infof("AWSAuth: Pausing MQTT to free SSL memory");
-        _mqttService->pause();
-    }
+    // Note: caller is responsible for pausing/resuming MQTT around this call.
 
     WiFiClientSecure sslClient;
     sslClient.setCACert(caCert);
@@ -76,7 +71,6 @@ bool AWSAuth::getCredentialsWithRoleAlias(const char* roleAlias) {
         if (error) {
             SDLogger::getInstance().errorf("AWSAuth: Failed to parse credentials JSON: %s", error.c_str());
             http.end();
-            if (_mqttService) _mqttService->resume();
             return false;
         }
 
@@ -88,7 +82,6 @@ bool AWSAuth::getCredentialsWithRoleAlias(const char* roleAlias) {
             SDLogger::getInstance().errorf("AWSAuth: No credentials object in response");
             SDLogger::getInstance().errorf("AWSAuth: Response: %s", response.c_str());
             http.end();
-            if (_mqttService) _mqttService->resume();
             return false;
         }
 
@@ -109,7 +102,6 @@ bool AWSAuth::getCredentialsWithRoleAlias(const char* roleAlias) {
         SDLogger::getInstance().infof("AWSAuth: Access Key: %s...", credentials.accessKeyId.substring(0, 8).c_str());
 
         http.end();
-        if (_mqttService) _mqttService->resume();
         return true;
     }
 
@@ -118,8 +110,21 @@ bool AWSAuth::getCredentialsWithRoleAlias(const char* roleAlias) {
     SDLogger::getInstance().errorf("AWSAuth: Response: %s", response.c_str());
 
     http.end();
-    if (_mqttService) _mqttService->resume();
     return false;
+}
+
+void AWSAuth::pauseMqtt() {
+    if (_mqttService) {
+        SDLogger::getInstance().infof("MQTT: Pausing connection...");
+        _mqttService->pause();
+    }
+}
+
+void AWSAuth::resumeMqtt() {
+    if (_mqttService) {
+        _mqttService->resume();
+        SDLogger::getInstance().infof("MQTT: Resumed, free heap: %d bytes", ESP.getFreeHeap());
+    }
 }
 
 bool AWSAuth::areCredentialsValid() const {

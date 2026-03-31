@@ -25,6 +25,7 @@ CommandDispatcher::CommandDispatcher()
     registerHandler("ping", [this](CommandContext& ctx) { return handlePing(ctx); });
     registerHandler("get_status", [this](CommandContext& ctx) { return handleGetStatus(ctx); });
     registerHandler("get_settings", [this](CommandContext& ctx) { return handleGetSettings(ctx); });
+    registerHandler("get_camera_settings", [this](CommandContext& ctx) { return handleGetCameraSettings(ctx); });
     registerHandler("set_setting", [this](CommandContext& ctx) { return handleSetSetting(ctx); });
     registerHandler("take_photo", [this](CommandContext& ctx) { return handleTakePhoto(ctx); });
     registerHandler("reboot", [this](CommandContext& ctx) { return handleReboot(ctx); });
@@ -132,6 +133,7 @@ bool CommandDispatcher::handleGetStatus(CommandContext& ctx) {
     sys["wifi_connected"] = _systemState->wifiConnected;
     sys["sd_card_ready"] = _systemState->sdCardReady;
     sys["i2c_ready"] = _systemState->i2cReady;
+    sys["pcf8574_ready"] = _systemState->pcf8574Ready;
     sys["atomizer_enabled"] = _systemState->atomizerEnabled;
     sys["training_mode"] = _systemState->trainingMode;
 
@@ -140,6 +142,12 @@ bool CommandDispatcher::handleGetStatus(CommandContext& ctx) {
     stats["boots_detections"] = _systemState->bootsDetections;
     stats["atomizer_activations"] = _systemState->atomizerActivations;
     stats["false_positives_avoided"] = _systemState->falsePositivesAvoided;
+
+    JsonObject peripherals = response.createNestedObject("peripherals");
+    peripherals["pir_active"] = _systemState->pirActive;
+    peripherals["flash_led_on"] = _systemState->flashLedOn;
+    peripherals["led_strip_on"] = _systemState->ledStripOn;
+    peripherals["spray_on"] = _systemState->sprayOn;
 
     String responseStr;
     serializeJson(response, responseStr);
@@ -155,12 +163,29 @@ bool CommandDispatcher::handleGetSettings(CommandContext& ctx) {
         return false;
     }
 
-    DynamicJsonDocument response(1024);
+    DynamicJsonDocument response(256);
     response["type"] = "settings";
     response["training_mode"] = _systemState->trainingMode;
     response["trigger_threshold"] = _systemState->triggerThresh;
     response["dry_run"] = _systemState->dryRun;
     response["claude_infer"] = _systemState->claudeInfer;
+
+    String responseStr;
+    serializeJson(response, responseStr);
+    ctx.sender->sendResponse(responseStr);
+
+    SDLogger::getInstance().infof("Get settings request via %s", ctx.sender->getName());
+    return true;
+}
+
+bool CommandDispatcher::handleGetCameraSettings(CommandContext& ctx) {
+    if (!_systemState) {
+        sendError(ctx.sender, "System state not available");
+        return false;
+    }
+
+    DynamicJsonDocument response(768);
+    response["type"] = "camera_settings";
 
     JsonObject cam = response.createNestedObject("camera");
     cam["frame_size"] = _systemState->cameraSettings.frameSize;
@@ -194,7 +219,7 @@ bool CommandDispatcher::handleGetSettings(CommandContext& ctx) {
     serializeJson(response, responseStr);
     ctx.sender->sendResponse(responseStr);
 
-    SDLogger::getInstance().infof("Get settings request via %s", ctx.sender->getName());
+    SDLogger::getInstance().infof("Get camera settings request via %s", ctx.sender->getName());
     return true;
 }
 

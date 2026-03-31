@@ -255,24 +255,22 @@ bool SystemManager::initComponents(const Config& config, SystemState& state,
     _mqttOTA->registerCommands(_commandDispatcher);
     SDLogger::getInstance().infof("MQTT OTA handler initialized");
 
-    // Initialize Motion Detector (requires PCF8574Manager)
-    if (_pcfManager && state.pcf8574Ready) {
-        _motionDetector = new MotionDetector(_pcfManager);
-        SDLogger::getInstance().infof("Motion Detector initialized on PCF8574 pin P%d",
-                                       PCF8574Manager::PIR_SENSOR_PIN);
+    // Initialize Motion Detector (direct GPIO, independent of PCF8574)
+    {
+        static constexpr int PIR_GPIO_PIN = 42;
+        _motionDetector = new MotionDetector(PIR_GPIO_PIN);
+        SDLogger::getInstance().infof("Motion Detector initialized on GPIO %d", PIR_GPIO_PIN);
+    }
 
-        // Initialize Deterrent Controller (requires PCF8574Manager, CaptureController, and AWSAuth)
-        if (_captureController && _awsAuth) {
-            _deterrentController = new DeterrentController(_pcfManager, _captureController, _awsAuth);
-            _deterrentController->setUploadConfig("api.bootboots.sandbox.nakomis.com");
-            SDLogger::getInstance().infof("Deterrent Controller initialized (duration: %lu ms, threshold configurable via MQTT)",
-                                           DeterrentController::DETERRENT_DURATION_MS);
-            SDLogger::getInstance().infof("Video upload enabled to api.bootboots.sandbox.nakomis.com");
-        } else {
-            SDLogger::getInstance().warnf("Deterrent Controller not initialized - CaptureController or AWSAuth unavailable");
-        }
+    // Initialize Deterrent Controller (requires PCF8574Manager, CaptureController, and AWSAuth)
+    if (_pcfManager && state.pcf8574Ready && _captureController && _awsAuth) {
+        _deterrentController = new DeterrentController(_pcfManager, _captureController, _awsAuth);
+        _deterrentController->setUploadConfig("api.bootboots.sandbox.nakomis.com");
+        SDLogger::getInstance().infof("Deterrent Controller initialized (duration: %lu ms, threshold configurable via MQTT)",
+                                       DeterrentController::DETERRENT_DURATION_MS);
+        SDLogger::getInstance().infof("Video upload enabled to api.bootboots.sandbox.nakomis.com");
     } else {
-        SDLogger::getInstance().warnf("Motion Detector not initialized - PCF8574 unavailable");
+        SDLogger::getInstance().warnf("Deterrent Controller not initialized - PCF8574, CaptureController, or AWSAuth unavailable");
     }
 
     return true;

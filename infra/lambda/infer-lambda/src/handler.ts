@@ -4,6 +4,7 @@ import { SageMakerRuntimeClient, InvokeEndpointCommand } from '@aws-sdk/client-s
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import { randomUUID } from 'crypto';
 import Anthropic from '@anthropic-ai/sdk';
 
@@ -12,7 +13,24 @@ const sagemakerClient = new SageMakerRuntimeClient({ region: process.env.AWS_REG
 const s3Client = new S3Client({ region: process.env.AWS_REGION });
 const dynamoClient = new DynamoDBClient({ region: process.env.AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
-const anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const ssmClient = new SSMClient({ region: process.env.AWS_REGION });
+
+// Cached Anthropic client — resolved once per Lambda container lifetime
+let anthropicClient: Anthropic | undefined;
+
+async function getAnthropicClient(): Promise<Anthropic> {
+    if (anthropicClient) return anthropicClient;
+
+    const paramPath = process.env.ANTHROPIC_API_KEY_SSM_PATH;
+    if (!paramPath) throw new Error('ANTHROPIC_API_KEY_SSM_PATH env var not set');
+
+    const result = await ssmClient.send(new GetParameterCommand({ Name: paramPath, WithDecryption: true }));
+    const apiKey = result.Parameter?.Value;
+    if (!apiKey) throw new Error(`SSM parameter ${paramPath} is empty`);
+
+    anthropicClient = new Anthropic({ apiKey });
+    return anthropicClient;
+}
 
 // Cat names in order corresponding to the probability array indices
 // [0]=Boots, [1]=NotBoots (binary classifier)
@@ -94,8 +112,9 @@ If no cat is clearly visible, respond with:
 
 async function invokeClaudeVision(imageBuffer: Buffer): Promise<ClaudeResult> {
     const base64Image = imageBuffer.toString('base64');
+    const client = await getAnthropicClient();
 
-    const response = await anthropicClient.messages.create({
+    const response = await client.messages.create({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 150,
         system: CLAUDE_SYSTEM_PROMPT,
@@ -382,11 +401,18 @@ export async function handler(event: APIGatewayProxyEvent, _context: Context): P
             }
 
             // Invoke SageMaker (and optionally Claude) in parallel
+            // The serving_default signature accepts b64-encoded JPEG bytes wrapped
+            // in TF Serving's instances format.  TF Serving decodes the b64 string
+            // to bytes and passes the raw JPEG to our serve_jpeg tf.function, which
+            // decodes and resizes to (224,224,3) before running the model.
             const endpointName = 'bootboots';
+            const sagemakerBody = JSON.stringify({
+                instances: [{ b64: imageBuffer.toString('base64') }]
+            });
             const invokeCommand = new InvokeEndpointCommand({
                 EndpointName: endpointName,
-                ContentType: 'application/x-image',
-                Body: imageBuffer
+                ContentType: 'application/json',
+                Body: Buffer.from(sagemakerBody),
             });
 
             logger.info('Invoking SageMaker endpoint', { endpointName, claudeInfer });
@@ -422,9 +448,12 @@ export async function handler(event: APIGatewayProxyEvent, _context: Context): P
             });
 
             // Determine the most likely cat from probabilities
+            // TF Serving REST API wraps outputs as {"predictions": [[p0, p1, ...]]}
+            // Fall back to "probabilities" key for any custom inference scripts
+            const probs = sagemakerResult?.predictions?.[0] ?? sagemakerResult?.probabilities;
             let mostLikelyCat = { name: 'Unknown', confidence: 0, index: -1 };
-            if (sagemakerResult && sagemakerResult.probabilities && Array.isArray(sagemakerResult.probabilities)) {
-                mostLikelyCat = getMostLikelyCat(sagemakerResult.probabilities);
+            if (probs && Array.isArray(probs)) {
+                mostLikelyCat = getMostLikelyCat(probs);
                 logger.info('Most likely cat detected', { mostLikelyCat });
             }
 
@@ -438,7 +467,7 @@ export async function handler(event: APIGatewayProxyEvent, _context: Context): P
             }
 
             // Record event in catcam-events if Boots confidence meets threshold
-            const bootsConfidence = sagemakerResult?.probabilities?.[0] ?? mostLikelyCat.confidence;
+            const bootsConfidence = probs?.[0] ?? mostLikelyCat.confidence;
             if (s3ImageKey && bootsConfidence >= EVENTS_MIN_CONFIDENCE) {
                 try {
                     await createCatcamEventRecord(s3ImageKey, bootsConfidence, claudeResult ?? undefined);

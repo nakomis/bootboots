@@ -71,9 +71,7 @@ const inferLambdaLogGroup = new logs.LogGroup(this, 'BootBootsInferLambdaLogGrou
             IMAGES_BUCKET_NAME: imagesBucket.bucketName,
             CATCAM_EVENTS_TABLE_NAME: catcamEventsTable.tableName,
             EVENTS_MIN_CONFIDENCE: '0.5',
-            ANTHROPIC_API_KEY: ssm.StringParameter.valueForSecureStringParameter(
-                this, '/bootboots/anthropic-api-key', 1
-            ),
+            ANTHROPIC_API_KEY_SSM_PATH: '/bootboots/anthropic-api-key',
         },
         bundling: {
             minify: true,
@@ -81,6 +79,13 @@ const inferLambdaLogGroup = new logs.LogGroup(this, 'BootBootsInferLambdaLogGrou
             target: 'node22',
         },
     });
+
+    // Grant SSM read permission for the Anthropic API key (fetched at runtime)
+    inferLambda.addToRolePolicy(new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['ssm:GetParameter'],
+        resources: [`arn:aws:ssm:${this.region}:${this.account}:parameter/bootboots/anthropic-api-key`],
+    }));
 
     // Grant SageMaker invoke permissions to the Lambda function
     inferLambda.addToRolePolicy(new iam.PolicyStatement({
@@ -204,6 +209,9 @@ const inferLambdaLogGroup = new logs.LogGroup(this, 'BootBootsInferLambdaLogGrou
           'Content-Type',
           'Authorization',
           'X-API-Key',
+          'X-Amz-Date',
+          'X-Amz-Security-Token',
+          'X-Amz-Content-Sha256',
         ],
       },
       // Disable the default endpoint to force usage of custom domain
@@ -353,6 +361,21 @@ const inferLambdaLogGroup = new logs.LogGroup(this, 'BootBootsInferLambdaLogGrou
           statusCode: '500',
         },
       ],
+    });
+
+    // Add Gateway Responses with CORS headers so 403/5xx errors are readable by the browser
+    const corsResponseHeaders = {
+      'Access-Control-Allow-Origin': "'https://sandbox.nakomis.com'",
+      'Access-Control-Allow-Headers': "'Content-Type,Authorization,X-API-Key,X-Amz-Date,X-Amz-Security-Token,X-Amz-Content-Sha256'",
+      'Access-Control-Allow-Methods': "'GET,POST,PUT,OPTIONS'",
+    };
+    this.api.addGatewayResponse('Default4xx', {
+      type: apigateway.ResponseType.DEFAULT_4XX,
+      responseHeaders: corsResponseHeaders,
+    });
+    this.api.addGatewayResponse('Default5xx', {
+      type: apigateway.ResponseType.DEFAULT_5XX,
+      responseHeaders: corsResponseHeaders,
     });
 
     // Create the /events resource for querying catcam events

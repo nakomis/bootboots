@@ -118,6 +118,7 @@ private:
     bool handlePing(CommandContext& ctx);
     bool handleGetStatus(CommandContext& ctx);
     bool handleGetSettings(CommandContext& ctx);
+    bool handleGetCameraSettings(CommandContext& ctx);
     bool handleSetSetting(CommandContext& ctx);
     bool handleTakePhoto(CommandContext& ctx);
     bool handleReboot(CommandContext& ctx);

@@ -1,5 +1,6 @@
 #include "BluetoothOTA.h"
 #include <ArduinoJson.h>
+#include <esp_bt.h>
 #include "../../../include/version.h"
 
 // Static instance for progress callbacks
@@ -421,19 +422,36 @@ void BluetoothOTA::processOTAUpdate(const OTACommand& command) {
         _mqttService->pause();
     }
 
-    // Stop BLE advertising to free some memory for direct HTTP OTA
-    // Note: We can't fully deinit BLE as it causes hangs (see esp32-snippets #1155)
-    // Direct OTA needs ~19KB minimum - we'll rely on stopping advertising to free enough memory
+    // Fully shut down the BLE stack to recover ~50-80KB of internal SRAM.
+    // Stopping advertising alone only frees ~2KB, leaving the internal heap too
+    // fragmented for the SSL handshake (~40KB contiguous block needed).
+    // btStop() + esp_bt_mem_release() bypass the Arduino BLE wrapper (which hangs
+    // on deinit per esp32-snippets #1155) and go direct to ESP-IDF. The device
+    // always reboots after OTA so losing BLE here is fine.
     SDLogger::getInstance().infof("Stopping BLE advertising for OTA update");
     if (_pServer) {
         _pServer->getAdvertising()->stop();
     }
     BLEDevice::stopAdvertising();
 
-    // Give BLE time to stop advertising
-    delay(1000);
+    // Give any in-flight BLE packets (e.g. the "starting" status update) time to flush
+    delay(500);
 
-    SDLogger::getInstance().infof("Free heap after stopping BLE: %d bytes", ESP.getFreeHeap());
+    SDLogger::getInstance().infof("Deinitialising BLE stack to free internal SRAM for SSL...");
+    btStop();
+    esp_bt_mem_release(ESP_BT_MODE_BLE);
+
+    // Null out BLE characteristic pointers so any progress callbacks that fire
+    // during the download don't try to call notify() on the dead BLE stack.
+    // sendStatusUpdate() guards on _pStatusCharacteristic being non-null.
+    _pStatusCharacteristic = nullptr;
+    _pCommandCharacteristic = nullptr;
+
+    // Give the BLE stack time to fully shut down
+    delay(500);
+
+    SDLogger::getInstance().infof("Free heap after BLE deinit: %d bytes", ESP.getFreeHeap());
+    SDLogger::getInstance().infof("Largest free block: %d bytes", heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
 
     // Set up progress callback to send BLE notifications during download
     _otaUpdate->setProgressCallback(otaProgressCallback);

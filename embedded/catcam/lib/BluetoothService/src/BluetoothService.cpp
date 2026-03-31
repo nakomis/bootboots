@@ -112,7 +112,7 @@ void BootBootsBluetoothService::updateSystemStatus(const SystemState& state) {
 }
 
 String BootBootsBluetoothService::formatSystemStatusJson(const SystemState& state) {
-    DynamicJsonDocument doc(1024);
+    DynamicJsonDocument doc(1200);
     
     unsigned long uptime = millis() - state.systemStartTime;
     
@@ -124,6 +124,7 @@ String BootBootsBluetoothService::formatSystemStatusJson(const SystemState& stat
     doc["system"]["wifi_connected"] = state.wifiConnected;
     doc["system"]["sd_card_ready"] = state.sdCardReady;
     doc["system"]["i2c_ready"] = state.i2cReady;
+    doc["system"]["pcf8574_ready"] = state.pcf8574Ready;
     doc["system"]["atomizer_enabled"] = state.atomizerEnabled;
     
     doc["statistics"]["total_detections"] = state.totalDetections;
@@ -132,9 +133,14 @@ String BootBootsBluetoothService::formatSystemStatusJson(const SystemState& stat
     doc["statistics"]["false_positives_avoided"] = state.falsePositivesAvoided;
 
     doc["system"]["training_mode"] = state.trainingMode;
-    
+
     doc["timing"]["last_detection"] = state.lastDetection;
     doc["timing"]["last_status_report"] = state.lastStatusReport;
+
+    doc["peripherals"]["pir_active"]   = state.pirActive;
+    doc["peripherals"]["flash_led_on"] = state.flashLedOn;
+    doc["peripherals"]["led_strip_on"] = state.ledStripOn;
+    doc["peripherals"]["spray_on"]     = state.sprayOn;
     
     String jsonString;
     serializeJson(doc, jsonString);

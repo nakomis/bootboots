@@ -127,11 +127,15 @@ String CaptureController::capturePhoto() {
     // Upload to AWS if configured
     String response;
     if (_awsAuth && _roleAlias && _apiHost && _apiPath) {
+        // Pause MQTT to free SSL memory before making HTTPS request
+        _awsAuth->pauseMqtt();
+
         // Get AWS credentials (refresh if needed)
         if (!_awsAuth->areCredentialsValid()) {
             SDLogger::getInstance().infof("Refreshing AWS credentials...");
             if (!_awsAuth->getCredentialsWithRoleAlias(_roleAlias)) {
                 SDLogger::getInstance().errorf("Failed to get AWS credentials");
+                _awsAuth->resumeMqtt();
                 _camera->releaseImageBuffer(image);
                 if (_ledController) _ledController->off();
                 return "";
@@ -141,6 +145,8 @@ String CaptureController::capturePhoto() {
         // Post image to inference endpoint
         CatCamHttpClient httpClient;
         response = httpClient.postImage(image, _apiHost, _apiPath, _awsAuth);
+
+        _awsAuth->resumeMqtt();
 
         // Save server response to SD card
         if (_imageStorage) {
@@ -352,11 +358,15 @@ String CaptureController::captureTrainingPhoto() {
     // Upload to AWS with training mode flag
     String response;
     if (_awsAuth && _roleAlias && _apiHost && _apiPath) {
+        // Pause MQTT to free SSL memory before making HTTPS request
+        _awsAuth->pauseMqtt();
+
         // Get AWS credentials (refresh if needed)
         if (!_awsAuth->areCredentialsValid()) {
             SDLogger::getInstance().infof("Refreshing AWS credentials...");
             if (!_awsAuth->getCredentialsWithRoleAlias(_roleAlias)) {
                 SDLogger::getInstance().errorf("Failed to get AWS credentials");
+                _awsAuth->resumeMqtt();
                 _camera->releaseImageBuffer(image);
                 return "";
             }
@@ -365,6 +375,8 @@ String CaptureController::captureTrainingPhoto() {
         // Post image to inference endpoint with training mode flag
         CatCamHttpClient httpClient;
         response = httpClient.postImage(image, _apiHost, _apiPath, _awsAuth, true);  // trainingMode=true
+
+        _awsAuth->resumeMqtt();
 
         // Save server response to SD card
         if (_imageStorage) {
@@ -433,11 +445,15 @@ DetectionResult CaptureController::captureAndDetect(bool claudeInfer) {
     // Upload to AWS and get inference result
     String response;
     if (_awsAuth && _roleAlias && _apiHost && _apiPath) {
+        // Pause MQTT to free SSL memory before making HTTPS request
+        _awsAuth->pauseMqtt();
+
         // Get AWS credentials (refresh if needed)
         if (!_awsAuth->areCredentialsValid()) {
             SDLogger::getInstance().infof("Refreshing AWS credentials...");
             if (!_awsAuth->getCredentialsWithRoleAlias(_roleAlias)) {
                 SDLogger::getInstance().errorf("Failed to get AWS credentials");
+                _awsAuth->resumeMqtt();
                 _camera->releaseImageBuffer(image);
                 return result;
             }
@@ -446,6 +462,8 @@ DetectionResult CaptureController::captureAndDetect(bool claudeInfer) {
         // Post image to inference endpoint
         CatCamHttpClient httpClient;
         response = httpClient.postImage(image, _apiHost, _apiPath, _awsAuth, false, claudeInfer);
+
+        _awsAuth->resumeMqtt();
 
         // Save server response to SD card
         if (_imageStorage) {

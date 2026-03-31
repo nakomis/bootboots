@@ -31,12 +31,12 @@
 #define BOARD_NAME "ESP32-S3-CAM"
 #else
 // Original ESP32-CAM: I2C on UART0 pins
-#define I2C_SDA 1               // GPIO1 (U0TXD) - SDA
-#define I2C_SCL 3               // GPIO3 (U0RXD) - SCL
+#define I2C_SDA 47               // GPIO1 (U0TXD) - SDA
+#define I2C_SCL 21               // GPIO3 (U0RXD) - SCL
 #define BOARD_NAME "ESP32-CAM"
 #endif
 
-#define PCF8574_ADDRESS 0x27    // I2C address for PCF8574
+#define PCF8574_ADDRESS 0x20    // I2C address for PCF8574
 
 // BOOT button for user input (triggers photo capture)
 #define BOOT_BUTTON_PIN 0       // GPIO0 - BOOT button (LOW when pressed)
@@ -212,6 +212,110 @@ void setup() {
             ctx.sender->sendResponse(responseStr);
             return true;
         });
+
+        // set_peripheral {"peripheral": "flash_led"|"led_strip"|"spray", "state": true|false}
+        // Direct peripheral control for hardware testing via the test UI.
+        dispatcher->registerHandler("set_peripheral", [](CommandContext& ctx) {
+            String peripheral = ctx.request["peripheral"] | "";
+            bool state = ctx.request["state"] | false;
+
+            if (peripheral.isEmpty()) {
+                DynamicJsonDocument errDoc(128);
+                errDoc["type"] = "error";
+                errDoc["message"] = "Missing 'peripheral' field";
+                String errStr; serializeJson(errDoc, errStr);
+                ctx.sender->sendResponse(errStr);
+                return false;
+            }
+
+            PCF8574Manager* pcf = systemManager.getPcfManager();
+            if (!pcf || !systemState.pcf8574Ready) {
+                DynamicJsonDocument errDoc(128);
+                errDoc["type"] = "error";
+                errDoc["message"] = "PCF8574 not available";
+                String errStr; serializeJson(errDoc, errStr);
+                ctx.sender->sendResponse(errStr);
+                return false;
+            }
+
+            bool ok = false;
+            if (peripheral == "flash_led") {
+                ok = pcf->setFlashLED(state);
+                if (ok) systemState.flashLedOn = state;
+            } else if (peripheral == "led_strip") {
+                // Control both LED strip channels together
+                bool ok1 = pcf->setPinState(PCF8574Manager::LED_STRIP_1_PIN, state);
+                bool ok2 = pcf->setPinState(PCF8574Manager::LED_STRIP_2_PIN, state);
+                ok = ok1 && ok2;
+                if (ok) systemState.ledStripOn = state;
+            } else if (peripheral == "spray") {
+                if (state) {
+                    ok = pcf->setAtomizerState(true);
+                    if (ok) {
+                        systemState.sprayOn = true;
+                        systemState.sprayAutoOffAt = millis() + 5000;
+                    }
+                } else {
+                    ok = pcf->setAtomizerState(false);
+                    if (ok) {
+                        systemState.sprayOn = false;
+                        systemState.sprayAutoOffAt = 0;
+                    }
+                }
+            } else {
+                DynamicJsonDocument errDoc(128);
+                errDoc["type"] = "error";
+                errDoc["message"] = "Unknown peripheral: " + peripheral;
+                String errStr; serializeJson(errDoc, errStr);
+                ctx.sender->sendResponse(errStr);
+                return false;
+            }
+
+            SDLogger::getInstance().infof("Peripheral '%s' set %s via %s",
+                peripheral.c_str(), state ? "ON" : "OFF", ctx.sender->getName());
+
+            DynamicJsonDocument response(256);
+            response["type"] = "peripheral_updated";
+            response["peripheral"] = peripheral;
+            response["state"] = state;
+            response["ok"] = ok;
+            String responseStr;
+            serializeJson(response, responseStr);
+            ctx.sender->sendResponse(responseStr);
+            return true;
+        });
+
+        // simulate_detection — trigger full deterrent sequence (LEDs, video, upload) with a
+        // synthetic Boots result. Does not capture a photo or call SageMaker. Respects dryRun.
+        dispatcher->registerHandler("simulate_detection", [](CommandContext& ctx) {
+            DeterrentController* dc = systemManager.getDeterrentController();
+            if (!dc) {
+                DynamicJsonDocument errDoc(128);
+                errDoc["type"] = "error";
+                errDoc["message"] = "Deterrent controller not available";
+                String errStr; serializeJson(errDoc, errStr);
+                ctx.sender->sendResponse(errStr);
+                return false;
+            }
+
+            SDLogger::getInstance().infof("=== Simulating Boots Detection ===");
+
+            // Acknowledge before blocking so the UI can show in-progress state
+            DynamicJsonDocument startDoc(128);
+            startDoc["type"] = "simulation_started";
+            String startStr; serializeJson(startDoc, startStr);
+            ctx.sender->sendResponse(startStr);
+
+            systemState.deterrentActivationCount++;
+            systemState.bootsDetections++;
+            dc->activate(systemState, systemState.dryRun);  // BLOCKING ~10s
+
+            DynamicJsonDocument doneDoc(128);
+            doneDoc["type"] = "simulation_complete";
+            String doneStr; serializeJson(doneDoc, doneStr);
+            ctx.sender->sendResponse(doneStr);
+            return true;
+        });
     }
 
     // Sync training mode to capture controller
@@ -284,6 +388,25 @@ void loop() {
                 }
             }
         }
+    }
+
+    // Poll PIR sensor state so the BLE status broadcast reflects live readings
+    {
+        MotionDetector* motionDetector = systemManager.getMotionDetector();
+        if (motionDetector) {
+            systemState.pirActive = motionDetector->readRawState();
+        }
+    }
+
+    // Auto-off for spray after 5 seconds
+    if (systemState.sprayOn && systemState.sprayAutoOffAt > 0 && millis() >= systemState.sprayAutoOffAt) {
+        PCF8574Manager* pcf = systemManager.getPcfManager();
+        if (pcf) {
+            pcf->setAtomizerState(false);
+        }
+        systemState.sprayOn = false;
+        systemState.sprayAutoOffAt = 0;
+        SDLogger::getInstance().infof("Spray auto-off after 5s");
     }
 
     // Handle Bluetooth, OTA, and WiFi status
