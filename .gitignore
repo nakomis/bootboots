@@ -8,5 +8,7 @@ WINDSURF_CONTEXT.md
 .vscode
 infra/training/*
 local-training/data/
+local-training/data_multiclass/
 local-training/models/
+local-training/models_multiclass/
 local-training/.venv/
