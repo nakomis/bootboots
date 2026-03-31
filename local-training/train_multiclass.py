@@ -2,7 +2,7 @@
 """
 BootBoots - Multiclass Training Script (M-series Mac)
 
-Trains a MobileNetV2-based classifier to recognise each individual cat
+Trains an EfficientNetV2B1-based classifier to recognise each individual cat
 (Boots, Chi, Tau, Kappa, Mu, Wolf, NoCat). Expects the directory structure
 created by download_data_multiclass.py.
 
@@ -11,6 +11,9 @@ any prediction other than Boots → don't spray.
 
 Run with:
     python train_multiclass.py
+
+Find a good learning rate before committing to a full run:
+    python train_multiclass.py --find-lr
 
 Or with custom settings:
     python train_multiclass.py --data data_multiclass --epochs 50
@@ -21,13 +24,15 @@ Requires Python 3.11 and:
 
 import argparse
 import json
+import math
 from pathlib import Path
 
+import numpy as np
 import tensorflow as tf
 from tensorflow.keras import callbacks, layers, optimizers
-from tensorflow.keras.applications import MobileNetV2
+from tensorflow.keras.applications import EfficientNetV2B1
 
-IMG_SIZE = (224, 224)
+IMG_SIZE = (240, 240)  # EfficientNetV2B1 native resolution
 
 
 def remove_corrupt_images(directory: Path) -> int:
@@ -46,28 +51,108 @@ def remove_corrupt_images(directory: Path) -> int:
     return removed
 
 
-def build_model(num_classes: int, dropout_rate: float, l2_reg: float, train_base: bool) -> tf.keras.Model:
+def make_augmentation_layer() -> tf.keras.Sequential:
+    """
+    Augmentation applied to training images only, in the data pipeline.
+    Keeping it out of the model avoids SeedGenerator serialisation issues
+    and runs asynchronously on CPU while the GPU trains.
+    """
+    return tf.keras.Sequential([
+        layers.RandomFlip("horizontal"),          # cats on a floor — no vertical flips
+        layers.RandomRotation(0.15),              # fixed camera, so modest rotation only
+        layers.RandomZoom((-0.3, 0.0)),           # zoom in up to 30% — crop-style augmentation
+        layers.RandomContrast(0.2),               # kitchen lighting varies by time of day
+        layers.RandomBrightness(0.2),             # same reason
+    ], name="augmentation")
+
+
+def build_model(num_classes: int, dropout_rate: float, l2_reg: float,
+                learning_rate: float, train_base: bool) -> tf.keras.Model:
     regularizer = tf.keras.regularizers.l2(l2_reg)
-    base_model = MobileNetV2(input_shape=IMG_SIZE + (3,), include_top=False, weights="imagenet")
+    base_model = EfficientNetV2B1(input_shape=IMG_SIZE + (3,), include_top=False, weights="imagenet")
     base_model.trainable = train_base
 
     inputs = tf.keras.Input(shape=IMG_SIZE + (3,))
-    x = layers.RandomFlip("horizontal_and_vertical")(inputs)
-    x = layers.RandomRotation(0.3)(x)
-    x = layers.RandomZoom(0.2)(x)
-    x = tf.keras.applications.mobilenet_v2.preprocess_input(x)
+    # EfficientNetV2 includes its own normalisation internally; pass raw [0,255] pixels
+    x = tf.keras.applications.efficientnet_v2.preprocess_input(inputs)
     x = base_model(x, training=False)
     x = layers.GlobalAveragePooling2D()(x)
     x = layers.Dropout(dropout_rate)(x)
     outputs = layers.Dense(num_classes, activation="softmax", kernel_regularizer=regularizer)(x)
 
     model = tf.keras.Model(inputs, outputs)
+
+    if train_base:
+        # Discriminative learning rates: base at lr/10, top layers at full lr
+        optimizer = optimizers.Adam(learning_rate=learning_rate)
+        # Apply per-layer LR scaling via a custom LR multiplier approach:
+        # set base model layers to use a lower effective rate by adjusting their weights
+        # after each step. Simpler alternative: compile twice (frozen then unfrozen).
+        # Here we use a single compile with a reduced LR and rely on the fact that
+        # the top Dense layer benefits most from the higher-LR warm-up phase.
+        optimizer = optimizers.Adam(learning_rate=learning_rate / 10)
+    else:
+        optimizer = optimizers.Adam(learning_rate=learning_rate)
+
     model.compile(
-        optimizer=optimizers.Adam(learning_rate=0.0001),
+        optimizer=optimizer,
         loss="categorical_crossentropy",
         metrics=["accuracy"],
     )
     return model
+
+
+def find_lr(model: tf.keras.Model, train_ds: tf.data.Dataset,
+            min_lr: float = 1e-6, max_lr: float = 1e-1, steps: int = 100) -> None:
+    """
+    Learning rate range test: train for `steps` batches with LR increasing
+    log-linearly from min_lr to max_lr. Print and plot loss vs LR so you can
+    pick a good starting rate (steepest loss descent, before it diverges).
+    """
+    print(f"\nLR range test: {min_lr:.0e} → {max_lr:.0e} over {steps} steps")
+    lrs, losses = [], []
+    factor = (max_lr / min_lr) ** (1 / steps)
+    lr = min_lr
+
+    for step, (x_batch, y_batch) in enumerate(train_ds.unbatch().batch(16).take(steps)):
+        tf.keras.backend.set_value(model.optimizer.learning_rate, lr)
+        loss = model.train_on_batch(x_batch, y_batch)
+        if isinstance(loss, (list, tuple)):
+            loss = loss[0]
+        lrs.append(lr)
+        losses.append(loss)
+        lr *= factor
+
+    # Smooth losses with a simple moving average
+    window = 5
+    smoothed = np.convolve(losses, np.ones(window) / window, mode="valid")
+    smoothed_lrs = lrs[window // 2: window // 2 + len(smoothed)]
+
+    print("\n  LR         | Loss")
+    print("  -----------|----------")
+    for lr_val, loss_val in zip(smoothed_lrs[::10], smoothed[::10]):
+        print(f"  {lr_val:.2e}   | {loss_val:.4f}")
+
+    # Find steepest descent
+    if len(smoothed) > 1:
+        gradients = np.diff(smoothed)
+        best_idx = int(np.argmin(gradients))
+        suggested_lr = smoothed_lrs[best_idx]
+        print(f"\n  Suggested LR (steepest descent): {suggested_lr:.2e}")
+        print("  Use this as --lr, or a value ~3-10x lower for safe convergence.\n")
+
+    try:
+        import matplotlib.pyplot as plt
+        plt.figure(figsize=(8, 4))
+        plt.semilogx(smoothed_lrs, smoothed)
+        plt.xlabel("Learning rate")
+        plt.ylabel("Loss (smoothed)")
+        plt.title("LR range test — pick steepest descent before divergence")
+        plt.grid(True, alpha=0.3)
+        plt.savefig("lr_finder.png", dpi=150, bbox_inches="tight")
+        print("  Plot saved to lr_finder.png")
+    except ImportError:
+        print("  (install matplotlib to get a plot: pip install matplotlib)")
 
 
 def main() -> None:
@@ -78,10 +163,13 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=16, help="Batch size (default: 16)")
     parser.add_argument("--dropout", type=float, default=0.3, help="Dropout rate (default: 0.3)")
     parser.add_argument("--l2", type=float, default=0.0001, help="L2 regularisation weight (default: 0.0001)")
+    parser.add_argument("--lr", type=float, default=0.0001, help="Learning rate (default: 0.0001)")
     parser.add_argument("--train-base", action="store_true",
-                        help="Also fine-tune the MobileNetV2 base (slower, sometimes better)")
+                        help="Also fine-tune the EfficientNetV2B1 base (slower, sometimes better)")
     parser.add_argument("--no-early-stopping", action="store_true", help="Disable early stopping")
     parser.add_argument("--patience", type=int, default=10, help="Early stopping patience (default: 10)")
+    parser.add_argument("--find-lr", action="store_true",
+                        help="Run learning rate range test and exit (run before full training)")
     args = parser.parse_args()
 
     data_dir = Path(args.data)
@@ -109,6 +197,9 @@ def main() -> None:
     n_bad_train = remove_corrupt_images(train_dir)
     n_bad_val = remove_corrupt_images(val_dir)
     print(f"  Removed {n_bad_train} corrupt from training, {n_bad_val} from validation\n")
+
+    AUTOTUNE = tf.data.AUTOTUNE
+    augment = make_augmentation_layer()
 
     train_ds = tf.keras.utils.image_dataset_from_directory(
         train_dir,
@@ -138,12 +229,19 @@ def main() -> None:
     print(f"Class weights: { {class_names[i]: f'{w:.2f}' for i, w in class_weight.items()} }")
     print()
 
-    AUTOTUNE = tf.data.AUTOTUNE
-    train_ds = train_ds.cache().prefetch(AUTOTUNE)
+    # Augmentation applied in the pipeline (training only), then cache + prefetch
+    train_ds = (train_ds
+                .map(lambda x, y: (augment(x, training=True), y), num_parallel_calls=AUTOTUNE)
+                .cache()
+                .prefetch(AUTOTUNE))
     val_ds = val_ds.cache().prefetch(AUTOTUNE)
 
-    model = build_model(num_classes, args.dropout, args.l2, args.train_base)
+    model = build_model(num_classes, args.dropout, args.l2, args.lr, args.train_base)
     model.summary()
+
+    if args.find_lr:
+        find_lr(model, train_ds)
+        return
 
     cb_list = []
     if not args.no_early_stopping:

@@ -10,9 +10,10 @@ import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import { Construct } from 'constructs';
 
 /**
- * Binary classification: Boots (neighbour's cat to deter) vs NotBoots (everyone else)
+ * Multiclass classification: one class per cat (alphabetical order).
+ * Boots is index 0 — inference Lambda checks probs[0] for spray decision.
  */
-export const CAT_CLASSES = ['Boots', 'NotBoots'] as const;
+export const CAT_CLASSES = ['Boots', 'Chi', 'Kappa', 'Mu', 'NoCat', 'Tau', 'Wolf'] as const;
 
 export interface AiTrainingStackProps extends cdk.StackProps {
     /**
@@ -224,11 +225,12 @@ export class AiTrainingStack extends cdk.Stack {
     private createInferenceEndpoint(modelDataUrl: string): void {
         // Create SageMaker Model
         const model = new sagemaker.CfnModel(this, 'BootBootsModel', {
-            modelName: 'bootboots-cat-classifier',
+            // No custom modelName — CDK generates a unique name so CloudFormation can
+            // replace the model resource when the S3 model URL changes between deploys.
             executionRoleArn: this.sagemakerRole.roleArn,
             primaryContainer: {
                 // TensorFlow serving container for JumpStart models
-                image: `763104351884.dkr.ecr.${this.region}.amazonaws.com/tensorflow-inference:2.12-cpu`,
+                image: `763104351884.dkr.ecr.${this.region}.amazonaws.com/tensorflow-inference:2.16-cpu`,
                 modelDataUrl: modelDataUrl,
                 environment: {
                     SAGEMAKER_PROGRAM: 'inference.py',
@@ -238,7 +240,9 @@ export class AiTrainingStack extends cdk.Stack {
 
         // Create Serverless Inference Config
         const endpointConfig = new sagemaker.CfnEndpointConfig(this, 'BootBootsEndpointConfig', {
-            endpointConfigName: 'bootboots-serverless-config',
+            // No custom endpointConfigName — same reason as above.
+            // ExecutionRoleArn required when the endpoint has Inference Components enabled.
+            executionRoleArn: this.sagemakerRole.roleArn,
             productionVariants: [{
                 modelName: model.modelName!,
                 variantName: 'AllTraffic',
@@ -254,7 +258,8 @@ export class AiTrainingStack extends cdk.Stack {
         // Create Endpoint
         const endpoint = new sagemaker.CfnEndpoint(this, 'BootBootsEndpoint', {
             endpointName: 'bootboots',
-            endpointConfigName: endpointConfig.endpointConfigName!,
+            // endpointConfig has no custom name, so use .ref which resolves to the generated name
+            endpointConfigName: endpointConfig.ref,
         });
 
         endpoint.addDependency(endpointConfig);
