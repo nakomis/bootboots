@@ -219,8 +219,7 @@ Then re-run `train_local.py` and `predict.py` to see if it improved.
 | `train_local.py` | Trains a binary (Boots/NotBoots) MobileNetV2 classifier |
 | `train_multiclass.py` | Trains a seven-class classifier (one class per cat) |
 | `predict.py` | Runs the trained model on one or more images |
-| `export_tfjs.py` | Converts a `.keras` model to TFJs format for the local server |
-| `serve/` | TypeScript Express inference server (see below) |
+| `serve.py` | Flask inference server for the sandbox app badge |
 | `requirements.txt` | Python dependencies |
 | `data/` | Created by `download_data.py` — not committed to git |
 | `data_multiclass/` | Created by `download_data_multiclass.py` — not committed to git |
@@ -232,20 +231,20 @@ Then re-run `train_local.py` and `predict.py` to see if it improved.
 ## Sandbox app integration
 
 The sandbox labelling UI shows a prediction badge for each image using a local
-TypeScript inference server. The badge appears only when the server is running —
+Flask inference server. The badge appears only when the server is running —
 entirely opt-in.
 
 ```
 Browser (sandbox.nakomis.com)            Your Mac
 ┌──────────────────────────────┐         ┌────────────────────────────────┐
-│  BootBootsPage.tsx           │         │  serve/  (localhost:8765)      │
+│  BootBootsPage.tsx           │         │  serve.py  (localhost:8765)    │
 │                              │         │                                │
 │  [cat image]                 │  POST   │  POST /predict                 │
 │  ┌──────────────────────┐    │────────►│  raw JPEG bytes                │
 │  │ Boots  92%           │    │◄────────│  { prediction, confidence }    │
 │  └──────────────────────┘    │         │                                │
 │  (green = Boots, grey = not) │         │  loads models_multiclass/      │
-└──────────────────────────────┘         │         tfjs_model/model.json  │
+└──────────────────────────────┘         │         best_model.keras       │
                                          └────────────────────────────────┘
 ```
 
@@ -253,35 +252,18 @@ The browser already has the image downloaded (as a blob URL). It fetches its own
 blob and POSTs the raw JPEG bytes to the server — no AWS credentials needed on the
 server side.
 
-### Step 5 — Export the model to TFJs format
-
-This is a one-time step after training (repeat if you retrain):
+### Step 5 — Start the inference server
 
 ```bash
-pip install tensorflowjs   # already in requirements.txt
-python export_tfjs.py
-```
-
-This converts `models_multiclass/best_model.keras` →
-`models_multiclass/tfjs_model/model.json` (+ weight shards).
-
-For the binary model:
-```bash
-python export_tfjs.py --model models/best_model.keras
-```
-
-### Step 6 — Start the inference server
-
-```bash
-cd serve
-npm install        # first time only
-npm start
+source .venv/bin/activate
+pip install flask flask-cors   # already in requirements.txt
+python serve.py
 ```
 
 The server loads the model and listens on `http://localhost:8765`. Open the sandbox
 app — a prediction badge will appear in the top-right corner of each image.
 
-Switch between multiclass and binary models:
+Switch to the binary model instead:
 ```bash
-npm start -- --model ../models/tfjs_model
+python serve.py --model models
 ```

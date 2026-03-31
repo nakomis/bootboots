@@ -1,4 +1,5 @@
 tensorflow-macos
 tensorflow-metal
 boto3
-tensorflowjs
+flask
+flask-cors
