@@ -198,6 +198,14 @@ NotBoots), try adjusting the training:
 | Overfitting (train acc >> val acc) | Higher dropout (`--dropout 0.5`), higher l2 (`--l2 0.001`) |
 | Class imbalance | Cap NotBoots (`--max-notboots 200`) to match Boots count more closely |
 
+**Recommended starting point (from experimentation):** `--train-base --batch-size 32`
+
+`--train-base` unfreezes all 2.25M MobileNetV2 parameters so the feature
+extractor adapts to cat-specific visual patterns, not just ImageNet features.
+It runs ~10× slower per epoch but reaches meaningfully higher accuracy —
+especially for visually similar classes (Boots/Kappa/Chi). Early stopping
+typically kicks in around epoch 20–25.
+
 Then re-run `train_local.py` and `predict.py` to see if it improved.
 
 ---
