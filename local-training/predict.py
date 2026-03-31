@@ -21,9 +21,6 @@ from pathlib import Path
 import tensorflow as tf
 
 
-IMG_SIZE = (224, 224)
-
-
 def load_model_and_classes(model_dir: Path) -> tuple:
     model_path = model_dir / "best_model.keras"
     class_names_path = model_dir / "class_names.json"
@@ -40,17 +37,22 @@ def load_model_and_classes(model_dir: Path) -> tuple:
     print(f"Loading model from {model_path}...")
     model = tf.keras.models.load_model(str(model_path))
 
+    # Infer expected input size from the model rather than hardcoding it
+    img_size = tuple(model.input_shape[1:3])
+
     class_names = json.loads(class_names_path.read_text())
     print(f"Classes: {class_names}")
+    print(f"Input size: {img_size[0]}×{img_size[1]}")
     print()
-    return model, class_names
+    return model, class_names, img_size
 
 
-def predict_image(model, class_names: list[str], image_path: Path) -> tuple[str, float]:
+def predict_image(model, class_names: list[str], img_size: tuple,
+                  image_path: Path) -> tuple[str, float]:
     """Run inference on a single image. Returns (predicted_class, confidence)."""
     raw = tf.io.read_file(str(image_path))
     img = tf.image.decode_jpeg(raw, channels=3)
-    img = tf.image.resize(img, IMG_SIZE)
+    img = tf.image.resize(img, img_size)
     img = tf.expand_dims(img, 0)  # Add batch dimension
 
     probs = model(img, training=False).numpy()[0]
@@ -80,7 +82,7 @@ def main() -> None:
                         help="Model directory (default: models/)")
     args = parser.parse_args()
 
-    infer, class_names = load_model_and_classes(args.model)
+    infer, class_names, img_size = load_model_and_classes(args.model)
 
     images = collect_images(args.images)
     if not images:
@@ -92,7 +94,7 @@ def main() -> None:
     results = []
     for image_path in images:
         try:
-            predicted_class, confidence = predict_image(infer, class_names, image_path)
+            predicted_class, confidence = predict_image(infer, class_names, img_size, image_path)
             # Colour the output: green for Boots, yellow for NotBoots
             colour = "\033[92m" if predicted_class == "Boots" else "\033[93m"
             reset = "\033[0m"

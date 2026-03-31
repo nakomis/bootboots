@@ -108,14 +108,17 @@ def find_lr(model: tf.keras.Model, train_ds: tf.data.Dataset,
     Learning rate range test: train for `steps` batches with LR increasing
     log-linearly from min_lr to max_lr. Print and plot loss vs LR so you can
     pick a good starting rate (steepest loss descent, before it diverges).
+
+    train_ds must be a raw (uncached) dataset — caching is not applied here
+    so that iterating only `steps` batches doesn't discard a partial cache.
     """
     print(f"\nLR range test: {min_lr:.0e} → {max_lr:.0e} over {steps} steps")
     lrs, losses = [], []
     factor = (max_lr / min_lr) ** (1 / steps)
     lr = min_lr
 
-    for step, (x_batch, y_batch) in enumerate(train_ds.unbatch().batch(16).take(steps)):
-        tf.keras.backend.set_value(model.optimizer.learning_rate, lr)
+    for step, (x_batch, y_batch) in enumerate(train_ds.take(steps)):
+        model.optimizer.learning_rate = lr  # Keras 3: direct assignment
         loss = model.train_on_batch(x_batch, y_batch)
         if isinstance(loss, (list, tuple)):
             loss = loss[0]
@@ -229,18 +232,19 @@ def main() -> None:
     print(f"Class weights: { {class_names[i]: f'{w:.2f}' for i, w in class_weight.items()} }")
     print()
 
-    # Augmentation applied in the pipeline (training only), then cache + prefetch
-    train_ds = (train_ds
-                .map(lambda x, y: (augment(x, training=True), y), num_parallel_calls=AUTOTUNE)
-                .cache()
-                .prefetch(AUTOTUNE))
+    # Augmented dataset — two versions:
+    # - raw_augmented_ds: no cache, used for the LR finder (partial iteration is safe)
+    # - train_ds: cached + prefetched, used for actual training
+    augmented = lambda x, y: (augment(x, training=True), y)
+    raw_augmented_ds = train_ds.map(augmented, num_parallel_calls=AUTOTUNE)
+    train_ds = raw_augmented_ds.cache().prefetch(AUTOTUNE)
     val_ds = val_ds.cache().prefetch(AUTOTUNE)
 
     model = build_model(num_classes, args.dropout, args.l2, args.lr, args.train_base)
     model.summary()
 
     if args.find_lr:
-        find_lr(model, train_ds)
+        find_lr(model, raw_augmented_ds)
         return
 
     cb_list = []
