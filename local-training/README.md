@@ -214,48 +214,74 @@ Then re-run `train_local.py` and `predict.py` to see if it improved.
 
 | File | What it does |
 |------|-------------|
-| `download_data.py` | Downloads images from S3/DynamoDB and organises them into splits |
-| `train_local.py` | Trains MobileNetV2 on the local data using Metal GPU acceleration |
+| `download_data.py` | Downloads images from S3/DynamoDB and organises them into binary splits |
+| `download_data_multiclass.py` | Downloads images, keeping one class per cat |
+| `train_local.py` | Trains a binary (Boots/NotBoots) MobileNetV2 classifier |
+| `train_multiclass.py` | Trains a seven-class classifier (one class per cat) |
 | `predict.py` | Runs the trained model on one or more images |
+| `export_tfjs.py` | Converts a `.keras` model to TFJs format for the local server |
+| `serve/` | TypeScript Express inference server (see below) |
 | `requirements.txt` | Python dependencies |
 | `data/` | Created by `download_data.py` — not committed to git |
+| `data_multiclass/` | Created by `download_data_multiclass.py` — not committed to git |
 | `models/` | Created by `train_local.py` — not committed to git |
+| `models_multiclass/` | Created by `train_multiclass.py` — not committed to git |
 
 ---
 
-## Next Steps
+## Sandbox app integration
 
-### Sandbox app integration
-
-The goal is to show a live prediction badge in the sandbox app's cat labelling UI
-(`BootBootsPage.tsx`) as you browse images — so you can see what your locally-trained
-model thinks, right alongside the image, without leaving the browser.
-
-Since browsers can't load TF SavedModels directly, the plan is a two-part change:
+The sandbox labelling UI shows a prediction badge for each image using a local
+TypeScript inference server. The badge appears only when the server is running —
+entirely opt-in.
 
 ```
 Browser (sandbox.nakomis.com)            Your Mac
-┌──────────────────────────────┐         ┌────────────────────────────┐
-│  BootBootsPage.tsx           │         │  serve.py                  │
-│                              │         │  (FastAPI, localhost:8765)  │
-│  [cat image]                 │  fetch  │                            │
-│  ┌──────────────────────┐    │────────►│  POST /predict             │
-│  │ 🟢 Boots  92.4%      │    │◄────────│  { class, confidence }     │
-│  └──────────────────────┘    │         │                            │
-│                              │         │  loads models/saved_model/ │
-└──────────────────────────────┘         └────────────────────────────┘
+┌──────────────────────────────┐         ┌────────────────────────────────┐
+│  BootBootsPage.tsx           │         │  serve/  (localhost:8765)      │
+│                              │         │                                │
+│  [cat image]                 │  POST   │  POST /predict                 │
+│  ┌──────────────────────┐    │────────►│  raw JPEG bytes                │
+│  │ Boots  92%           │    │◄────────│  { prediction, confidence }    │
+│  └──────────────────────┘    │         │                                │
+│  (green = Boots, grey = not) │         │  loads models_multiclass/      │
+└──────────────────────────────┘         │         tfjs_model/model.json  │
+                                         └────────────────────────────────┘
 ```
 
-**Part 1 — `serve.py`** (new file in `local-training/`):
-- FastAPI app that loads the SavedModel on startup
-- Single endpoint: `POST /predict` — accepts a JPEG URL or raw bytes, returns `{ class, confidence }`
-- CORS enabled so the browser can call it
-- Run with: `python serve.py`
+The browser already has the image downloaded (as a blob URL). It fetches its own
+blob and POSTs the raw JPEG bytes to the server — no AWS credentials needed on the
+server side.
 
-**Part 2 — `BootBootsPage.tsx`** (in `sandboxsite/sandbox-app/`):
-- When displaying an image, fire a request to `http://localhost:8765/predict` with the image URL
-- Show the result as a small badge (green for Boots, grey for NotBoots)
-- Gracefully handle the case where `serve.py` isn't running (just show nothing)
+### Step 5 — Export the model to TFJs format
 
-This keeps the integration entirely opt-in — the badge only appears when you have
-the local server running.
+This is a one-time step after training (repeat if you retrain):
+
+```bash
+pip install tensorflowjs   # already in requirements.txt
+python export_tfjs.py
+```
+
+This converts `models_multiclass/best_model.keras` →
+`models_multiclass/tfjs_model/model.json` (+ weight shards).
+
+For the binary model:
+```bash
+python export_tfjs.py --model models/best_model.keras
+```
+
+### Step 6 — Start the inference server
+
+```bash
+cd serve
+npm install        # first time only
+npm start
+```
+
+The server loads the model and listens on `http://localhost:8765`. Open the sandbox
+app — a prediction badge will appear in the top-right corner of each image.
+
+Switch between multiclass and binary models:
+```bash
+npm start -- --model ../models/tfjs_model
+```
