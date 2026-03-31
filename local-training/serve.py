@@ -48,6 +48,14 @@ def create_app(model: tf.keras.Model, class_names: list[str]) -> Flask:
     app = Flask(__name__)
     CORS(app)
 
+    # Chrome's Private Network Access policy blocks requests from public HTTPS
+    # origins (sandbox.nakomis.com) to loopback addresses unless the server
+    # explicitly opts in via this header on both preflight and actual responses.
+    @app.after_request
+    def allow_private_network(response):  # type: ignore[return]
+        response.headers["Access-Control-Allow-Private-Network"] = "true"
+        return response
+
     @app.get("/health")
     def health():  # type: ignore[return]
         return jsonify({"status": "ok", "classes": class_names})
