@@ -7,3 +7,6 @@ WINDSURF_CONTEXT.md
 .python-version
 .vscode
 infra/training/*
+local-training/data/
+local-training/models/
+local-training/.venv/
