@@ -85,6 +85,10 @@ public:
     void setMaxFiles(int maxFiles) { _maxFiles = maxFiles; }
     void setFileLoggingEnabled(bool enabled) { _fileLoggingEnabled = enabled; }
 
+    // Returns the full path of the currently-active log file (e.g. "/logs/0001_catcam_20260414_123456.log").
+    // Used by LogUploader to skip the file that is still being written.
+    String getCurrentLogFile() const { return _currentLogFile; }
+
 private:
     SDLogger() = default;
     ~SDLogger() = default;

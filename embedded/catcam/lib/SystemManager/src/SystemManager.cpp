@@ -23,6 +23,7 @@
 #include "CommandDispatcher.h"
 #include "MqttService.h"
 #include "MqttOTA.h"
+#include "LogUploader.h"
 #include "secrets.h"
 
 SystemManager::SystemManager()
@@ -128,6 +129,8 @@ bool SystemManager::initComponents(const Config& config, SystemState& state,
         state.wifiConnected = true;
         SDLogger::getInstance().infof("WiFi connected successfully");
         SDLogger::getInstance().infof("IP Address: %s", WiFi.localIP().toString().c_str());
+        LogUploader::getInstance().init("logs.nasbox.nakomis.com", "bootboots", LOG_TOKEN);
+        LogUploader::getInstance().triggerUpload();
 
         // Initialize AWS Auth
         _awsAuth = new AWSAuth(config.awsRegion);
@@ -308,6 +311,7 @@ void SystemManager::updateWifiStatus(SystemState& state) {
     } else if (!state.wifiConnected && WiFi.status() == WL_CONNECTED) {
         state.wifiConnected = true;
         SDLogger::getInstance().infof("WiFi connection restored");
+        LogUploader::getInstance().triggerUpload();
     }
 }
 
