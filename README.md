@@ -43,7 +43,7 @@ The system needs to tell Boots apart from my own cats, who are allowed in and mu
 | <img src="docs/cats/kappa.jpg" width="200" alt="Kappa"/> | <img src="docs/cats/wolf.jpg" width="200" alt="Wolf"/> | |
 | **Kappa** — Chi and Tau's son; inherited his dad's fur and his mum's attitude | **Wolf** — not a real cat; a stuffed toy pressed into service as a test subject because he's much easier to pose than the others | |
 
-The AI model is trained to recognise Boots versus NotBoots (everyone else, including no-cat frames), so the system only fires the water mist when it's confident the visitor is Boots. The whole pipeline — camera capture, cloud inference via a SageMaker model, and a deterrent sequence of LEDs and a short water mist — runs autonomously. Boots has so far remained unimpressed, but the data is promising.
+The AI model is a seven-class classifier trained to recognise each cat individually: Boots, Chi, Tau, Kappa, Mu, Wolf (the stuffed-toy test subject), and NoCat (empty frames). At inference time the classification collapses to a binary spray decision — Boots triggers the deterrent; everyone else is safe. The whole pipeline — camera capture, cloud inference via a SageMaker serverless endpoint running EfficientNetV2B1, and a deterrent sequence of LEDs and a short water mist — runs autonomously. Boots has so far remained unimpressed, but the data is promising.
 
 
 ## Architecture Diagram
@@ -77,12 +77,26 @@ The [embedded](embedded) directory contains Arduino-based firmware for ESP32 cam
 
 The bootloader-based OTA architecture maximises available flash space by using a single large application partition (7MB on ESP32-S3) instead of the traditional dual-partition approach.
 
+### AI / ML Training
+
+The [local-training](local-training) directory contains the full offline training and deployment pipeline, designed to run on an M-series Mac with Metal GPU acceleration:
+
+- **`download_data_multiclass.py`** — Pulls labelled training images from S3/DynamoDB, organises them into per-cat class directories, and applies an 80/20 training/validation split
+- **`train_multiclass.py`** — Trains an EfficientNetV2B1-based seven-class classifier (90.97% validation accuracy; 240×240 input, pipeline augmentation, LR range test support)
+- **`predict.py`** — Runs the trained model against individual images or directories for offline evaluation
+- **`serve.py`** — Local inference server (localhost:8765) used by the sandbox app to show prediction badges during manual labelling
+- **`export_for_sagemaker.py`** — Exports the `.keras` model to TF Serving SavedModel format and packages it as `model.tar.gz`
+- **`deploy_model.sh`** — Full deploy pipeline: export → S3 upload → new SageMaker model + endpoint config → live endpoint update
+
+See [local-training/README.md](local-training/README.md) for the full workflow.
+
 ### AWS Infrastructure
 
 The [infra](infra) directory contains AWS CDK stacks (TypeScript) for cloud services:
 
 - **IoT Device Stack** - AWS IoT Thing provisioning, certificate generation, and SSM Parameter Store integration
 - **API Gateway Stack** - REST API endpoints for device communication
+- **AI Training Stack** - SageMaker serverless endpoint (TF Serving 2.16, EfficientNetV2B1), inference Lambda, and API Gateway for camera-to-cloud classification requests
 - **Firmware Cleanup Stack** - Lambda function that manages firmware versions in S3, keeping only the 3 most recent versions and auto-updating the manifest
 
 ### Documentation
@@ -146,6 +160,15 @@ bootboots/
 │   ├── lib/                   # CDK stack definitions
 │   └── lambda/                # Lambda function code
 │
+├── local-training/            # Offline ML training pipeline (M-series Mac)
+│   ├── download_data_multiclass.py   # Pull labelled images from S3/DynamoDB
+│   ├── train_multiclass.py           # Train EfficientNetV2B1 classifier
+│   ├── predict.py                    # Offline inference on images
+│   ├── serve.py                      # Local inference server (port 8765)
+│   ├── export_for_sagemaker.py       # Export to TF Serving format
+│   ├── deploy_model.sh               # Full deploy → SageMaker
+│   └── README.md                     # Full training workflow
+│
 ├── scripts/                   # Project-wide utility scripts
 │
 └── README.md                  # This file
@@ -155,7 +178,7 @@ bootboots/
 
 ### Prerequisites
 
-- Python 3.8+
+- Python 3.11 (managed via `asdf`; required for TensorFlow)
 - PlatformIO CLI
 - Node.js and npm (for infrastructure)
 - AWS CLI configured with `nakom.is-sandbox` profile
@@ -195,10 +218,11 @@ Then use the web interface to push the update to the device via Bluetooth.
 
 The deterrence system includes multiple safety layers to prevent false activations:
 
-- **Ultra-safe thresholds** - 90%+ confidence required for target cat identification
-- **Protected cats** - Specific cats (e.g., Kappa, index 2) are hardcoded to never trigger deterrents
-- **False positive prevention** - Requires 2+ consecutive positive detections
-- **Confidence validation** - All non-target cats must show <15% confidence
+- **Multiclass classification** — The model identifies each cat individually (Boots, Chi, Tau, Kappa, Mu, Wolf, NoCat) rather than a binary Boots/NotBoots decision, giving greater flexibility in per-cat logic
+- **Ultra-safe thresholds** — 90%+ confidence required before triggering the spray
+- **Protected cats** — Household cats (Chi, Tau, Kappa, Mu) are hardcoded to never trigger deterrents, regardless of confidence
+- **False positive prevention** — Requires 2+ consecutive positive detections
+- **Confidence validation** — All non-target classes must show low confidence before acting
 
 ## Related Projects
 

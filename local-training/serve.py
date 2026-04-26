@@ -23,12 +23,11 @@ import tensorflow as tf
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-IMG_SIZE = (224, 224)
 PORT = 8765
 SCRIPT_DIR = Path(__file__).parent
 
 
-def load_model(model_dir: str) -> tuple[tf.keras.Model, list[str]]:
+def load_model(model_dir: str) -> tuple[tf.keras.Model, list[str], tuple[int, int]]:
     model_path = SCRIPT_DIR / model_dir / "best_model.keras"
     class_names_path = SCRIPT_DIR / model_dir / "class_names.json"
 
@@ -39,12 +38,14 @@ def load_model(model_dir: str) -> tuple[tf.keras.Model, list[str]]:
 
     print(f"Loading model from {model_path} ...")
     model = tf.keras.models.load_model(str(model_path))
+    img_size: tuple[int, int] = tuple(model.input_shape[1:3])  # type: ignore[assignment]
     class_names: list[str] = json.loads(class_names_path.read_text())
     print(f"Classes ({len(class_names)}): {', '.join(class_names)}")
-    return model, class_names
+    print(f"Input size: {img_size[0]}×{img_size[1]}")
+    return model, class_names, img_size
 
 
-def create_app(model: tf.keras.Model, class_names: list[str]) -> Flask:
+def create_app(model: tf.keras.Model, class_names: list[str], img_size: tuple[int, int]) -> Flask:
     app = Flask(__name__)
     CORS(app)
 
@@ -69,7 +70,7 @@ def create_app(model: tf.keras.Model, class_names: list[str]) -> Flask:
         try:
             raw = tf.constant(data)
             img = tf.image.decode_jpeg(raw, channels=3)
-            img = tf.image.resize(img, IMG_SIZE)
+            img = tf.image.resize(img, img_size)
             img = tf.expand_dims(img, 0)
             probs = model(img, training=False).numpy()[0]
         except Exception as exc:  # noqa: BLE001
@@ -94,8 +95,8 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=PORT, help=f"Port to listen on (default: {PORT})")
     args = parser.parse_args()
 
-    model, class_names = load_model(args.model)
-    app = create_app(model, class_names)
+    model, class_names, img_size = load_model(args.model)
+    app = create_app(model, class_names, img_size)
 
     print(f"\nBootBoots inference server  →  http://localhost:{args.port}")
     print("POST /predict   send raw JPEG bytes → { prediction, confidence }")
