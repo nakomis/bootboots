@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import * as cdk from 'aws-cdk-lib';
+import * as fs from 'fs';
 import { ApiGatewayStack } from '../lib/api-gateway';
 import { IotDeviceStack } from '../lib/iot-device';
 import { AiTrainingStack } from '../lib/ai-training-stack';
@@ -22,3 +23,7 @@ new AiTrainingStack(app, 'BootBootsAiTrainingStack', {
     ...londonEnv,
     modelDataUrl,
 });
+
+const { version: infraVersion } = JSON.parse(fs.readFileSync('./version.json', 'utf-8'));
+cdk.Tags.of(app).add('MH-Project', 'bootboots');
+cdk.Tags.of(app).add('MH-Version', infraVersion);
