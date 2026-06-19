@@ -3,6 +3,7 @@ import * as cdk from 'aws-cdk-lib';
 import { ApiGatewayStack } from '../lib/api-gateway';
 import { IotDeviceStack } from '../lib/iot-device';
 import { AiTrainingStack } from '../lib/ai-training-stack';
+import { IosCompanionStack } from '../lib/ios-companion';
 
 const londonEnv = { env: { account: '975050268859', region: 'eu-west-2' } };
 
@@ -22,3 +23,6 @@ new AiTrainingStack(app, 'BootBootsAiTrainingStack', {
     ...londonEnv,
     modelDataUrl,
 });
+
+// iOS companion app: Cognito identity pool + IAM role (IoT trigger + S3 upload)
+new IosCompanionStack(app, 'BootBootsIosCompanionStack', londonEnv);

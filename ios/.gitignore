@@ -1,0 +1,13 @@
+# The repo-root .gitignore has an unanchored `bootboots` rule which (case-insensitively
+# on macOS) would swallow this app's BootBoots/ source directory. Re-include it here.
+!BootBoots/
+
+# XcodeGen generates this from project.yml — source of truth is project.yml.
+BootBoots.xcodeproj/
+
+# Xcode / SwiftPM
+.build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+.swiftpm/

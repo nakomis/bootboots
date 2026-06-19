@@ -1,0 +1,105 @@
+name: BootBoots
+options:
+    bundleIdPrefix: com.nakomis
+    deploymentTarget:
+        iOS: '17.0'
+    createIntermediateGroups: true
+
+settings:
+    base:
+        SWIFT_VERSION: '5.10'
+        DEVELOPMENT_TEAM: 62YFUFBSFX
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: '1'
+        SUPPORTS_MACCATALYST: NO
+
+configs:
+    Debug Sandbox: debug
+    Release Sandbox: release
+
+packages:
+    # Cognito identity (JWT -> IAM creds) + S3 upload.
+    AWSSDKSwift:
+        url: https://github.com/awslabs/aws-sdk-swift
+        from: 1.0.0
+    # MQTT5 over WebSocket with SigV4 signing (the spray trigger).
+    AWSIoTDeviceSDK:
+        url: https://github.com/aws/aws-iot-device-sdk-swift
+        from: 1.0.0
+
+targets:
+    BootBoots:
+        type: application
+        platform: iOS
+        deploymentTarget: '17.0'
+        sources:
+            - path: BootBoots
+              excludes:
+                  - Resources/Info.plist
+        resources:
+            - BootBoots/Resources/Assets.xcassets
+        info:
+            path: BootBoots/Resources/Info.plist
+            properties:
+                CFBundleDisplayName: BootBoots
+                CFBundleShortVersionString: '0.1'
+                CFBundleVersion: '1'
+                UILaunchScreen: {}
+                UISupportedInterfaceOrientations:
+                    - UIInterfaceOrientationPortrait
+                    - UIInterfaceOrientationLandscapeLeft
+                    - UIInterfaceOrientationLandscapeRight
+                ITSAppUsesNonExemptEncryption: false
+                NSCameraUsageDescription: BootBoots records a short clip when the cat deterrent fires.
+                NSMicrophoneUsageDescription: BootBoots records audio with the deterrent clip.
+                CFBundleURLTypes:
+                    - CFBundleURLSchemes:
+                          - com.nakomis.bootboots
+                # Injected at build time via the settings below.
+                BootBootsCognitoClientID: $(BootBootsCognitoClientID)
+                BootBootsCognitoLoginDomain: $(BootBootsCognitoLoginDomain)
+                BootBootsUserPoolID: $(BootBootsUserPoolID)
+                BootBootsIdentityPoolID: $(BootBootsIdentityPoolID)
+                BootBootsAWSRegion: $(BootBootsAWSRegion)
+                BootBootsIoTEndpoint: $(BootBootsIoTEndpoint)
+                BootBootsTriggerTopic: $(BootBootsTriggerTopic)
+                BootBootsImagesBucket: $(BootBootsImagesBucket)
+                BootBootsIoTPolicyName: $(BootBootsIoTPolicyName)
+        settings:
+            base:
+                PRODUCT_BUNDLE_IDENTIFIER: com.nakomis.bootboots
+                MARKETING_VERSION: '0.1'
+                CURRENT_PROJECT_VERSION: '1'
+                # ── Backend config (sandbox) ──────────────────────────────────
+                # CLIENT_ID + IDENTITY_POOL_ID come from the
+                # BootBootsIosCompanionStack CDK outputs.
+                BootBootsCognitoClientID: 4138v6b3na6a19oslpk4070io0
+                BootBootsCognitoLoginDomain: login.sandbox.nakomis.com
+                BootBootsUserPoolID: eu-west-2_SSghhLpgX
+                BootBootsIdentityPoolID: eu-west-2:dba65f95-729f-4ac9-9432-94978da22d82
+                BootBootsAWSRegion: eu-west-2
+                BootBootsIoTEndpoint: aj2wv2wcxpv9m-ats.iot.eu-west-2.amazonaws.com
+                BootBootsTriggerTopic: bootboots/ios/trigger
+                BootBootsImagesBucket: bootboots-images-975050268859-eu-west-2
+                BootBootsIoTPolicyName: bootboots-ios-trigger
+        dependencies:
+            - package: AWSSDKSwift
+              product: AWSCognitoIdentity
+            - package: AWSSDKSwift
+              product: AWSS3
+            - package: AWSSDKSwift
+              product: AWSSDKIdentity
+            - package: AWSSDKSwift
+              product: AWSIoT
+            - package: AWSIoTDeviceSDK
+              product: AwsIotDeviceSdkSwift
+
+schemes:
+    BootBoots (Sandbox):
+        build:
+            targets:
+                BootBoots: all
+        run:
+            config: Debug Sandbox
+        archive:
+            config: Release Sandbox
