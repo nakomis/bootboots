@@ -10,16 +10,30 @@ import json
 import subprocess
 import argparse
 import re
+import hashlib
 from pathlib import Path
 import boto3
 from botocore.exceptions import ClientError
 
+def resolve_firmware_bucket(env: str) -> str:
+    """Resolve the S3 firmware bucket name.
+
+    Order of precedence:
+      1. NAKOMIS_FIRMWARE_BUCKET env var (explicit override, e.g. the legacy nakomis-firmware-updates)
+      2. Fleet convention: nakomis-firmware-{env}
+    """
+    override = os.environ.get('NAKOMIS_FIRMWARE_BUCKET')
+    if override:
+        return override
+    return f"nakomis-firmware-{env}"
+
+
 class FirmwareBuilder:
-    def __init__(self, project_root):
+    def __init__(self, project_root, env: str = "sandbox"):
         self.project_root = Path(project_root)
         self.version_file = self.project_root / "include" / "version.h"
         self.platformio_ini = self.project_root / "platformio.ini"
-        self.s3_bucket = "nakomis-firmware-updates"
+        self.s3_bucket = resolve_firmware_bucket(env)
         self.project_name = "BootBoots"
 
     def get_current_version(self):
@@ -128,7 +142,10 @@ class FirmwareBuilder:
             # S3 key path: ProjectName/Version/firmware.bin
             s3_key = f"{self.project_name}/{version}/firmware.bin"
 
-            print(f"📤 Uploading {firmware_file} ({firmware_size} bytes)")
+            # Fleet's manifest records this, so devices and the UI can check the image.
+            sha256 = hashlib.sha256(Path(firmware_file).read_bytes()).hexdigest()
+
+            print(f"📤 Uploading {firmware_file} ({firmware_size} bytes, sha256 {sha256[:12]}…)")
             print(f"   → s3://{self.s3_bucket}/{s3_key}")
 
             # Upload file
@@ -142,6 +159,7 @@ class FirmwareBuilder:
                         'project': self.project_name,
                         'version': version,
                         'size': str(firmware_size),
+                        'sha256': sha256,
                         'build-timestamp': str(subprocess.check_output(['date'], text=True).strip())
                     }
                 }
@@ -334,6 +352,9 @@ Examples:
                        help='Only build, do not upload to S3')
     parser.add_argument('-e', '--environment', default='esp32s3cam',
                        help='PlatformIO environment to build (default: esp32s3cam)')
+    parser.add_argument('--env', choices=['sandbox', 'prod'], default='sandbox',
+                       help='Fleet environment: selects the firmware bucket nakomis-firmware-{env} (default: sandbox, '
+                            'where the catcam lives). Override the bucket with NAKOMIS_FIRMWARE_BUCKET.')
 
     args = parser.parse_args()
 
@@ -358,7 +379,8 @@ Examples:
     print("=" * 60)
     print(f"☁️  AWS Profile: {aws_profile}")
 
-    builder = FirmwareBuilder(project_root)
+    builder = FirmwareBuilder(project_root, args.env)
+    print(f"🪣 Firmware bucket: {builder.s3_bucket}")
 
     # Check for uncommitted changes
     tree_was_clean = check_uncommitted_changes(project_root)
