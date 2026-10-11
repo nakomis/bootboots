@@ -78,6 +78,10 @@ app client, no guests). Its authenticated role may only:
 - `s3:GetObject` on `bootboots-images-975050268859-eu-west-2/catcam-training/*`
 - `execute-api:Invoke` on `GET /events` of the BootBoots API
 
+The pool trusts the shell's app client, so **every user who can sign in to the shell** (any user of the shared
+pool) gets this role, not just BootBoots users. Keep it to what the pages need, and add a Cognito group check
+(role mapping rules) before granting anything more sensitive.
+
 The pool id is exported to SSM `/nakomis-bootboots/sandbox/identity-pool-id`; `pnpm build:sandbox` bakes it
 into the build. The stack also creates the CI role `nakomis-nakomis-bootboots-github-ci-sandbox`.
 
@@ -93,8 +97,12 @@ Remote tab works there; the AWS-backed tabs need the shell.
 
 ## Deploying
 
-CI tests both packages on every PR. On merge to `main` it deploys `infra/` and publishes `web/` to sandbox. By
-hand:
+CI tests both packages on every PR. On merge to `main` it deploys `infra/` and publishes `web/` to sandbox.
+
+The CI role is created by this repo's own stack, so the **first deploy must be run by hand** (below) to bootstrap
+`nakomis-nakomis-bootboots-github-ci-sandbox`; until then CI's deploy jobs can't assume it. (Done on 11 Oct 2026.)
+
+By hand:
 
 ```bash
 cd infra && pnpm deploy-sandbox

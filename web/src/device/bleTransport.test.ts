@@ -109,3 +109,22 @@ test('lists paired catcams and requests devices by service', async () => {
   expect(await pairedDevices()).toEqual([]);
   vi.unstubAllGlobals();
 });
+
+test('a failed setup disconnects GATT and a drop during setup is reported', async () => {
+  const { device, server, status } = fakeDevice();
+  const handlers = { onResponse: vi.fn(), onStatus: vi.fn(), onDisconnect: vi.fn() };
+  server.getPrimaryService.mockImplementationOnce(async () => {
+    device.dispatchEvent(new Event('gattserverdisconnected'));
+    throw new Error('NetworkError: GATT Server is disconnected.');
+  });
+  await expect(BleConnection.connect(device, handlers)).rejects.toThrow('GATT Server is disconnected');
+  expect(handlers.onDisconnect).toHaveBeenCalledTimes(1);
+  expect(server.disconnect).toHaveBeenCalledTimes(1);
+
+  // A failure after the connection object exists also cleans up its listeners.
+  status.startNotifications.mockRejectedValueOnce(new Error('notify failed'));
+  await expect(BleConnection.connect(device, handlers)).rejects.toThrow('notify failed');
+  expect(server.disconnect).toHaveBeenCalledTimes(2);
+  device.dispatchEvent(new Event('gattserverdisconnected'));
+  expect(handlers.onDisconnect).toHaveBeenCalledTimes(1);
+});

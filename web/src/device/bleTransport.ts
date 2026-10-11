@@ -71,18 +71,35 @@ export class BleConnection implements DeviceTransport {
 
   static async connect(device: BluetoothDevice, handlers: BleHandlers): Promise<BleConnection> {
     if (!device.gatt) throw new Error('GATT not available on this device');
-    const server = await device.gatt.connect();
-    const service = await withGattTimeout(server.getPrimaryService(BOOTBOOTS_SERVICE_UUID));
-    const statusChar = await withGattTimeout(service.getCharacteristic(STATUS_CHARACTERISTIC_UUID));
-    const commandChar = await withGattTimeout(service.getCharacteristic(COMMAND_CHARACTERISTIC_UUID));
-    const conn = new BleConnection(device, server, statusChar, commandChar, handlers);
-
-    await statusChar.startNotifications();
-    statusChar.addEventListener('characteristicvaluechanged', conn.onStatusChanged);
-    await commandChar.startNotifications();
-    commandChar.addEventListener('characteristicvaluechanged', conn.onCommandResponse);
-    device.addEventListener('gattserverdisconnected', conn.onGattDisconnected);
-    return conn;
+    // Listen for disconnects before anything else, so a drop during setup is reported.
+    let conn: BleConnection | undefined;
+    let settingUp = true;
+    const onEarlyDisconnect = () => {
+      if (settingUp && !conn) handlers.onDisconnect();
+    };
+    device.addEventListener('gattserverdisconnected', onEarlyDisconnect);
+    let server: BluetoothRemoteGATTServer | undefined;
+    try {
+      server = await device.gatt.connect();
+      const service = await withGattTimeout(server.getPrimaryService(BOOTBOOTS_SERVICE_UUID));
+      const statusChar = await withGattTimeout(service.getCharacteristic(STATUS_CHARACTERISTIC_UUID));
+      const commandChar = await withGattTimeout(service.getCharacteristic(COMMAND_CHARACTERISTIC_UUID));
+      conn = new BleConnection(device, server, statusChar, commandChar, handlers);
+      device.addEventListener('gattserverdisconnected', conn.onGattDisconnected);
+      await statusChar.startNotifications();
+      statusChar.addEventListener('characteristicvaluechanged', conn.onStatusChanged);
+      await commandChar.startNotifications();
+      commandChar.addEventListener('characteristicvaluechanged', conn.onCommandResponse);
+      return conn;
+    } catch (err) {
+      conn?.cleanup();
+      // Don't leave a half-open link: it blocks the next attempt.
+      server?.disconnect();
+      throw err;
+    } finally {
+      settingUp = false;
+      device.removeEventListener('gattserverdisconnected', onEarlyDisconnect);
+    }
   }
 
   private enqueue<T>(op: () => Promise<T>): Promise<T> {

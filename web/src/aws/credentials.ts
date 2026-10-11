@@ -12,13 +12,12 @@ export function shellCredentials(
   identityPoolId: string,
   now: () => number = Date.now,
 ): AwsCredentialIdentityProvider {
-  let cached: Promise<AwsCredentialIdentity> | undefined;
-  let expiresAt = 0;
+  /** The current (or in-flight) fetch. Concurrent callers share it rather than starting another. */
+  let cached: { promise: Promise<AwsCredentialIdentity>; expiresAt: number; settled: boolean } | undefined;
 
   const fetchFresh = async (): Promise<AwsCredentialIdentity> => {
     if (!identityPoolId) throw new Error('BootBoots identity pool is not configured in this build');
     const c = await shell.getAwsCredentials(identityPoolId);
-    expiresAt = c.expiration.getTime();
     return {
       accessKeyId: c.accessKeyId,
       secretAccessKey: c.secretAccessKey,
@@ -28,13 +27,21 @@ export function shellCredentials(
   };
 
   return async () => {
-    if (!cached || expiresAt - now() <= REFRESH_MARGIN_MS) {
-      const attempt = fetchFresh();
-      cached = attempt;
-      attempt.catch(() => {
-        if (cached === attempt) cached = undefined;
-      });
+    const stale = !cached || (cached.settled && cached.expiresAt - now() <= REFRESH_MARGIN_MS);
+    if (stale) {
+      const entry = { promise: fetchFresh(), expiresAt: 0, settled: false };
+      cached = entry;
+      entry.promise.then(
+        (c) => {
+          entry.expiresAt = c.expiration?.getTime() ?? 0;
+          entry.settled = true;
+        },
+        () => {
+          // Retry on the next call.
+          if (cached === entry) cached = undefined;
+        },
+      );
     }
-    return cached;
+    return (cached as NonNullable<typeof cached>).promise;
   };
 }

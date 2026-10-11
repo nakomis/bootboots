@@ -34,3 +34,16 @@ test('a failed exchange is retried on the next call', async () => {
 test('refuses to run without an identity pool', async () => {
   await expect(shellCredentials({ getAwsCredentials: vi.fn() }, '')()).rejects.toThrow('not configured');
 });
+
+test('concurrent callers share one in-flight fetch', async () => {
+  let resolve!: (v: unknown) => void;
+  const getAwsCredentials = vi.fn(() => new Promise((r) => (resolve = r)));
+  const provider = shellCredentials({ getAwsCredentials } as never, 'pool', () => 0);
+  const calls = [provider(), provider(), provider()];
+  expect(getAwsCredentials).toHaveBeenCalledTimes(1);
+  resolve({ accessKeyId: 'one', secretAccessKey: 's', sessionToken: 't', expiration: new Date(3_600_000) });
+  const results = await Promise.all(calls);
+  expect(results.map((c) => c.accessKeyId)).toEqual(['one', 'one', 'one']);
+  await provider();
+  expect(getAwsCredentials).toHaveBeenCalledTimes(1);
+});

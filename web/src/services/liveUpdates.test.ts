@@ -62,3 +62,27 @@ test('reconnects with backoff after the socket closes', async () => {
   live.stop();
   vi.useRealTimers();
 });
+
+test('stop() then start() while a token is pending opens only one socket', async () => {
+  const created: FakeSocket[] = [];
+  const resolvers: ((t: string) => void)[] = [];
+  const live = new LiveUpdates(
+    'wss://ws',
+    () => new Promise<string>((r) => resolvers.push(r)),
+    (url) => {
+      const s = new FakeSocket(url);
+      created.push(s);
+      return s as unknown as WebSocket;
+    },
+  );
+  live.start();
+  live.stop();
+  live.start();
+  for (const r of resolvers) r('tok');
+  await flush();
+  expect(created).toHaveLength(1);
+  // Stopping closes it without scheduling a reconnect.
+  live.stop();
+  await flush();
+  expect(created).toHaveLength(1);
+});

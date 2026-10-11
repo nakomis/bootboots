@@ -44,6 +44,10 @@ test('overview, annotate with SAM, save, and handle the empty queue', async () =
   await waitFor(() => expect(sam.segment).toHaveBeenCalledTimes(2));
   const save$ = screen.getByRole('button', { name: 'Save ✓' });
   await waitFor(() => expect(save$).toBeEnabled());
+  fireEvent.keyDown(window, { key: 's', metaKey: true });
+  fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+  await new Promise((r) => setTimeout(r, 10));
+  expect(save).not.toHaveBeenCalled();
   fireEvent.keyDown(window, { key: 's' });
   await waitFor(() => expect(save).toHaveBeenCalled());
   expect(save.mock.calls[0][3]).toEqual([

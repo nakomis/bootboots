@@ -1,4 +1,4 @@
-import { createContext, type ReactNode, useContext, useMemo } from 'react';
+import { createContext, type ReactNode, useContext, useMemo, useRef } from 'react';
 import { shellCredentials } from './aws/credentials';
 import { type BootbootsConfig, configFor } from './config';
 import { type AwsServices, createAwsServices } from './services/aws';
@@ -28,17 +28,42 @@ export function BootbootsProvider({
   children: ReactNode;
   overrides?: Partial<Omit<BootbootsContextValue, 'shell'>>;
 }) {
-  const value = useMemo<BootbootsContextValue>(() => {
-    const config = overrides?.config ?? configFor(shell.env);
-    return {
-      shell,
-      config,
-      aws: overrides?.aws ?? createAwsServices(config, shellCredentials(shell, config.identityPoolId)),
-      fleet: overrides?.fleet ?? createFleetApi(config.fleetApiUrl, shell.getAccessToken),
-      live: overrides?.live ?? new LiveUpdates(config.fleetWsUrl, shell.getAccessToken),
-      username: overrides?.username ?? (shell.user.username || shell.user.sub),
+  // The shell may pass a new props object on any render; only rebuild services when what they depend on
+  // changes, and always call the latest token/credential functions.
+  const shellRef = useRef(shell);
+  shellRef.current = shell;
+  const { env, region } = shell;
+  const sub = shell.user.sub;
+  const config = useMemo(() => overrides?.config ?? configFor(env), [overrides?.config, env]);
+  const identityPoolId = config.identityPoolId;
+
+  const services = useMemo(() => {
+    // `sub` and `region` are keys only: a different user or region gets fresh clients and socket.
+    void sub;
+    void region;
+    const getAccessToken = () => shellRef.current.getAccessToken();
+    const credentialSource = {
+      getAwsCredentials: (pool: string) => shellRef.current.getAwsCredentials(pool),
     };
-  }, [shell, overrides]);
+    return {
+      aws: createAwsServices(config, shellCredentials(credentialSource, identityPoolId)),
+      fleet: createFleetApi(config.fleetApiUrl, getAccessToken),
+      live: new LiveUpdates(config.fleetWsUrl, getAccessToken),
+    };
+  }, [config, identityPoolId, sub, region]);
+
+  const username = shell.user.username || shell.user.sub;
+  const value = useMemo<BootbootsContextValue>(
+    () => ({
+      shell: shellRef.current,
+      config,
+      aws: overrides?.aws ?? services.aws,
+      fleet: overrides?.fleet ?? services.fleet,
+      live: overrides?.live ?? services.live,
+      username: overrides?.username ?? username,
+    }),
+    [config, services, overrides?.aws, overrides?.fleet, overrides?.live, overrides?.username, username],
+  );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

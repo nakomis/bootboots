@@ -41,6 +41,12 @@ test('claims an image, labels it by button and keyboard, then runs out of kittie
   );
   expect(await screen.findByText(/Only 1 image left to go!/)).toBeInTheDocument();
 
+  // Browser shortcuts such as Cmd+W must not label anything.
+  fireEvent.keyUp(window, { key: 'w', metaKey: true });
+  fireEvent.keyUp(window, { key: 'w', ctrlKey: true });
+  fireEvent.keyUp(window, { key: 'w', altKey: true });
+  await new Promise((r) => setTimeout(r, 10));
+  expect(label).toHaveBeenCalledTimes(1);
   fireEvent.keyUp(window, { key: 'w' });
   await waitFor(() => expect(label).toHaveBeenLastCalledWith(expect.anything(), expect.anything(), 'Wolf'));
   expect(await screen.findByText("We're all out of Kitties!")).toBeInTheDocument();

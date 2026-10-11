@@ -16,6 +16,8 @@ export class LiveUpdates {
   private statusListeners = new Set<(s: LiveStatus) => void>();
   private attempt = 0;
   private stopped = false;
+  /** Bumped by start()/stop() so a connect() awaiting a token can tell it has been superseded. */
+  private generation = 0;
   private ping?: ReturnType<typeof setInterval>;
   private retry?: ReturnType<typeof setTimeout>;
   status: LiveStatus = 'connecting';
@@ -27,15 +29,21 @@ export class LiveUpdates {
   ) {}
 
   start() {
+    this.generation++;
+    clearTimeout(this.retry);
     this.stopped = false;
     void this.connect();
   }
 
   stop() {
+    this.generation++;
     this.stopped = true;
     clearInterval(this.ping);
     clearTimeout(this.retry);
-    this.socket?.close();
+    const socket = this.socket;
+    // Forget it first so its onclose doesn't schedule a reconnect.
+    this.socket = undefined;
+    socket?.close();
   }
 
   subscribe(listener: Listener): () => void {
@@ -59,15 +67,16 @@ export class LiveUpdates {
 
   private async connect() {
     if (this.stopped) return;
+    const generation = this.generation;
     this.setStatus('connecting');
     let token: string;
     try {
       token = await this.getToken();
     } catch {
-      this.scheduleReconnect();
+      if (generation === this.generation) this.scheduleReconnect();
       return;
     }
-    if (this.stopped) return;
+    if (this.stopped || generation !== this.generation) return;
     const socket = this.createSocket(`${this.wsUrl}?token=${encodeURIComponent(token)}`);
     this.socket = socket;
     socket.onopen = () => {

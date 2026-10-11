@@ -194,6 +194,8 @@ export function LabellingPage() {
 
   useEffect(() => {
     const onKeyUp = (e: KeyboardEvent) => {
+      // Leave browser and OS shortcuts (Cmd+C, Ctrl+T, …) alone.
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       const target = e.target as HTMLElement | null;
       if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
       const match = LABELS.find((l) => l.key === e.key);

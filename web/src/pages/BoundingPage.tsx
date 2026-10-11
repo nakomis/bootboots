@@ -282,6 +282,8 @@ export function BoundingPage() {
   useEffect(() => {
     if (view !== 'annotating') return;
     const onKey = (e: KeyboardEvent) => {
+      // Cmd+S / Ctrl+S belong to the browser.
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       if ((e.target as HTMLElement | null)?.tagName === 'INPUT') return;
       if ((e.key === 's' || e.key === 'S') && canSave) void save();
     };
