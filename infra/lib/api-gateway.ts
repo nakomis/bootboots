@@ -27,7 +27,7 @@ export class ApiGatewayStack extends cdk.Stack {
         blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
         cors: [{
-            allowedOrigins: ['https://sandbox.nakomis.com', 'http://localhost:3000'],
+            allowedOrigins: ['https://sandbox.nakomis.com', 'https://app.sandbox.nakomis.com', 'http://localhost:3000'],
             allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.PUT, s3.HttpMethods.POST],
             allowedHeaders: ['*'],
         }],
@@ -203,7 +203,7 @@ const inferLambdaLogGroup = new logs.LogGroup(this, 'BootBootsInferLambdaLogGrou
       description: 'BootBoots Inference API Gateway with POST /infer endpoint',
       binaryMediaTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/octet-stream', 'video/x-msvideo', 'video/avi'],
       defaultCorsPreflightOptions: {
-        allowOrigins: ['https://sandbox.nakomis.com', 'http://localhost:3000', 'http://localhost:3001'],
+        allowOrigins: ['https://sandbox.nakomis.com', 'https://app.sandbox.nakomis.com', 'http://localhost:3000', 'http://localhost:3001'],
         allowMethods: ['GET', 'POST', 'PUT', 'OPTIONS'],
         allowHeaders: [
           'Content-Type',
@@ -363,9 +363,12 @@ const inferLambdaLogGroup = new logs.LogGroup(this, 'BootBootsInferLambdaLogGrou
       ],
     });
 
-    // Add Gateway Responses with CORS headers so 403/5xx errors are readable by the browser
+    // Add Gateway Responses with CORS headers so 403/5xx errors are readable by the browser.
+    // A gateway response takes one value, so echo the caller's Origin (error bodies carry nothing sensitive
+    // and the API uses SigV4 rather than cookies) so both sandbox.nakomis.com and app.sandbox.nakomis.com work.
     const corsResponseHeaders = {
-      'Access-Control-Allow-Origin': "'https://sandbox.nakomis.com'",
+      'Access-Control-Allow-Origin': 'method.request.header.Origin',
+      'Vary': "'Origin'",
       'Access-Control-Allow-Headers': "'Content-Type,Authorization,X-API-Key,X-Amz-Date,X-Amz-Security-Token,X-Amz-Content-Sha256'",
       'Access-Control-Allow-Methods': "'GET,POST,PUT,OPTIONS'",
     };
