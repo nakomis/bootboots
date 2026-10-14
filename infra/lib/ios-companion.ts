@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import * as cdk from 'aws-cdk-lib';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -53,11 +55,144 @@ export class IosCompanionStack extends cdk.Stack {
 
         // Managed Login v2 requires an explicit branding resource per client,
         // otherwise the hosted UI returns "Login pages unavailable".
-        new cognito.CfnManagedLoginBranding(this, 'ManagedLoginBranding', {
+        // One Dark style, settings copied verbatim from nakostat's working branding
+        // (Cognito rejects unknown keys with a 400 UnknownProperty), plus the
+        // BootBoots logo above the sign-in form. The logo is embedded as base64 in
+        // the template, so keep it small: CloudFormation templates are capped at 1 MB.
+        const formLogo = fs.readFileSync(path.join(__dirname, '..', 'assets', 'bootboots-logo.png'));
+        const branding = new cognito.CfnManagedLoginBranding(this, 'ManagedLoginBranding', {
             userPoolId: userPool.userPoolId,
             clientId: userPoolClient.userPoolClientId,
-            useCognitoProvidedValues: true,
+            useCognitoProvidedValues: false,
+            settings: {
+                components: {
+                    pageBackground: {
+                        image: { enabled: false },
+                        darkMode: { color: '282c34ff' },
+                    },
+                    pageHeader: {
+                        backgroundImage: { enabled: false },
+                        logo: { location: 'START', enabled: false },
+                        darkMode: { background: { color: '21252bff' }, borderColor: '3e4451ff' },
+                    },
+                    pageFooter: {
+                        backgroundImage: { enabled: false },
+                        logo: { location: 'START', enabled: false },
+                        darkMode: { background: { color: '21252bff' }, borderColor: '3e4451ff' },
+                    },
+                    form: {
+                        borderRadius: 8,
+                        backgroundImage: { enabled: false },
+                        logo: { location: 'CENTER', position: 'TOP', enabled: true, formInclusion: 'IN' },
+                        darkMode: { backgroundColor: '2c313aff', borderColor: '3e4451ff' },
+                    },
+                    pageText: {
+                        darkMode: {
+                            bodyColor: 'abb2bfff',
+                            headingColor: 'ffffffff',
+                            descriptionColor: '5c6370ff',
+                        },
+                    },
+                    primaryButton: {
+                        darkMode: {
+                            defaults: { backgroundColor: '2563ebff', textColor: 'ffffffff' },
+                            hover: { backgroundColor: '1d4ed8ff', textColor: 'ffffffff' },
+                            active: { backgroundColor: '1e40afff', textColor: 'ffffffff' },
+                            disabled: { backgroundColor: '2c313aff', borderColor: '3e4451ff' },
+                        },
+                    },
+                    secondaryButton: {
+                        darkMode: {
+                            defaults: {
+                                backgroundColor: '2c313aff',
+                                borderColor: '3e4451ff',
+                                textColor: 'abb2bfff',
+                            },
+                            hover: {
+                                backgroundColor: '353b45ff',
+                                borderColor: '528bffff',
+                                textColor: 'ffffffff',
+                            },
+                            active: {
+                                backgroundColor: '21252bff',
+                                borderColor: '3e4451ff',
+                                textColor: 'ffffffff',
+                            },
+                        },
+                    },
+                    alert: {
+                        borderRadius: 4,
+                        darkMode: { error: { backgroundColor: '3a1515ff', borderColor: 'e06c75ff' } },
+                    },
+                    idpButton: {
+                        standard: {
+                            darkMode: {
+                                defaults: {
+                                    backgroundColor: '2c313aff',
+                                    borderColor: '3e4451ff',
+                                    textColor: 'abb2bfff',
+                                },
+                                hover: {
+                                    backgroundColor: '353b45ff',
+                                    borderColor: '528bffff',
+                                    textColor: 'ffffffff',
+                                },
+                                active: {
+                                    backgroundColor: '21252bff',
+                                    borderColor: '3e4451ff',
+                                    textColor: 'ffffffff',
+                                },
+                            },
+                        },
+                        custom: {},
+                    },
+                    phoneNumberSelector: { displayType: 'TEXT' },
+                    favicon: { enabledTypes: ['ICO', 'SVG'] },
+                },
+                componentClasses: {
+                    input: {
+                        borderRadius: 6,
+                        darkMode: {
+                            defaults: { backgroundColor: '21252bff', borderColor: '3e4451ff' },
+                            placeholderColor: '5c6370ff',
+                        },
+                    },
+                    inputLabel: {
+                        darkMode: { textColor: 'abb2bfff' },
+                    },
+                    inputDescription: {
+                        darkMode: { textColor: '5c6370ff' },
+                    },
+                    link: {
+                        darkMode: { defaults: { textColor: '61afefff' }, hover: { textColor: '528bffff' } },
+                    },
+                    optionControls: {
+                        darkMode: {
+                            defaults: { backgroundColor: '21252bff', borderColor: '3e4451ff' },
+                            selected: { backgroundColor: '2563ebff', foregroundColor: 'ffffffff' },
+                        },
+                    },
+                    focusState: {
+                        darkMode: { borderColor: '528bffff' },
+                    },
+                },
+                categories: {
+                    global: {
+                        colorSchemeMode: 'DARK',
+                        pageFooter: { enabled: false },
+                        pageHeader: { enabled: false },
+                        spacingDensity: 'REGULAR',
+                    },
+                },
+            },
+            assets: [{
+                category: 'FORM_LOGO',
+                colorMode: 'DARK',
+                extension: 'PNG',
+                bytes: formLogo.toString('base64'),
+            }],
         });
+        branding.node.addDependency(userPoolClient);
 
         // ── Identity pool: federates the user pool → temporary IAM credentials ───
         const identityPool = new cognito.CfnIdentityPool(this, 'BootBootsIosIdentityPool', {
