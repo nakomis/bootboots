@@ -1,0 +1,1686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How BootBoots Learns to Recognise Cats</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<style>
+  :root {
+    --indigo: #6366f1;
+    --indigo-dark: #4f46e5;
+    --indigo-light: #e0e7ff;
+    --amber: #f59e0b;
+    --amber-light: #fef3c7;
+    --green: #22c55e;
+    --green-light: #dcfce7;
+    --red: #ef4444;
+    --red-light: #fee2e2;
+    --slate-50: #f8fafc;
+    --slate-100: #f1f5f9;
+    --slate-200: #e2e8f0;
+    --slate-300: #cbd5e1;
+    --slate-400: #94a3b8;
+    --slate-500: #64748b;
+    --slate-600: #475569;
+    --slate-700: #334155;
+    --slate-800: #1e293b;
+    --slate-900: #0f172a;
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --font-mono: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Courier New', monospace;
+    --sidebar-w: 270px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.7;
+    color: var(--slate-800);
+    background: var(--slate-50);
+    display: flex;
+  }
+
+  /* ── SIDEBAR ─────────────────────────────────── */
+  #sidebar {
+    width: var(--sidebar-w);
+    min-height: 100vh;
+    background: var(--slate-900);
+    color: var(--slate-300);
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    flex-shrink: 0;
+    padding: 1.5rem 0 2rem;
+  }
+
+  #sidebar h2 {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--slate-500);
+    padding: 0 1.25rem;
+    margin-bottom: 0.5rem;
+  }
+
+  #sidebar .logo {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #fff;
+    padding: 0 1.25rem 1.25rem;
+    border-bottom: 1px solid var(--slate-700);
+    margin-bottom: 1.25rem;
+  }
+  #sidebar .logo span { color: var(--indigo); }
+
+  #sidebar nav a {
+    display: block;
+    padding: 0.35rem 1.25rem;
+    font-size: 0.82rem;
+    color: var(--slate-400);
+    text-decoration: none;
+    border-left: 3px solid transparent;
+    transition: all 0.15s;
+  }
+  #sidebar nav a:hover {
+    color: #fff;
+    border-left-color: var(--indigo);
+    background: rgba(99,102,241,0.08);
+  }
+  #sidebar nav .section-divider {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--slate-600);
+    padding: 1rem 1.25rem 0.25rem;
+  }
+
+  /* ── MAIN CONTENT ────────────────────────────── */
+  #main {
+    flex: 1;
+    min-width: 0;
+    padding: 3rem 2.5rem 5rem;
+    max-width: 920px;
+  }
+
+  .course-header {
+    margin-bottom: 3rem;
+    padding-bottom: 2rem;
+    border-bottom: 2px solid var(--slate-200);
+  }
+  .course-header h1 {
+    font-size: 2rem;
+    font-weight: 800;
+    color: var(--slate-900);
+    line-height: 1.25;
+    margin-bottom: 0.75rem;
+  }
+  .course-header .subtitle {
+    font-size: 1.05rem;
+    color: var(--slate-500);
+  }
+  .course-header .badge {
+    display: inline-block;
+    background: var(--indigo-light);
+    color: var(--indigo-dark);
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.2rem 0.65rem;
+    border-radius: 99px;
+    margin-right: 0.4rem;
+    letter-spacing: 0.03em;
+  }
+
+  /* ── MODULES ─────────────────────────────────── */
+  .module {
+    margin-bottom: 4rem;
+    scroll-margin-top: 2rem;
+  }
+
+  .module-header {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 2px solid var(--indigo-light);
+  }
+
+  .module-number {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--indigo);
+    white-space: nowrap;
+  }
+
+  .module h2 {
+    font-size: 1.45rem;
+    font-weight: 700;
+    color: var(--slate-900);
+  }
+
+  .module h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--slate-700);
+    margin: 2rem 0 0.75rem;
+  }
+
+  /* ── PARAGRAPHS WITH NUMBERS ─────────────────── */
+  .content {
+    counter-reset: para;
+  }
+
+  .content p {
+    counter-increment: para;
+    margin-bottom: 1.1rem;
+    position: relative;
+    padding-left: 3rem;
+  }
+
+  .content p::before {
+    content: "¶" counter(para);
+    position: absolute;
+    left: 0;
+    top: 0.15em;
+    font-size: 0.62rem;
+    font-family: var(--font-mono);
+    color: var(--slate-300);
+    font-weight: 500;
+    width: 2.6rem;
+    text-align: right;
+    user-select: none;
+    pointer-events: none;
+  }
+
+  /* ── CODE BLOCKS ─────────────────────────────── */
+  pre {
+    margin: 1.25rem 0 1.5rem;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 0.83rem;
+    line-height: 1.6;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+
+  pre code {
+    font-family: var(--font-mono) !important;
+  }
+
+  .code-caption {
+    font-size: 0.72rem;
+    color: var(--slate-400);
+    margin-top: -1rem;
+    margin-bottom: 1.5rem;
+    padding-left: 0.5rem;
+    font-style: italic;
+  }
+
+  /* Inline code */
+  :not(pre) > code {
+    font-family: var(--font-mono);
+    font-size: 0.82em;
+    background: var(--slate-100);
+    color: var(--indigo-dark);
+    padding: 0.1em 0.4em;
+    border-radius: 4px;
+    border: 1px solid var(--slate-200);
+  }
+
+  /* ── CALLOUT BOXES ───────────────────────────── */
+  .callout {
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin: 1.5rem 0 1.5rem 3rem;
+    font-size: 0.9rem;
+    line-height: 1.6;
+  }
+  .callout p { padding-left: 0 !important; margin-bottom: 0.4rem; }
+  .callout p::before { display: none !important; }
+  .callout p:last-child { margin-bottom: 0; }
+
+  .callout-title {
+    font-weight: 700;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.4rem;
+  }
+
+  .callout.tip {
+    background: var(--green-light);
+    border-left: 4px solid var(--green);
+  }
+  .callout.tip .callout-title { color: #166534; }
+
+  .callout.info {
+    background: var(--indigo-light);
+    border-left: 4px solid var(--indigo);
+  }
+  .callout.info .callout-title { color: var(--indigo-dark); }
+
+  .callout.warning {
+    background: var(--amber-light);
+    border-left: 4px solid var(--amber);
+  }
+  .callout.warning .callout-title { color: #92400e; }
+
+  .callout.analogy {
+    background: #fdf4ff;
+    border-left: 4px solid #a855f7;
+  }
+  .callout.analogy .callout-title { color: #6b21a8; }
+
+  /* ── DIAGRAMS ────────────────────────────────── */
+  .diagram {
+    margin: 1.5rem 0 1.5rem 3rem;
+    overflow-x: auto;
+  }
+  .diagram svg {
+    display: block;
+    max-width: 100%;
+  }
+  .diagram-caption {
+    font-size: 0.75rem;
+    color: var(--slate-500);
+    text-align: center;
+    margin-top: 0.5rem;
+    font-style: italic;
+  }
+
+  /* ── IMAGES ──────────────────────────────────── */
+  .cat-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 1rem;
+    margin: 1.5rem 0 1.5rem 3rem;
+  }
+
+  .cat-card {
+    border-radius: 10px;
+    overflow: hidden;
+    background: white;
+    border: 1px solid var(--slate-200);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    text-align: center;
+  }
+
+  .cat-card img {
+    width: 100%;
+    height: 160px;
+    object-fit: cover;
+    display: block;
+  }
+
+  .cat-card .cat-name {
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 0.5rem;
+    color: var(--slate-700);
+  }
+
+  .cat-card .cat-desc {
+    font-size: 0.7rem;
+    color: var(--slate-400);
+    padding: 0 0.5rem 0.5rem;
+    line-height: 1.4;
+  }
+
+  /* ── TABLE ───────────────────────────────────── */
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1.25rem 0 1.5rem 3rem;
+    font-size: 0.85rem;
+    width: calc(100% - 3rem);
+  }
+  th {
+    background: var(--slate-800);
+    color: white;
+    padding: 0.6rem 0.9rem;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  td {
+    padding: 0.55rem 0.9rem;
+    border-bottom: 1px solid var(--slate-200);
+  }
+  tr:nth-child(even) td { background: var(--slate-50); }
+  td:first-child { font-family: var(--font-mono); font-size: 0.8rem; color: var(--indigo-dark); }
+
+  /* ── FORMULA BOX ─────────────────────────────── */
+  .formula {
+    background: var(--slate-900);
+    color: #e2e8f0;
+    font-family: var(--font-mono);
+    padding: 0.9rem 1.25rem;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    margin: 1.25rem 0 1.5rem 3rem;
+    letter-spacing: 0.02em;
+    overflow-x: auto;
+  }
+
+  .formula .comment {
+    color: var(--slate-500);
+    font-size: 0.78em;
+  }
+
+  /* ── PROGRESS STEPS ──────────────────────────── */
+  .steps {
+    margin: 1.25rem 0 1.5rem 3rem;
+    counter-reset: step;
+  }
+  .step {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 0.9rem;
+    align-items: flex-start;
+  }
+  .step-num {
+    counter-increment: step;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--indigo);
+    color: white;
+    font-size: 0.75rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+  }
+  .step-body { font-size: 0.9rem; }
+  .step-body strong { color: var(--slate-900); }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════ SIDEBAR ══ -->
+<aside id="sidebar">
+  <div class="logo">Boot<span>Boots</span> AI Course</div>
+
+  <div class="section-divider">Foundations</div>
+  <nav>
+    <a href="#m1">1. The Problem</a>
+    <a href="#m2">2. Supervised Learning</a>
+    <a href="#m3">3. Collecting Training Data</a>
+    <a href="#m4">4. Train / Val / Test Splits</a>
+    <a href="#m5">5. Data Augmentation</a>
+  </nav>
+
+  <div class="section-divider">The Model</div>
+  <nav>
+    <a href="#m6">6. What Is a Neural Network?</a>
+    <a href="#m7">7. Transfer Learning</a>
+    <a href="#m8">8. Building the Model</a>
+  </nav>
+
+  <div class="section-divider">Training</div>
+  <nav>
+    <a href="#m9">9. Loss Functions</a>
+    <a href="#m10">10. The Optimiser</a>
+    <a href="#m11">11. Class Weights</a>
+    <a href="#m12">12. The Training Loop</a>
+    <a href="#m13">13. Regularisation</a>
+  </nav>
+
+  <div class="section-divider">Deployment</div>
+  <nav>
+    <a href="#m14">14. Export &amp; Deploy</a>
+    <a href="#m15">15. The Complete Picture</a>
+  </nav>
+</aside>
+
+<!-- ═══════════════════════════════════════════ MAIN ══════ -->
+<main id="main">
+
+  <header class="course-header">
+    <div style="margin-bottom:0.6rem">
+      <span class="badge">Python 3.11</span>
+      <span class="badge">TensorFlow / Keras</span>
+      <span class="badge">EfficientNetV2B1</span>
+      <span class="badge">Transfer Learning</span>
+    </div>
+    <h1>How BootBoots Learns to Recognise Cats</h1>
+    <p class="subtitle">A ground-up walkthrough of the training pipeline — written for a software engineer who knows code but hasn't touched ML before.</p>
+  </header>
+
+  <!-- ═══ MODULE 1 ═══════════════════════════════════════ -->
+  <section class="module" id="m1">
+    <div class="module-header">
+      <span class="module-number">Module 1</span>
+      <h2>The Problem We're Solving</h2>
+    </div>
+    <div class="content">
+
+      <p>BootBoots is a cat-detection system built around an ESP32-S3 camera mounted in a kitchen. When the cat <strong>Boots</strong> is detected approaching a certain area, a water spray is triggered. Simple enough as a concept — but implementing it turns out to be surprisingly non-trivial, because "detect Boots" is the kind of problem that's trivially easy for a human brain and genuinely hard for traditional software.</p>
+
+      <p>Why not just write rules? You might imagine something like: "if the image contains a black blob of area 5,000–15,000 pixels, it's Boots." The trouble is that lighting changes, Boots moves, the image quality varies, and — critically — Boots is not the only black cat in this house. Chi and Kappa are also dark-coloured. A rules-based approach would require you to enumerate every possible variation, which quickly becomes intractable. This is the canonical reason machine learning exists: <strong>when the rules are too complex to write by hand, you let the computer discover them from examples instead</strong>.</p>
+
+      <p>The BootBoots model is trained to distinguish between <strong>seven classes</strong>: Boots, Chi, Tau, Kappa, Mu, Wolf, and NoCat. The first five are real cats; Wolf is a stuffed toy used for testing the spray mechanism without traumatising an actual cat; and NoCat covers any image where there's no cat present at all (empty floor, a human leg walking past, etc.).</p>
+
+      <p>At inference time, the seven-class output is used as a binary decision: if the top prediction is <em>Boots</em>, trigger the spray. Any other result — Chi, NoCat, Mu, Wolf, Tau, Kappa — means don't spray. The multiclass model is more capable than a pure binary Boots/NotBoots classifier because it must learn to genuinely distinguish Boots from other dark cats, rather than just learning "dark blob = Boots".</p>
+
+      <p>The cats you'll be meeting throughout this course:</p>
+    </div>
+
+    <div class="cat-gallery">
+      <div class="cat-card">
+        <div style="width:100%;height:160px;background:#1a1a1a;display:flex;align-items:center;justify-content:center;">
+          <span style="color:#666;font-size:0.75rem;text-align:center;padding:0.5rem;">No photo available<br>(camera shy!)</span>
+        </div>
+        <div class="cat-name">Boots</div>
+        <div class="cat-desc">Solid black, green eyes, inquisitive expression. The target.</div>
+      </div>
+      <div class="cat-card">
+        <img src="../cats/chi.jpg" alt="Chi the cat">
+        <div class="cat-name">Chi</div>
+        <div class="cat-desc">Dark brown/black long-haired tabby. Father of Kappa.</div>
+      </div>
+      <div class="cat-card">
+        <img src="../cats/tau.jpg" alt="Tau the cat">
+        <div class="cat-name">Tau</div>
+        <div class="cat-desc">Black and white tuxedo. Mother of Kappa. Loves radiators.</div>
+      </div>
+      <div class="cat-card">
+        <img src="../cats/kappa.jpg" alt="Kappa the cat">
+        <div class="cat-name">Kappa</div>
+        <div class="cat-desc">Son of Chi and Tau. Very dark, long fluffy fur, big green eyes.</div>
+      </div>
+      <div class="cat-card">
+        <img src="../mu.jpeg" alt="Mu the cat">
+        <div class="cat-name">Mu</div>
+        <div class="cat-desc">Fluffy ginger/cream. Very regal. Fond of flopping upside-down.</div>
+      </div>
+      <div class="cat-card">
+        <img src="../cats/wolf.jpg" alt="Wolf the stuffed toy">
+        <div class="cat-name">Wolf</div>
+        <div class="cat-desc">Grey/white stuffed toy. Not a real cat. Used to test the spray safely.</div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ═══ MODULE 2 ═══════════════════════════════════════ -->
+  <section class="module" id="m2">
+    <div class="module-header">
+      <span class="module-number">Module 2</span>
+      <h2>Supervised Learning</h2>
+    </div>
+    <div class="content">
+
+      <p>The branch of machine learning we're using is called <strong>supervised learning</strong>. The word "supervised" means we train the model using labelled examples — pairs of <code>(input, correct_answer)</code>. The model sees an image and predicts a class; we compare that prediction to the correct label; and we use the difference to nudge the model's internal parameters slightly in the right direction. Repeat this process hundreds of thousands of times across thousands of images, and the parameters gradually settle into values that produce accurate predictions.</p>
+
+      <p>In BootBoots, the labels live in a <strong>DynamoDB table</strong> called <code>catadata</code>. Every time a new image is captured by the camera, a human (you) views it in a web UI and tags it: "that's Boots", "that's NoCat", "that's Kappa". That tag is written to DynamoDB with the image filename as the key. The images themselves sit in an <strong>S3 bucket</strong>. This separation is quite natural — DynamoDB for structured metadata, S3 for raw binary files.</p>
+
+      <p>A critical point for any software engineer encountering ML for the first time: <strong>the data is the product</strong>. You can swap out model architectures and tune hyperparameters all day, but if your training data is incorrectly labelled, too small, or unrepresentative of real-world conditions, nothing will save you. The quality and quantity of labelled examples is the single most important factor in a supervised learning system.</p>
+
+      <p>Here's the complete pipeline from raw camera image to a deployed model:</p>
+    </div>
+
+    <!-- Pipeline overview SVG -->
+    <div class="diagram">
+      <svg width="820" height="130" viewBox="0 0 820 130" font-family="-apple-system, BlinkMacSystemFont, sans-serif">
+        <!-- Camera -->
+        <rect x="10" y="35" width="110" height="60" rx="8" fill="#e0e7ff" stroke="#6366f1" stroke-width="1.5"/>
+        <text x="65" y="62" text-anchor="middle" font-size="11" fill="#4f46e5" font-weight="600">ESP32-S3</text>
+        <text x="65" y="77" text-anchor="middle" font-size="10" fill="#6366f1">Camera</text>
+
+        <polygon points="125,65 140,58 140,72" fill="#cbd5e1"/>
+
+        <!-- S3 -->
+        <rect x="145" y="35" width="110" height="60" rx="8" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+        <text x="200" y="62" text-anchor="middle" font-size="11" fill="#92400e" font-weight="600">S3 Bucket</text>
+        <text x="200" y="77" text-anchor="middle" font-size="10" fill="#b45309">Raw images</text>
+
+        <polygon points="260,65 275,58 275,72" fill="#cbd5e1"/>
+
+        <!-- DynamoDB -->
+        <rect x="280" y="35" width="110" height="60" rx="8" fill="#dcfce7" stroke="#22c55e" stroke-width="1.5"/>
+        <text x="335" y="62" text-anchor="middle" font-size="11" fill="#166534" font-weight="600">DynamoDB</text>
+        <text x="335" y="77" text-anchor="middle" font-size="10" fill="#16a34a">Human labels</text>
+
+        <polygon points="395,65 410,58 410,72" fill="#cbd5e1"/>
+
+        <!-- Download script -->
+        <rect x="415" y="35" width="120" height="60" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-width="1.5"/>
+        <text x="475" y="55" text-anchor="middle" font-size="10" fill="#334155" font-weight="600">download_data</text>
+        <text x="475" y="69" text-anchor="middle" font-size="10" fill="#475569">_multiclass.py</text>
+        <text x="475" y="84" text-anchor="middle" font-size="9" fill="#94a3b8">Split + organise</text>
+
+        <polygon points="540,65 555,58 555,72" fill="#cbd5e1"/>
+
+        <!-- Train -->
+        <rect x="560" y="35" width="110" height="60" rx="8" fill="#fdf4ff" stroke="#a855f7" stroke-width="1.5"/>
+        <text x="615" y="62" text-anchor="middle" font-size="11" fill="#6b21a8" font-weight="600">train_multi</text>
+        <text x="615" y="77" text-anchor="middle" font-size="10" fill="#7e22ce">class.py</text>
+
+        <polygon points="675,65 690,58 690,72" fill="#cbd5e1"/>
+
+        <!-- Model -->
+        <rect x="695" y="35" width="115" height="60" rx="8" fill="#fee2e2" stroke="#ef4444" stroke-width="1.5"/>
+        <text x="752" y="62" text-anchor="middle" font-size="11" fill="#991b1b" font-weight="600">Trained Model</text>
+        <text x="752" y="77" text-anchor="middle" font-size="10" fill="#b91c1c">→ SageMaker</text>
+
+        <!-- Bottom labels -->
+        <text x="65" y="118" text-anchor="middle" font-size="9" fill="#94a3b8">captures</text>
+        <text x="200" y="118" text-anchor="middle" font-size="9" fill="#94a3b8">stores images</text>
+        <text x="335" y="118" text-anchor="middle" font-size="9" fill="#94a3b8">stores labels</text>
+        <text x="475" y="118" text-anchor="middle" font-size="9" fill="#94a3b8">downloads + splits</text>
+        <text x="615" y="118" text-anchor="middle" font-size="9" fill="#94a3b8">trains</text>
+        <text x="752" y="118" text-anchor="middle" font-size="9" fill="#94a3b8">deployed</text>
+      </svg>
+      <p class="diagram-caption">The complete BootBoots pipeline from camera capture to deployed model</p>
+    </div>
+
+    <div class="content">
+      <p>The feedback loop that makes supervised learning work looks like this: the model makes a prediction, we calculate a <strong>loss</strong> (a number that quantifies how wrong the prediction was), and we use calculus (specifically, the gradient of the loss with respect to each parameter) to work out which way to nudge each parameter to reduce that loss. This is <strong>gradient descent</strong> — we'll cover it in detail in Module 10.</p>
+
+      <p>One key distinction: we have <em>training</em> data and <em>validation</em> data. The model learns from the training set; the validation set is a completely separate collection of images the model never trains on. We use the validation set to measure whether the model is actually generalising to new, unseen images, or merely memorising the training examples. This is the overfitting problem, and we'll cover it thoroughly in Module 4.</p>
+    </div>
+  </section>
+
+  <!-- ═══ MODULE 3 ═══════════════════════════════════════ -->
+  <section class="module" id="m3">
+    <div class="module-header">
+      <span class="module-number">Module 3</span>
+      <h2>Collecting Training Data</h2>
+    </div>
+    <div class="content">
+      <p>The script <code>download_data_multiclass.py</code> fetches all labelled images from AWS and organises them into a directory structure ready for training. Let's walk through the key parts.</p>
+
+      <h3>Querying DynamoDB for labels</h3>
+      <p>The first task is to find out which images have been labelled and what label they carry. DynamoDB is a NoSQL key-value store; our table <code>catadata</code> has rows keyed by image filename, with a <code>cat</code> attribute containing the label. The query uses a <em>scan with a filter expression</em> — not the most efficient DynamoDB operation (a full table scan), but appropriate here since we need all labelled records and the table is small enough that cost is negligible.</p>
+    </div>
+
+    <pre><code class="language-python">def scan_dynamo(client, table_name: str) -> list[dict]:
+    """Fetch all records from catadata that have a cat label."""
+    records = []
+    kwargs: dict = {
+        "TableName": table_name,
+        "FilterExpression": "attribute_exists(cat)",  # only labelled images
+    }
+    while True:
+        resp = client.scan(**kwargs)
+        for item in resp.get("Items", []):
+            image_name = item.get("imageName", {}).get("S")
+            cat = item.get("cat", {}).get("S")
+            if image_name and cat:
+                records.append({"imageName": image_name, "cat": cat})
+        last_key = resp.get("LastEvaluatedKey")
+        if not last_key:
+            break                          # no more pages
+        kwargs["ExclusiveStartKey"] = last_key
+    return records</code></pre>
+    <p class="code-caption">download_data_multiclass.py — the DynamoDB scan loop, handling pagination</p>
+
+    <div class="content">
+      <p>Notice the <code>while True</code> loop with a pagination check. DynamoDB returns results in pages (up to 1 MB per page); if <code>LastEvaluatedKey</code> is present in the response, there are more records to fetch. This pattern is standard DynamoDB pagination — you always need to handle it when scanning a large table.</p>
+
+      <h3>Downloading from S3</h3>
+      <p>Once we have the list of labelled filenames, we download each image from S3. Two interesting things happen here: first, there's a <strong>JPEG validation check</strong>; second, there's a <strong>header repair step</strong>.</p>
+    </div>
+
+    <pre><code class="language-python">JPEG_HEADER = bytes([0xFF, 0xD8, 0xFF])
+JPEG_EOI    = bytes([0xFF, 0xD9])
+
+def download_image(s3_client, bucket: str, image_name: str, dest: Path) -> bool:
+    if dest.exists():
+        return True        # already downloaded, skip
+
+    # ...fetch bytes from S3...
+    data: bytes = resp["Body"].read()
+
+    if data[:3] != JPEG_HEADER:
+        print(f"  [skip]  Not a JPEG: {key}")
+        return False
+
+    # Old images were sometimes truncated — missing the JPEG end-of-image marker
+    if data[-2:] != JPEG_EOI:
+        data = data + JPEG_EOI     # patch it on the end
+
+    dest.write_bytes(data)
+    return True</code></pre>
+    <p class="code-caption">download_data_multiclass.py — JPEG validation and repair</p>
+
+    <div class="content">
+      <p>JPEG files have a defined binary structure: they always start with the magic bytes <code>FF D8 FF</code> and must end with an End-Of-Image marker <code>FF D9</code>. Early images captured by the BootBoots camera firmware had a bug that caused the <code>FF D9</code> to be omitted. Rather than discarding these images, the script patches them by appending the missing bytes. This kind of pragmatic data repair is extremely common in real-world ML projects — you spend more time cleaning data than you'd expect.</p>
+
+      <h3>The class imbalance problem</h3>
+      <p>After scanning DynamoDB you might find something like: 2,300 NoCat images, 180 Boots images, 90 Chi images. If you trained on this raw distribution, the model would discover very quickly that "always predict NoCat" achieves roughly 60% accuracy with zero effort — because NoCat is so heavily over-represented. This is the <strong>class imbalance problem</strong>, and the download script addresses it upfront by capping NoCat:</p>
+    </div>
+
+    <pre><code class="language-python">if "NoCat" in by_class and len(by_class["NoCat"]) > args.max_nocat:
+    shuffled = by_class["NoCat"][:]
+    rng.shuffle(shuffled)
+    by_class["NoCat"] = shuffled[:args.max_nocat]   # cap at 600 by default</code></pre>
+    <p class="code-caption">download_data_multiclass.py — capping the dominant NoCat class before downloading</p>
+
+    <div class="content">
+      <p>The default cap is 600 NoCat images. Combined with class weighting during training (Module 11), this keeps the model honest — it can't get away with lazily predicting the most common class.</p>
+
+      <h3>Train / validation / manual_test split</h3>
+      <p>The script splits each class independently into three buckets. Independent splitting per class is important: if you shuffled everything together and then split, you'd risk accidental imbalance where, say, all Tau images ended up in training and none in validation.</p>
+    </div>
+
+    <pre><code class="language-python">def split_class(records, manual_pct, val_split, seed) -> dict:
+    rng = random.Random(seed)
+    shuffled = records[:]
+    rng.shuffle(shuffled)
+
+    n_manual = max(1, round(len(shuffled) * manual_pct / 100))
+    manual = shuffled[:n_manual]          # ~1% held back for human inspection
+    remaining = shuffled[n_manual:]
+
+    n_val = round(len(remaining) * val_split)
+    return {
+        "manual_test": manual,            # ~1%  — you eyeball these yourself
+        "validation":  remaining[:n_val], # ~20% — held back from training
+        "training":    remaining[n_val:], # ~79% — what the model learns from
+    }</code></pre>
+    <p class="code-caption">download_data_multiclass.py — per-class train/val/manual_test split</p>
+
+    <div class="content">
+      <p>The result is a directory tree that TensorFlow can load directly. The directory name <em>is</em> the label — a convention that TensorFlow's <code>image_dataset_from_directory</code> utility understands natively, and which we'll see in the training script.</p>
+    </div>
+
+    <div class="diagram">
+      <svg width="680" height="200" viewBox="0 0 680 200" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="11">
+        <!-- data_multiclass/ root -->
+        <rect x="10" y="10" width="140" height="40" rx="6" fill="#e0e7ff" stroke="#6366f1" stroke-width="1.5"/>
+        <text x="80" y="28" text-anchor="middle" font-weight="600" fill="#4f46e5">data_multiclass/</text>
+        <text x="80" y="43" text-anchor="middle" fill="#6366f1" font-size="10">root directory</text>
+
+        <!-- arrows down -->
+        <line x1="80" y1="50" x2="80" y2="70" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="4,2"/>
+        <line x1="80" y1="70" x2="145" y2="70" stroke="#cbd5e1" stroke-width="1.5"/>
+        <line x1="80" y1="70" x2="340" y2="70" stroke="#cbd5e1" stroke-width="1.5"/>
+        <line x1="80" y1="70" x2="535" y2="70" stroke="#cbd5e1" stroke-width="1.5"/>
+        <line x1="145" y1="70" x2="145" y2="85" stroke="#cbd5e1" stroke-width="1.5"/>
+        <line x1="340" y1="70" x2="340" y2="85" stroke="#cbd5e1" stroke-width="1.5"/>
+        <line x1="535" y1="70" x2="535" y2="85" stroke="#cbd5e1" stroke-width="1.5"/>
+
+        <!-- training/ -->
+        <rect x="80" y="85" width="130" height="40" rx="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1.5"/>
+        <text x="145" y="102" text-anchor="middle" font-weight="600" fill="#166534">training/</text>
+        <text x="145" y="117" text-anchor="middle" fill="#16a34a" font-size="10">≈ 79% of images</text>
+
+        <!-- validation/ -->
+        <rect x="275" y="85" width="130" height="40" rx="6" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+        <text x="340" y="102" text-anchor="middle" font-weight="600" fill="#92400e">validation/</text>
+        <text x="340" y="117" text-anchor="middle" fill="#b45309" font-size="10">≈ 20% of images</text>
+
+        <!-- manual_test/ -->
+        <rect x="470" y="85" width="130" height="40" rx="6" fill="#fee2e2" stroke="#ef4444" stroke-width="1.5"/>
+        <text x="535" y="102" text-anchor="middle" font-weight="600" fill="#991b1b">manual_test/</text>
+        <text x="535" y="117" text-anchor="middle" fill="#b91c1c" font-size="10">≈ 1% of images</text>
+
+        <!-- sub-folders under training -->
+        <line x1="145" y1="125" x2="145" y2="145" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="3,2"/>
+        <rect x="80" y="145" width="130" height="30" rx="4" fill="#f8fafc" stroke="#cbd5e1"/>
+        <text x="145" y="164" text-anchor="middle" fill="#475569" font-size="10">Boots/ Chi/ Tau/ Kappa/ Mu/ Wolf/ NoCat/</text>
+        <text x="145" y="195" text-anchor="middle" fill="#94a3b8" font-size="9">(same structure under each split)</text>
+      </svg>
+      <p class="diagram-caption">Directory structure produced by download_data_multiclass.py</p>
+    </div>
+
+  </section>
+
+  <!-- ═══ MODULE 4 ═══════════════════════════════════════ -->
+  <section class="module" id="m4">
+    <div class="module-header">
+      <span class="module-number">Module 4</span>
+      <h2>Why Train / Validation / Test Splits?</h2>
+    </div>
+    <div class="content">
+      <p>Suppose you train a model on 1,000 images and then test it on the same 1,000 images. It gets 99% accuracy. Has it learned to recognise cats, or has it simply memorised 1,000 image files? You can't tell. This is the core problem that the data split solves: by holding back a portion of the data that the model <em>never trains on</em>, you get an honest estimate of how well it will perform on new, previously unseen images.</p>
+
+      <p>Think of it like a school exam. A student who is given the exam questions in advance can score 100% without understanding the material. The only meaningful test is one the student hasn't seen before. The <strong>validation set</strong> is that unseen exam.</p>
+
+      <p><strong>Overfitting</strong> is the failure mode where a model performs well on training data but poorly on validation data. It happens when the model is complex enough to memorise the training set rather than learning the underlying patterns. A model that has overfit will show excellent training accuracy (say, 98%) but poor validation accuracy (say, 65%). The diagram below illustrates this:</p>
+    </div>
+
+    <!-- Overfitting curves SVG -->
+    <div class="diagram">
+      <svg width="560" height="240" viewBox="0 0 560 240" font-family="-apple-system, BlinkMacSystemFont, sans-serif">
+        <!-- axes -->
+        <line x1="60" y1="20" x2="60" y2="190" stroke="#334155" stroke-width="1.5"/>
+        <line x1="60" y1="190" x2="540" y2="190" stroke="#334155" stroke-width="1.5"/>
+
+        <!-- axis labels -->
+        <text x="30" y="108" text-anchor="middle" font-size="11" fill="#475569" transform="rotate(-90,30,108)">Accuracy</text>
+        <text x="300" y="215" text-anchor="middle" font-size="11" fill="#475569">Epochs (training steps)</text>
+
+        <!-- y-axis ticks -->
+        <text x="55" y="193" text-anchor="end" font-size="9" fill="#94a3b8">0%</text>
+        <text x="55" y="140" text-anchor="end" font-size="9" fill="#94a3b8">50%</text>
+        <text x="55" y="86" text-anchor="end" font-size="9" fill="#94a3b8">90%</text>
+        <text x="55" y="30" text-anchor="end" font-size="9" fill="#94a3b8">100%</text>
+
+        <!-- Training accuracy curve — rises steeply to ~98% -->
+        <polyline
+          points="60,170 100,145 150,118 200,95 260,76 320,66 380,60 440,57 500,55 540,54"
+          fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linejoin="round"/>
+
+        <!-- Validation accuracy — rises then plateaus/dips (overfitting) -->
+        <polyline
+          points="60,170 100,148 150,122 200,102 260,91 320,89 380,92 440,97 500,102 540,108"
+          fill="none" stroke="#f59e0b" stroke-width="2.5" stroke-linejoin="round" stroke-dasharray="6,3"/>
+
+        <!-- early stopping marker -->
+        <line x1="300" y1="25" x2="300" y2="190" stroke="#22c55e" stroke-width="1.5" stroke-dasharray="4,3"/>
+        <text x="305" y="40" font-size="10" fill="#16a34a" font-weight="600">← stop here</text>
+        <text x="305" y="52" font-size="9" fill="#22c55e">(early stopping)</text>
+
+        <!-- Gap annotation -->
+        <line x1="520" y1="54" x2="520" y2="108" stroke="#ef4444" stroke-width="1" stroke-dasharray="3,2"/>
+        <text x="530" y="82" font-size="9" fill="#ef4444">gap =</text>
+        <text x="530" y="93" font-size="9" fill="#ef4444">overfit</text>
+
+        <!-- Legend -->
+        <line x1="80" y1="228" x2="110" y2="228" stroke="#6366f1" stroke-width="2.5"/>
+        <text x="115" y="232" font-size="10" fill="#475569">Training accuracy</text>
+        <line x1="240" y1="228" x2="270" y2="228" stroke="#f59e0b" stroke-width="2.5" stroke-dasharray="6,3"/>
+        <text x="275" y="232" font-size="10" fill="#475569">Validation accuracy</text>
+      </svg>
+      <p class="diagram-caption">Overfitting: training accuracy keeps climbing; validation accuracy peaks and then falls. We should stop at the green line.</p>
+    </div>
+
+    <div class="content">
+      <p>BootBoots uses three splits: <strong>training</strong> (~79%), <strong>validation</strong> (~20%), and <strong>manual_test</strong> (~1%). The manual_test set isn't used by any automated process — it's a small selection of images you can personally eyeball to sanity-check the model's predictions after training. It's the human equivalent of a spot check.</p>
+
+      <p>The <strong>seed</strong> parameter (default: 42) passed to the random shuffle ensures the split is reproducible. If you re-run the download script, the same images will end up in the same splits. This matters for scientific reproducibility: you want to be able to compare two different training runs knowing they used identical data splits.</p>
+    </div>
+  </section>
+
+  <!-- ═══ MODULE 5 ═══════════════════════════════════════ -->
+  <section class="module" id="m5">
+    <div class="module-header">
+      <span class="module-number">Module 5</span>
+      <h2>Data Augmentation</h2>
+    </div>
+    <div class="content">
+
+      <p>Even with a few hundred images per class, that's a small dataset by ML standards. A model trained on exactly these images might learn to recognise Boots under the specific lighting conditions and camera angle present in the training photos — but fail when the kitchen light is off, or when Boots is at a slightly different angle. <strong>Data augmentation</strong> is the technique of artificially expanding the training set by applying random transformations to existing images, so the model sees many variations of each example.</p>
+
+      <p>Crucially, augmentation is applied <em>only to the training set</em>, never to validation or test data. The validation set should be as close as possible to what the model will see in real production — unmodified images. Augmenting validation data would give you an artificially inflated accuracy score that doesn't reflect real-world performance.</p>
+
+      <p>Here is the augmentation pipeline used in BootBoots, with the reasoning behind each transform:</p>
+    </div>
+
+    <pre><code class="language-python">def make_augmentation_layer() -> tf.keras.Sequential:
+    return tf.keras.Sequential([
+        layers.RandomFlip("horizontal"),      # cats on a floor — no vertical flips
+        layers.RandomRotation(0.15),          # fixed camera, so modest rotation only
+        layers.RandomZoom((-0.3, 0.0)),       # zoom in up to 30% — crop-style
+        layers.RandomContrast(0.2),           # kitchen lighting varies by time of day
+        layers.RandomBrightness(0.2),         # same reason
+    ], name="augmentation")</code></pre>
+    <p class="code-caption">train_multiclass.py — augmentation pipeline. Applied randomly each time an image is loaded during training.</p>
+
+    <div class="content">
+      <p><strong>RandomFlip("horizontal")</strong>: mirrors the image left-to-right. A cat facing left is still a cat. Note: only horizontal flipping — <em>not</em> vertical. A cat on the ceiling is not a real training scenario and would add noise. <strong>RandomRotation(0.15)</strong>: rotates up to ±15% of a full rotation (about ±54°). The camera is fixed, so you wouldn't expect dramatic rotation, but this handles minor camera mounting imperfections. <strong>RandomZoom((-0.3, 0.0))</strong>: zooms in (crops) by up to 30%. This simulates cats being at different distances from the camera — close-up faces versus full-body shots. The range is (-0.3, 0.0), meaning "zoom in" only (negative = zoom in, positive = zoom out with padding). <strong>RandomContrast and RandomBrightness (0.2)</strong>: varies contrast and brightness by ±20%. The kitchen has different lighting at 7am versus 7pm, artificial light versus natural light.</p>
+
+      <p>Notice that the augmentation layer is built as a <code>tf.keras.Sequential</code> but is applied in the <em>data pipeline</em>, not inside the model itself. The comment in the code explains why: applying augmentation in the pipeline means it runs on the CPU while the GPU is processing the previous batch. This keeps both CPU and GPU busy simultaneously — a free performance optimisation. It also avoids a Keras 3 serialisation bug with random seed generators inside models.</p>
+    </div>
+
+    <!-- Augmentation diagram -->
+    <div class="diagram">
+      <svg width="700" height="140" viewBox="0 0 700 140" font-family="-apple-system, BlinkMacSystemFont, sans-serif">
+        <!-- Original image placeholder -->
+        <rect x="10" y="20" width="90" height="90" rx="6" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5"/>
+        <text x="55" y="60" text-anchor="middle" font-size="10" fill="#94a3b8">original</text>
+        <text x="55" y="73" text-anchor="middle" font-size="10" fill="#94a3b8">image</text>
+        <text x="55" y="120" text-anchor="middle" font-size="9" fill="#64748b">Boots at 240×240</text>
+
+        <polygon points="106,65 118,58 118,72" fill="#cbd5e1"/>
+
+        <!-- Flipped -->
+        <rect x="125" y="20" width="90" height="90" rx="6" fill="#e0e7ff" stroke="#6366f1" stroke-width="1.5"/>
+        <text x="170" y="60" text-anchor="middle" font-size="10" fill="#4f46e5">← flipped</text>
+        <text x="170" y="120" text-anchor="middle" font-size="9" fill="#6366f1">RandomFlip</text>
+
+        <!-- Rotated -->
+        <rect x="240" y="20" width="90" height="90" rx="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1.5"/>
+        <text x="285" y="55" text-anchor="middle" font-size="10" fill="#166534">tilted</text>
+        <text x="285" y="68" text-anchor="middle" font-size="10" fill="#166534">±54°</text>
+        <text x="285" y="120" text-anchor="middle" font-size="9" fill="#22c55e">RandomRotation</text>
+
+        <!-- Zoomed -->
+        <rect x="355" y="20" width="90" height="90" rx="6" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+        <rect x="378" y="35" width="46" height="46" rx="2" fill="#fde68a" stroke="#f59e0b"/>
+        <text x="400" y="61" text-anchor="middle" font-size="10" fill="#92400e">closer</text>
+        <text x="400" y="120" text-anchor="middle" font-size="9" fill="#f59e0b">RandomZoom</text>
+
+        <!-- Brightness -->
+        <rect x="470" y="20" width="90" height="90" rx="6" fill="#fee2e2" stroke="#ef4444" stroke-width="1.5"/>
+        <text x="515" y="55" text-anchor="middle" font-size="10" fill="#991b1b">darker /</text>
+        <text x="515" y="68" text-anchor="middle" font-size="10" fill="#991b1b">brighter</text>
+        <text x="515" y="120" text-anchor="middle" font-size="9" fill="#ef4444">RandomBrightness</text>
+
+        <!-- Combined -->
+        <rect x="585" y="20" width="100" height="90" rx="6" fill="#fdf4ff" stroke="#a855f7" stroke-width="2"/>
+        <text x="635" y="55" text-anchor="middle" font-size="10" fill="#6b21a8" font-weight="600">all applied</text>
+        <text x="635" y="68" text-anchor="middle" font-size="10" fill="#6b21a8">randomly</text>
+        <text x="635" y="120" text-anchor="middle" font-size="9" fill="#a855f7">final augmented</text>
+      </svg>
+      <p class="diagram-caption">Each training image is randomly transformed every epoch — the model never sees exactly the same version twice</p>
+    </div>
+
+  </section>
+
+  <!-- ═══ MODULE 6 ═══════════════════════════════════════ -->
+  <section class="module" id="m6">
+    <div class="module-header">
+      <span class="module-number">Module 6</span>
+      <h2>What Is a Neural Network?</h2>
+    </div>
+    <div class="content">
+
+      <p>A neural network is, at its core, a mathematical function — one that takes numbers as input and produces numbers as output. In our case, the input is a 240×240 RGB image (which is 240 × 240 × 3 = <strong>172,800 numbers</strong> between 0 and 255), and the output is seven numbers representing the probability that the image belongs to each of our seven classes.</p>
+
+      <p>The function is composed of <strong>layers</strong>. Think of each layer as a transformation step: it takes the output of the previous layer, applies a mathematical operation, and passes its results to the next layer. The power of neural networks comes from <em>learnable parameters</em> — the numerical constants inside those transformations (called <strong>weights</strong> and <strong>biases</strong>) that are adjusted during training to make the function produce the right answers.</p>
+
+      <p>EfficientNetV2B1, the backbone we use, has approximately <strong>6.8 million parameters</strong>. That is 6.8 million numerical knobs that the training process adjusts to make the model accurate. Our custom head adds a few thousand more. You don't manually set any of these — gradient descent finds them automatically.</p>
+
+      <p>For image classification, there are two main types of layer worth understanding:</p>
+
+      <p><strong>Convolutional layers</strong> are the key innovation that makes neural networks work well on images. A convolution applies a small filter (typically 3×3 pixels) across every position in an image and produces a feature map — essentially an image that highlights wherever that filter's pattern appears. The first convolutional layers detect simple things: horizontal edges, vertical edges, colour gradients. Deeper layers combine those to detect more complex things: curves, corners, textures. Even deeper: shapes. Even deeper: "that looks like a cat ear." The model learns what filters to use — you don't design them.</p>
+
+      <p><strong>Dense layers</strong> (also called fully-connected layers) connect every input neuron to every output neuron. They're what you probably imagine when you think of a neural network: a grid of numbers multiplied together. Dense layers appear at the top of the network (our custom "head") where we need to combine all the high-level features and make a final decision about the class.</p>
+    </div>
+
+    <!-- Neural net layers diagram -->
+    <div class="diagram">
+      <svg width="720" height="200" viewBox="0 0 720 200" font-family="-apple-system, BlinkMacSystemFont, sans-serif">
+        <!-- Input -->
+        <rect x="10" y="60" width="80" height="80" rx="6" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5"/>
+        <text x="50" y="96" text-anchor="middle" font-size="10" fill="#475569" font-weight="600">Input</text>
+        <text x="50" y="110" text-anchor="middle" font-size="9" fill="#94a3b8">240×240×3</text>
+        <text x="50" y="122" text-anchor="middle" font-size="9" fill="#94a3b8">= 172,800</text>
+        <text x="50" y="156" text-anchor="middle" font-size="9" fill="#94a3b8">raw pixels</text>
+
+        <polygon points="93,100 106,93 106,107" fill="#cbd5e1"/>
+
+        <!-- Conv block 1 -->
+        <rect x="110" y="50" width="90" height="100" rx="6" fill="#e0e7ff" stroke="#6366f1" stroke-width="1.5"/>
+        <text x="155" y="90" text-anchor="middle" font-size="10" fill="#4f46e5" font-weight="600">Early</text>
+        <text x="155" y="103" text-anchor="middle" font-size="10" fill="#4f46e5">Conv Layers</text>
+        <text x="155" y="118" text-anchor="middle" font-size="9" fill="#6366f1">edges, colours</text>
+        <text x="155" y="130" text-anchor="middle" font-size="9" fill="#6366f1">gradients</text>
+        <text x="155" y="166" text-anchor="middle" font-size="9" fill="#94a3b8">EfficientNetV2B1</text>
+        <text x="155" y="178" text-anchor="middle" font-size="9" fill="#94a3b8">(frozen)</text>
+
+        <polygon points="204,100 217,93 217,107" fill="#cbd5e1"/>
+
+        <!-- Conv block 2 -->
+        <rect x="220" y="40" width="90" height="120" rx="6" fill="#e0e7ff" stroke="#6366f1" stroke-width="1.5"/>
+        <text x="265" y="88" text-anchor="middle" font-size="10" fill="#4f46e5" font-weight="600">Mid</text>
+        <text x="265" y="101" text-anchor="middle" font-size="10" fill="#4f46e5">Conv Layers</text>
+        <text x="265" y="116" text-anchor="middle" font-size="9" fill="#6366f1">corners, curves</text>
+        <text x="265" y="129" text-anchor="middle" font-size="9" fill="#6366f1">textures, fur</text>
+
+        <polygon points="314,100 327,93 327,107" fill="#cbd5e1"/>
+
+        <!-- Conv block 3 -->
+        <rect x="330" y="30" width="100" height="140" rx="6" fill="#e0e7ff" stroke="#6366f1" stroke-width="1.5"/>
+        <text x="380" y="86" text-anchor="middle" font-size="10" fill="#4f46e5" font-weight="600">Deep</text>
+        <text x="380" y="99" text-anchor="middle" font-size="10" fill="#4f46e5">Conv Layers</text>
+        <text x="380" y="116" text-anchor="middle" font-size="9" fill="#6366f1">cat faces,</text>
+        <text x="380" y="129" text-anchor="middle" font-size="9" fill="#6366f1">ear shapes,</text>
+        <text x="380" y="142" text-anchor="middle" font-size="9" fill="#6366f1">eye patterns</text>
+
+        <polygon points="434,100 447,93 447,107" fill="#cbd5e1"/>
+
+        <!-- Global Average Pooling -->
+        <rect x="450" y="55" width="90" height="90" rx="6" fill="#fdf4ff" stroke="#a855f7" stroke-width="1.5"/>
+        <text x="495" y="92" text-anchor="middle" font-size="10" fill="#6b21a8" font-weight="600">Global Avg</text>
+        <text x="495" y="105" text-anchor="middle" font-size="10" fill="#6b21a8">Pooling</text>
+        <text x="495" y="118" text-anchor="middle" font-size="9" fill="#a855f7">spatial → vector</text>
+        <text x="495" y="161" text-anchor="middle" font-size="9" fill="#94a3b8">our custom</text>
+        <text x="495" y="173" text-anchor="middle" font-size="9" fill="#94a3b8">head starts here</text>
+
+        <polygon points="544,100 557,93 557,107" fill="#cbd5e1"/>
+
+        <!-- Dense output -->
+        <rect x="560" y="60" width="80" height="80" rx="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1.5"/>
+        <text x="600" y="92" text-anchor="middle" font-size="10" fill="#166534" font-weight="600">Dense(7)</text>
+        <text x="600" y="105" text-anchor="middle" font-size="10" fill="#166534">softmax</text>
+        <text x="600" y="120" text-anchor="middle" font-size="9" fill="#22c55e">7 probabilities</text>
+        <text x="600" y="158" text-anchor="middle" font-size="9" fill="#94a3b8">output layer</text>
+
+        <polygon points="643,100 656,93 656,107" fill="#cbd5e1"/>
+
+        <!-- Output -->
+        <rect x="659" y="65" width="55" height="70" rx="6" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+        <text x="686" y="90" text-anchor="middle" font-size="9" fill="#92400e">Boots: 87%</text>
+        <text x="686" y="102" text-anchor="middle" font-size="9" fill="#b45309">Chi: 6%</text>
+        <text x="686" y="114" text-anchor="middle" font-size="9" fill="#b45309">NoCat: 4%</text>
+        <text x="686" y="126" text-anchor="middle" font-size="9" fill="#b45309">…</text>
+      </svg>
+      <p class="diagram-caption">Information flows left to right. Early layers detect simple features; deep layers detect complex ones. Our custom head sits after the pooling layer.</p>
+    </div>
+
+    <div class="content">
+      <p><strong>Activation functions</strong> are worth a brief mention. After each layer's matrix multiplication, an activation function is applied to each output value. Without this, a stack of layers would just be a single giant matrix multiplication (which is no more powerful than one layer). The activation function introduces non-linearity, which is what allows deep networks to learn complex patterns. EfficientNetV2 uses the <strong>SiLU</strong> function internally; our output layer uses <strong>softmax</strong>, which we'll explain in Module 9.</p>
+    </div>
+
+  </section>
+
+  <!-- ═══ MODULE 7 ═══════════════════════════════════════ -->
+  <section class="module" id="m7">
+    <div class="module-header">
+      <span class="module-number">Module 7</span>
+      <h2>Transfer Learning</h2>
+    </div>
+    <div class="content">
+
+      <p>Training a deep convolutional neural network from scratch requires millions of labelled images and weeks of GPU time. We have a few thousand images and a laptop. Transfer learning is the solution: we start with a model that has already been trained on a massive, general-purpose dataset, and we fine-tune the final layers for our specific problem.</p>
+
+      <p>The pre-trained model we use is <strong>EfficientNetV2B1</strong>, trained on <strong>ImageNet</strong> — a dataset of 1.2 million images spanning 1,000 categories (dogs, cars, furniture, animals, etc.). After training on ImageNet, the model's convolutional layers have learned a rich vocabulary of visual features that is broadly applicable to <em>any</em> image recognition task. It knows what fur looks like, what eyes look like, what edges and curves mean. We're borrowing that knowledge for free.</p>
+
+      <div class="callout analogy">
+        <div class="callout-title">Analogy</div>
+        <p>Think of it like hiring a senior engineer who's worked across many different companies and tech stacks. They arrive with deep, transferable knowledge — how to reason about systems, debug effectively, read unfamiliar code. You don't need to teach them to code from scratch; you just need to onboard them to <em>your</em> codebase and your specific problems. That's transfer learning: the transferred knowledge (visual feature detection) is already there; we only need to teach the model the company-specific part (which of these cats is Boots).</p>
+      </div>
+
+      <p>The key parameters in <code>build_model()</code> that implement transfer learning are:</p>
+
+      <p><code>base_model = EfficientNetV2B1(include_top=False, weights="imagenet")</code> — this downloads the pre-trained weights and discards only the original classification head (the <code>include_top=False</code> means "give me the convolutional body, not the final Dense+softmax layer"). <code>base_model.trainable = train_base</code> — this is the crucial line. When <code>train_base=False</code> (the default), all the EfficientNetV2B1 layers are <em>frozen</em>: their weights will not be updated during training. Only the new head we add on top will be trained.</p>
+
+      <p>When you run with <code>--train-base</code>, the base model's weights are also updated — a process called <strong>fine-tuning</strong>. This is slower and requires more care (you typically use a lower learning rate to avoid overwriting the pre-trained knowledge), but can squeeze out a few extra percentage points of accuracy on specialised tasks.</p>
+    </div>
+
+    <!-- Transfer learning diagram -->
+    <div class="diagram">
+      <svg width="600" height="220" viewBox="0 0 600 220" font-family="-apple-system, BlinkMacSystemFont, sans-serif">
+
+        <!-- Frozen base -->
+        <rect x="40" y="30" width="200" height="150" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="6,3"/>
+        <text x="140" y="55" text-anchor="middle" font-size="11" fill="#64748b" font-weight="700">EfficientNetV2B1 Base</text>
+        <text x="140" y="70" text-anchor="middle" font-size="10" fill="#94a3b8">pre-trained on ImageNet</text>
+
+        <!-- Frozen layers (stacked blocks) -->
+        <rect x="60" y="85" width="160" height="20" rx="3" fill="#e2e8f0" stroke="#94a3b8"/>
+        <text x="140" y="99" text-anchor="middle" font-size="9" fill="#475569">Conv Block (frozen ❄️)</text>
+        <rect x="60" y="110" width="160" height="20" rx="3" fill="#e2e8f0" stroke="#94a3b8"/>
+        <text x="140" y="124" text-anchor="middle" font-size="9" fill="#475569">Conv Block (frozen ❄️)</text>
+        <rect x="60" y="135" width="160" height="20" rx="3" fill="#e2e8f0" stroke="#94a3b8"/>
+        <text x="140" y="149" text-anchor="middle" font-size="9" fill="#475569">… more blocks (frozen ❄️)</text>
+
+        <text x="140" y="200" text-anchor="middle" font-size="9" fill="#94a3b8">weights locked — not updated</text>
+
+        <!-- Arrow -->
+        <polygon points="244,105 258,98 258,112" fill="#6366f1"/>
+        <line x1="244" y1="105" x2="244" y2="105" stroke="#6366f1"/>
+
+        <!-- Our head (trainable) -->
+        <rect x="260" y="40" width="180" height="140" rx="8" fill="#e0e7ff" stroke="#6366f1" stroke-width="2"/>
+        <text x="350" y="65" text-anchor="middle" font-size="11" fill="#4f46e5" font-weight="700">Custom Head</text>
+        <text x="350" y="80" text-anchor="middle" font-size="10" fill="#6366f1">trained by us</text>
+
+        <rect x="280" y="93" width="140" height="22" rx="4" fill="#6366f1"/>
+        <text x="350" y="108" text-anchor="middle" font-size="10" fill="white">GlobalAvgPool2D</text>
+
+        <rect x="280" y="122" width="140" height="22" rx="4" fill="#818cf8"/>
+        <text x="350" y="137" text-anchor="middle" font-size="10" fill="white">Dropout(0.3)</text>
+
+        <rect x="280" y="151" width="140" height="22" rx="4" fill="#22c55e"/>
+        <text x="350" y="166" text-anchor="middle" font-size="10" fill="white">Dense(7, softmax) ✓</text>
+
+        <text x="350" y="200" text-anchor="middle" font-size="9" fill="#94a3b8">weights updated each epoch</text>
+
+        <!-- Arrow out -->
+        <polygon points="443,107 458,100 458,114" fill="#f59e0b"/>
+        <rect x="460" y="88" width="100" height="38" rx="6" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+        <text x="510" y="104" text-anchor="middle" font-size="10" fill="#92400e" font-weight="600">Prediction</text>
+        <text x="510" y="117" text-anchor="middle" font-size="9" fill="#b45309">7 probabilities</text>
+      </svg>
+      <p class="diagram-caption">The frozen base provides pre-learned visual features; only our small custom head is trained from scratch</p>
+    </div>
+
+    <div class="content">
+      <p><strong>Why does this work?</strong> The intuition is that the visual features learned from ImageNet (edges, textures, shapes) are directly applicable to cat recognition — cats are physical objects with the same kind of visual structure as the 1,000 ImageNet classes. The final layer of the frozen base produces a 1,280-dimensional feature vector representing "what's in this image" in abstract terms. Our custom head takes that vector and learns to map it to our 7 classes. We're training only those final mappings — a much smaller learning problem than training the whole network.</p>
+
+      <p>In practice, this means we can achieve good results with relatively few training images and short training times. The reported validation accuracy on BootBoots is <strong>90.97%</strong> — very respectable for a 7-class problem trained on a few hundred images per class.</p>
+    </div>
+  </section>
+
+  <!-- ═══ MODULE 8 ═══════════════════════════════════════ -->
+  <section class="module" id="m8">
+    <div class="module-header">
+      <span class="module-number">Module 8</span>
+      <h2>Building the Model</h2>
+    </div>
+    <div class="content">
+      <p>Let's walk through <code>build_model()</code> line by line. This function constructs the entire neural network: the pre-trained backbone, the custom classification head, and the compilation settings.</p>
+    </div>
+
+    <pre><code class="language-python">IMG_SIZE = (240, 240)  # EfficientNetV2B1 native resolution
+
+def build_model(num_classes: int, dropout_rate: float, l2_reg: float,
+                learning_rate: float, train_base: bool) -> tf.keras.Model:
+
+    regularizer = tf.keras.regularizers.l2(l2_reg)  # L2 weight penalty (see Module 13)
+
+    # Load EfficientNetV2B1 pre-trained on ImageNet.
+    # include_top=False: discard the original 1000-class output layer.
+    # We get back the convolutional body only.
+    base_model = EfficientNetV2B1(
+        input_shape=IMG_SIZE + (3,),   # 240 × 240 × 3 (RGB)
+        include_top=False,
+        weights="imagenet"
+    )
+    base_model.trainable = train_base  # False = frozen (default)</code></pre>
+
+    <div class="content">
+      <p>The <code>input_shape</code> is a tuple: <code>(240, 240, 3)</code>. The <code>3</code> means three colour channels (Red, Green, Blue). If we were working with greyscale images it would be <code>1</code>. The expression <code>IMG_SIZE + (3,)</code> is just a Pythonic way to concatenate the tuples: <code>(240, 240)</code> + <code>(3,)</code> = <code>(240, 240, 3)</code>.</p>
+    </div>
+
+    <pre><code class="language-python">    # Build the model using the Functional API (not Sequential).
+    # This lets us define the data flow explicitly.
+    inputs = tf.keras.Input(shape=IMG_SIZE + (3,))
+
+    # EfficientNetV2 expects slightly pre-processed pixel values.
+    # preprocess_input() rescales [0, 255] to the range the model was trained on.
+    x = tf.keras.applications.efficientnet_v2.preprocess_input(inputs)
+
+    # Pass through the frozen base. training=False tells BatchNorm layers
+    # inside the base to use their stored statistics rather than computing
+    # new ones from this batch (important when base is frozen).
+    x = base_model(x, training=False)
+
+    # Collapse spatial dimensions: from (batch, h, w, channels) → (batch, channels)
+    # Each feature map becomes its average value — a single summary number.
+    x = layers.GlobalAveragePooling2D()(x)
+
+    # Randomly zero out 30% of activations during training.
+    # Forces the network to not over-rely on any single feature.
+    x = layers.Dropout(dropout_rate)(x)
+
+    # Final classification layer: 7 outputs, one per class.
+    # softmax ensures they sum to 1 (interpretable as probabilities).
+    outputs = layers.Dense(num_classes, activation="softmax",
+                           kernel_regularizer=regularizer)(x)
+
+    model = tf.keras.Model(inputs, outputs)</code></pre>
+    <p class="code-caption">train_multiclass.py — the model architecture, annotated</p>
+
+    <div class="content">
+      <p><strong>GlobalAveragePooling2D</strong> deserves special attention. After the convolutional base, you have a 3D tensor of shape <code>(height, width, channels)</code> — think of it as a stack of feature maps, each one a 2D image highlighting where a particular feature was detected. We need to convert this to a simple 1D vector to feed into a Dense layer. GlobalAveragePooling2D does this by computing the <em>average value</em> of each feature map — collapsing the spatial dimensions entirely. The result is a vector of length equal to the number of channels (1,280 for EfficientNetV2B1). This vector represents "how much of each learned feature is present in the image".</p>
+
+      <p><strong>Dropout</strong> is a regularisation technique (Module 13 covers regularisation in depth). During training, each call to the Dropout layer randomly sets 30% of its inputs to zero. This sounds destructive, but it forces the network to learn redundant representations — no single neuron can become too critical to the prediction. At inference time (<code>training=False</code>), Dropout is a no-op: all neurons are active and the outputs are scaled accordingly.</p>
+    </div>
+
+    <pre><code class="language-python">    # Compile the model: choose the optimiser, loss function, and metrics
+    model.compile(
+        optimizer=optimizers.Adam(learning_rate=learning_rate),
+        loss="categorical_crossentropy",  # standard choice for multi-class problems
+        metrics=["accuracy"],
+    )
+    return model</code></pre>
+    <p class="code-caption">train_multiclass.py — model compilation. The loss function and optimiser are defined here.</p>
+
+    <div class="content">
+      <p>The <code>compile()</code> call doesn't do any computation — it just records the configuration. Nothing is trained yet. It's equivalent to configuring a build pipeline: you're specifying <em>how</em> to train, not actually running it. The actual training happens when you call <code>model.fit()</code> (Module 12).</p>
+    </div>
+  </section>
+
+  <!-- ═══ MODULE 9 ═══════════════════════════════════════ -->
+  <section class="module" id="m9">
+    <div class="module-header">
+      <span class="module-number">Module 9</span>
+      <h2>Loss Functions — How We Measure "How Wrong"</h2>
+    </div>
+    <div class="content">
+
+      <p>To train a model, we need a number that measures how badly it's performing. That number is the <strong>loss</strong> (sometimes called the cost or error). The training process's entire job is to make this number smaller. The loss function we use is <strong>categorical cross-entropy</strong>.</p>
+
+      <p>First, let's understand softmax. The final Dense layer produces 7 raw numbers — one per class. These could be anything: 2.3, -0.5, 0.1, etc. The <strong>softmax</strong> activation converts these raw scores into a proper probability distribution: all values become positive and they sum to exactly 1. So the model output might look like:</p>
+    </div>
+
+    <div class="formula">
+      <span>Boots: <strong>0.87</strong>   Chi: 0.04   Tau: 0.02   Kappa: 0.03   Mu: 0.01   Wolf: 0.01   NoCat: 0.02</span>
+      <br>
+      <span class="comment">sum = 1.00  →  interpretable as "87% confidence this is Boots"</span>
+    </div>
+
+    <div class="content">
+      <p><strong>Cross-entropy loss</strong> asks: how surprised is the model? Mathematically, it is the negative log probability assigned to the correct class. If the model assigns 87% probability to the correct class (Boots), the loss is <code>-log(0.87) ≈ 0.14</code>. If the model is badly wrong and assigns only 5% probability to the correct class, the loss is <code>-log(0.05) ≈ 3.0</code>. The <em>logarithm</em> is key here: it makes the model pay increasingly severe penalties for high-confidence wrong predictions. Being 99% confident and wrong is catastrophically worse than being 55% confident and wrong.</p>
+    </div>
+
+    <!-- Loss diagram -->
+    <div class="diagram">
+      <svg width="520" height="200" viewBox="0 0 520 200" font-family="-apple-system, BlinkMacSystemFont, sans-serif">
+        <!-- Axes -->
+        <line x1="60" y1="10" x2="60" y2="170" stroke="#334155" stroke-width="1.5"/>
+        <line x1="60" y1="170" x2="500" y2="170" stroke="#334155" stroke-width="1.5"/>
+        <text x="35" y="95" text-anchor="middle" font-size="10" fill="#475569" transform="rotate(-90,35,95)">Loss value</text>
+        <text x="280" y="192" text-anchor="middle" font-size="10" fill="#475569">Model's confidence in the correct class (%)</text>
+
+        <!-- x-axis labels -->
+        <text x="100" y="183" text-anchor="middle" font-size="9" fill="#94a3b8">10%</text>
+        <text x="190" y="183" text-anchor="middle" font-size="9" fill="#94a3b8">30%</text>
+        <text x="280" y="183" text-anchor="middle" font-size="9" fill="#94a3b8">50%</text>
+        <text x="370" y="183" text-anchor="middle" font-size="9" fill="#94a3b8">70%</text>
+        <text x="460" y="183" text-anchor="middle" font-size="9" fill="#94a3b8">90%</text>
+
+        <!-- y-axis labels -->
+        <text x="55" y="172" text-anchor="end" font-size="9" fill="#94a3b8">0</text>
+        <text x="55" y="130" text-anchor="end" font-size="9" fill="#94a3b8">1</text>
+        <text x="55" y="88" text-anchor="end" font-size="9" fill="#94a3b8">2</text>
+        <text x="55" y="46" text-anchor="end" font-size="9" fill="#94a3b8">3</text>
+
+        <!-- -log(x) curve from 10% to 95% -->
+        <polyline
+          points="100,163 130,148 160,136 190,125 220,116 250,108 280,101 310,94 340,88 370,82 400,76 430,69 460,62 490,52"
+          fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linejoin="round"/>
+
+        <!-- Annotation at 87% -->
+        <circle cx="444" cy="65" r="4" fill="#22c55e"/>
+        <line x1="444" y1="65" x2="444" y2="170" stroke="#22c55e" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="448" y="58" font-size="9" fill="#16a34a">87% → loss ≈ 0.14</text>
+        <text x="448" y="68" font-size="9" fill="#16a34a">(good prediction)</text>
+
+        <!-- Annotation at 10% -->
+        <circle cx="100" cy="163" r="4" fill="#ef4444"/>
+        <text x="108" y="148" font-size="9" fill="#dc2626">10% → loss ≈ 2.3</text>
+        <text x="108" y="158" font-size="9" fill="#dc2626">(terrible prediction)</text>
+      </svg>
+      <p class="diagram-caption">Cross-entropy loss: the more confident the model is about the <em>wrong</em> answer, the higher the penalty</p>
+    </div>
+
+    <div class="content">
+      <p>The term "categorical" in categorical cross-entropy simply means "multi-class" — as opposed to binary cross-entropy (used when there are only two classes). Categorical cross-entropy expects the labels to be one-hot encoded vectors, which Keras handles automatically when you use <code>label_mode="categorical"</code> in <code>image_dataset_from_directory()</code>. For example, the label "Boots" (class index 0) becomes the vector <code>[1, 0, 0, 0, 0, 0, 0]</code>.</p>
+
+      <p>The <strong>metric</strong> reported during training is accuracy — simply the fraction of predictions where the highest probability class matched the true label. Loss is what we optimise; accuracy is what we care about in practice. They're related but not identical. You can have a model where loss is still decreasing but accuracy has plateaued, or vice versa.</p>
+    </div>
+  </section>
+
+  <!-- ═══ MODULE 10 ═══════════════════════════════════════ -->
+  <section class="module" id="m10">
+    <div class="module-header">
+      <span class="module-number">Module 10</span>
+      <h2>The Optimiser and Learning Rate</h2>
+    </div>
+    <div class="content">
+
+      <p>We have a loss function (how wrong is the model?). Now we need a way to reduce that loss by adjusting the model's parameters. The algorithm that does this is called the <strong>optimiser</strong>. BootBoots uses <strong>Adam</strong>, which is the de facto standard for most deep learning tasks.</p>
+
+      <p>The fundamental idea behind optimisation is <strong>gradient descent</strong>. Imagine the loss as a landscape of hills and valleys — each point in the landscape corresponds to a particular setting of all 6.8 million parameters, and the height at that point is the loss value. We want to find the valley (the minimum). Gradient descent finds the direction of steepest downhill slope (the <em>gradient</em>) and takes a small step in that direction. Repeat thousands of times, and you roll down into a valley.</p>
+
+      <p>Calculating the gradient requires calculus — specifically, the derivative of the loss with respect to every single parameter. This is done by <strong>backpropagation</strong>, an algorithm that applies the chain rule through each layer of the network in reverse order. Keras/TensorFlow handles all of this automatically via its automatic differentiation engine (<code>tf.GradientTape</code>). As the programmer, you never write a derivative by hand.</p>
+
+      <p>The <strong>learning rate</strong> controls how large a step to take in the gradient direction. Too large: the step overshoots the valley and the loss bounces around or diverges. Too small: training takes a very long time and may get stuck in a shallow valley. The default in BootBoots is <code>0.0001</code> (1e-4).</p>
+    </div>
+
+    <!-- Learning rate diagram -->
+    <div class="diagram">
+      <svg width="580" height="160" viewBox="0 0 580 160" font-family="-apple-system, BlinkMacSystemFont, sans-serif">
+        <!-- Loss landscape curve (valley shape) -->
+        <path d="M 30,130 C 80,30 120,20 180,90 C 220,140 260,40 320,20 C 380,0 420,80 500,100 C 530,108 550,120 570,130"
+              fill="none" stroke="#cbd5e1" stroke-width="2"/>
+
+        <!-- Valley label -->
+        <text x="320" y="16" text-anchor="middle" font-size="10" fill="#94a3b8">global minimum (ideal)</text>
+
+        <!-- LR too large path -->
+        <circle cx="80" cy="55" r="5" fill="#ef4444"/>
+        <path d="M 80,55 Q 160,150 240,50 Q 310,140 380,90" fill="none" stroke="#ef4444" stroke-width="2" stroke-dasharray="5,3"/>
+        <text x="215" y="145" text-anchor="middle" font-size="9" fill="#ef4444">LR too large: bounces over the valley</text>
+
+        <!-- LR too small path -->
+        <circle cx="420" cy="80" r="5" fill="#f59e0b"/>
+        <path d="M 420,80 L 435,78 L 450,76 L 465,74" fill="none" stroke="#f59e0b" stroke-width="2"/>
+        <text x="510" y="65" text-anchor="middle" font-size="9" fill="#b45309">LR too small:</text>
+        <text x="510" y="77" text-anchor="middle" font-size="9" fill="#b45309">barely moves</text>
+
+        <!-- Good LR path -->
+        <circle cx="80" cy="55" r="5" fill="#22c55e"/>
+        <path d="M 80,55 L 120,35 L 200,30 L 280,25 L 320,22" fill="none" stroke="#22c55e" stroke-width="2"/>
+        <polygon points="320,18 328,22 320,26" fill="#22c55e"/>
+        <text x="210" y="18" text-anchor="middle" font-size="9" fill="#16a34a">good LR: converges to minimum</text>
+      </svg>
+      <p class="diagram-caption">The loss landscape: gradient descent rolls downhill. Learning rate controls step size.</p>
+    </div>
+
+    <div class="content">
+      <p><strong>Adam</strong> (Adaptive Moment Estimation) improves on vanilla gradient descent by adapting the learning rate separately for each parameter. Parameters that have been changing a lot get a smaller effective learning rate (they're already in a good region); parameters that have barely moved get a larger effective push. It also uses <em>momentum</em> — a memory of recent gradient directions — to smooth out noisy gradients and accelerate descent in consistent directions. Adam converges faster than vanilla gradient descent on almost all tasks, which is why it's the default choice.</p>
+
+      <h3>The Learning Rate Finder</h3>
+      <p>Rather than guessing the learning rate, the script includes a tool to find a good one empirically. Run with <code>--find-lr</code>:</p>
+    </div>
+
+    <pre><code class="language-python">def find_lr(model, train_ds, min_lr=1e-6, max_lr=1e-1, steps=100):
+    """
+    Train for `steps` batches, increasing LR exponentially from min to max.
+    The LR at which loss is falling fastest is a good starting point.
+    """
+    factor = (max_lr / min_lr) ** (1 / steps)   # multiplicative step per batch
+    lr = min_lr
+
+    for step, (x_batch, y_batch) in enumerate(train_ds.take(steps)):
+        model.optimizer.learning_rate = lr        # override LR for this batch
+        loss = model.train_on_batch(x_batch, y_batch)
+        lrs.append(lr)
+        losses.append(loss)
+        lr *= factor                              # increase LR for next batch
+
+    # Find steepest descent in the smoothed loss curve
+    gradients = np.diff(smoothed)
+    best_idx = int(np.argmin(gradients))          # where is the drop sharpest?
+    suggested_lr = smoothed_lrs[best_idx]
+    print(f"Suggested LR: {suggested_lr:.2e}")</code></pre>
+    <p class="code-caption">train_multiclass.py — LR range test. The script also saves a plot to lr_finder.png.</p>
+
+    <div class="content">
+      <p>The idea: sweep the learning rate from very small to very large over 100 training batches and record the loss at each step. The loss initially decreases (LR is in a useful range), then at some point the loss starts increasing again (LR is too large, overshooting). The optimal learning rate is the one at which the loss was falling <em>most steeply</em> — typically about 10× smaller than the value where loss starts to diverge. This technique is called the <strong>LR range test</strong> and is widely used in practice before committing to a full training run.</p>
+    </div>
+
+    <div class="callout tip">
+      <div class="callout-title">Practical tip</div>
+      <p>Always run <code>--find-lr</code> before your first full training run on a new dataset. It takes under a minute and can save you from wasting 30 minutes training with a suboptimal learning rate. The suggested value is a ceiling — use <code>--lr</code> set to 3–10× lower than the suggested value for safe convergence.</p>
+    </div>
+  </section>
+
+  <!-- ═══ MODULE 11 ═══════════════════════════════════════ -->
+  <section class="module" id="m11">
+    <div class="module-header">
+      <span class="module-number">Module 11</span>
+      <h2>Class Weights — Handling Imbalance</h2>
+    </div>
+    <div class="content">
+
+      <p>Even after capping NoCat at 600 images, the class distribution is uneven. Boots might have 180 images while Kappa has only 60. If we train naively, the model will implicitly optimise more heavily for common classes: every correct Boots prediction contributes to many more gradient updates than a correct Kappa prediction simply because Boots appears more often in the data.</p>
+
+      <p>Class weighting compensates for this by multiplying the loss for each example by a weight inversely proportional to the class frequency. Samples from rare classes contribute more to the gradient update; samples from common classes contribute less. The formula used is:</p>
+    </div>
+
+    <div class="formula">
+      weight<sub>i</sub> = total_samples / (num_classes × count_of_class_i)
+      <br><br>
+      <span class="comment">Example: 1000 total images, 7 classes, 60 Kappa images:</span>
+      <br>
+      weight<sub>Kappa</sub> = 1000 / (7 × 60) ≈ 2.38
+      <br><br>
+      <span class="comment">A class with 200 images: weight = 1000 / (7 × 200) ≈ 0.71</span>
+      <br>
+      <span class="comment">Average weight ≈ 1.0 — the formula is self-normalising</span>
+    </div>
+
+    <pre><code class="language-python"># Count images per class in the training directory
+class_counts = {name: sum(1 for _ in (train_dir / name).iterdir())
+                for name in class_names}
+total = sum(class_counts.values())
+
+# Build the weight dict: {class_index: weight}
+class_weight = {
+    i: total / (num_classes * count)
+    for i, (_, count) in enumerate(class_counts.items())
+}
+
+# Passed to model.fit() — Keras multiplies each sample's loss by its weight
+history = model.fit(
+    train_ds,
+    class_weight=class_weight,   # ← here
+    ...
+)</code></pre>
+    <p class="code-caption">train_multiclass.py — class weight computation and application</p>
+
+    <div class="content">
+      <p>Notice that this is done entirely in Python before training starts — it's just a dictionary passed to <code>model.fit()</code>. Keras handles the weighting internally during the loss computation. The effect is that misclassifying a rare-class image incurs a larger penalty than misclassifying a common-class image, which drives the model to pay proportionally more attention to minority classes.</p>
+    </div>
+  </section>
+
+  <!-- ═══ MODULE 12 ═══════════════════════════════════════ -->
+  <section class="module" id="m12">
+    <div class="module-header">
+      <span class="module-number">Module 12</span>
+      <h2>The Training Loop</h2>
+    </div>
+    <div class="content">
+
+      <p>Training is the process of repeatedly feeding images through the network, computing the loss, and updating the parameters. Understanding the three levels of iteration helps make sense of training output:</p>
+    </div>
+
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div class="step-body"><strong>Batch:</strong> A group of 16 images processed together. Gradient is computed over the whole batch before updating weights. Batching is more efficient than processing one image at a time and produces a more stable gradient estimate (less noisy).</div></div>
+      <div class="step"><div class="step-num">2</div><div class="step-body"><strong>Epoch:</strong> One full pass through all training images. If you have 640 training images and a batch size of 16, one epoch = 640/16 = 40 steps (batches). After each epoch, Keras evaluates the model on the validation set and reports validation accuracy.</div></div>
+      <div class="step"><div class="step-num">3</div><div class="step-body"><strong>Training run:</strong> All epochs together, up to the configured maximum (50) or until early stopping fires.</div></div>
+    </div>
+
+    <pre><code class="language-python"># Load images from directories — TF infers class names from folder names
+train_ds = tf.keras.utils.image_dataset_from_directory(
+    train_dir,
+    image_size=IMG_SIZE,         # resize every image to 240×240
+    batch_size=args.batch_size,  # 16 images per batch
+    label_mode="categorical",    # one-hot encode labels e.g. Boots → [1,0,0,0,0,0,0]
+    shuffle=True,
+    seed=42,
+)
+val_ds = tf.keras.utils.image_dataset_from_directory(
+    val_dir,
+    image_size=IMG_SIZE,
+    batch_size=args.batch_size,
+    label_mode="categorical",
+    shuffle=False,               # no shuffling for validation — order doesn't matter
+)
+
+# Apply augmentation only to training data (pipeline-level, runs on CPU)
+augmented = lambda x, y: (augment(x, training=True), y)
+train_ds = train_ds.map(augmented, num_parallel_calls=AUTOTUNE).cache().prefetch(AUTOTUNE)
+val_ds   = val_ds.cache().prefetch(AUTOTUNE)   # no augmentation on val!</code></pre>
+    <p class="code-caption">train_multiclass.py — dataset preparation. AUTOTUNE lets TF decide how many parallel threads to use.</p>
+
+    <div class="content">
+      <p>The <code>.cache()</code> call stores the (post-augmentation) dataset in memory after the first epoch. This means disk I/O only happens once. The <code>.prefetch(AUTOTUNE)</code> tells TensorFlow to prepare the next batch while the GPU is processing the current one — keeping the GPU fully occupied. These two optimisations can make training 2–5× faster on typical hardware.</p>
+
+      <p>The actual training is a single function call:</p>
+    </div>
+
+    <pre><code class="language-python">history = model.fit(
+    train_ds,
+    validation_data=val_ds,
+    epochs=args.epochs,          # max 50 epochs
+    callbacks=cb_list,           # EarlyStopping + ModelCheckpoint
+    class_weight=class_weight,
+)</code></pre>
+    <p class="code-caption">train_multiclass.py — model.fit(): one call to start the entire training process</p>
+
+    <div class="content">
+      <p>The <code>history</code> object returned by <code>fit()</code> contains lists of loss and accuracy values for each epoch — both training and validation. You can plot these to visualise how training progressed (the overfitting curves from Module 4 come from exactly this data).</p>
+
+      <h3>Callbacks</h3>
+      <p>Callbacks are functions that Keras calls at specific points in the training loop. BootBoots uses two:</p>
+
+      <p><strong>EarlyStopping</strong> monitors validation accuracy after each epoch. If it hasn't improved by at least 0.001 (0.1%) for 10 consecutive epochs (<code>patience=10</code>), training stops automatically and the best weights are restored (<code>restore_best_weights=True</code>). This prevents wasting compute time on epochs that aren't helping, and — crucially — prevents overfitting from running unchecked. The <code>patience</code> parameter is important: too low (e.g. 3) and you might stop prematurely during a temporary plateau; too high (e.g. 30) and you waste time after the model has already converged.</p>
+
+      <p><strong>ModelCheckpoint</strong> saves the model to disk whenever validation accuracy improves. Without this, if training crashes at epoch 40, you'd lose everything. With it, the best model seen so far is always on disk at <code>models_multiclass/best_model.keras</code>. The <code>save_best_only=True</code> parameter means only better-than-previous-best models overwrite the file — so you never accidentally save a worse model.</p>
+    </div>
+
+    <pre><code class="language-python">callbacks.EarlyStopping(
+    monitor="val_accuracy",      # watch this metric
+    patience=10,                 # stop after 10 epochs with no improvement
+    min_delta=0.001,             # ignore improvements smaller than 0.1%
+    restore_best_weights=True,   # revert to best-seen weights when stopping
+)
+
+callbacks.ModelCheckpoint(
+    "models_multiclass/best_model.keras",
+    monitor="val_accuracy",
+    save_best_only=True,         # only overwrite if we're better than before
+)</code></pre>
+    <p class="code-caption">train_multiclass.py — callback configuration</p>
+
+    <div class="content">
+      <p>Here's an example of what training output looks like. Each line is one epoch:</p>
+    </div>
+
+    <pre><code class="language-plaintext">Epoch 1/50
+ 40/40 ━━━━━━━━━━━━━━━━━━━━ 18s  — loss: 1.8923 — accuracy: 0.3241 — val_loss: 1.6102 — val_accuracy: 0.4108
+Epoch 2/50
+ 40/40 ━━━━━━━━━━━━━━━━━━━━ 14s  — loss: 1.4201 — accuracy: 0.5387 — val_loss: 1.2654 — val_accuracy: 0.6219
+...
+Epoch 23/50
+ 40/40 ━━━━━━━━━━━━━━━━━━━━ 14s  — loss: 0.4123 — accuracy: 0.8912 — val_loss: 0.4098 — val_accuracy: 0.9097
+Restoring model weights from the end of the best epoch: 23.
+EarlyStopping: stopping training. Best val_accuracy: 0.9097 at epoch 23.</code></pre>
+    <p class="code-caption">Example training output — training and validation accuracy/loss reported per epoch</p>
+
+  </section>
+
+  <!-- ═══ MODULE 13 ═══════════════════════════════════════ -->
+  <section class="module" id="m13">
+    <div class="module-header">
+      <span class="module-number">Module 13</span>
+      <h2>Regularisation — Fighting Overfitting</h2>
+    </div>
+    <div class="content">
+
+      <p>Overfitting (covered in Module 4) is the most common failure mode in supervised learning with small datasets. BootBoots uses three complementary techniques to fight it: L2 regularisation, Dropout, and Early Stopping.</p>
+
+      <p><strong>L2 Regularisation</strong> (also called weight decay) adds a penalty term to the loss function proportional to the sum of squared weight values. The effect: the optimiser is simultaneously trying to minimise prediction error <em>and</em> keep the weights small. Large weights are the mathematical signature of overfitting — they represent the model memorising specific training examples rather than learning generalisable patterns. With L2 regularisation, the model is discouraged from growing any individual weight too large.</p>
+    </div>
+
+    <div class="formula">
+      total_loss = cross_entropy_loss + λ × Σ(w²)
+      <br><br>
+      <span class="comment">λ (lambda) is the L2 weight — 0.0001 in BootBoots</span>
+      <br>
+      <span class="comment">Σ(w²) = sum of squares of all weights in the Dense layer</span>
+      <br>
+      <span class="comment">Small λ = gentle penalty.  Large λ = strong penalty (underfitting risk)</span>
+    </div>
+
+    <div class="content">
+      <p>L2 is applied via <code>kernel_regularizer=tf.keras.regularizers.l2(0.0001)</code> on the Dense layer. Note it's applied only to the <em>kernel</em> (weight matrix), not the biases — regularising biases doesn't help and is rarely done.</p>
+
+      <p><strong>Dropout</strong> was covered in Module 8 during the model build walkthrough. As a regulariser, the intuition is: by randomly disabling 30% of neurons each training step, you prevent any neuron from becoming a "star player" that the rest of the network depends on. The network has to learn redundant representations, which are inherently more generalisable. At inference time all neurons are active and their outputs are scaled by (1 - dropout_rate) to compensate for the fact that they were randomly zeroed during training.</p>
+
+      <p><strong>Early Stopping</strong> is the bluntest instrument: it simply stops training when validation performance stops improving. It doesn't change the model architecture or the loss function — it just halts the process before overfitting takes hold. The <code>restore_best_weights=True</code> setting ensures that when we stop, we revert to the model checkpoint from the epoch where validation accuracy peaked, not the most recent (possibly overfit) weights.</p>
+
+      <p>These three techniques are complementary and reinforce each other. L2 discourages large weights structurally; Dropout forces redundancy; Early Stopping provides a safety net if both fail to prevent overfitting completely. Using all three together is standard practice in production ML systems.</p>
+    </div>
+  </section>
+
+  <!-- ═══ MODULE 14 ═══════════════════════════════════════ -->
+  <section class="module" id="m14">
+    <div class="module-header">
+      <span class="module-number">Module 14</span>
+      <h2>Export and Deployment</h2>
+    </div>
+    <div class="content">
+
+      <p>After training, the model is saved as <code>best_model.keras</code> — Keras's native format, a zip archive containing the model architecture and weights. This format is convenient for local development (loading with <code>tf.keras.models.load_model()</code>) but isn't suitable for serving in production via AWS SageMaker.</p>
+
+      <p>SageMaker hosts the model using <strong>TensorFlow Serving</strong>, a production-grade model serving system that loads models in <strong>SavedModel</strong> format — a directory containing a compiled TensorFlow graph (<code>saved_model.pb</code>) and the weight files. The script <code>export_for_sagemaker.py</code> converts the Keras file to this format and packages it as <code>model.tar.gz</code>.</p>
+
+      <p>There's a subtle Keras 3 compatibility issue that required a <strong>two-step export</strong> process, and it's worth understanding because it illustrates how serialisation formats can differ between framework versions:</p>
+    </div>
+
+    <pre><code class="language-python"># Step 1: export via Keras — this correctly handles Keras 3's variable system
+model.export(str(intermediate_path))
+# Output: a "Keras SavedModel" with Keras-specific variable tracking
+
+# Step 2: reload as a plain TF module — variables are now ordinary tf.Variables
+loaded = tf.saved_model.load(str(intermediate_path))
+# At this point, the model's weights are standard TF variables that
+# tf.saved_model.save() can traverse and serialise correctly.
+
+# Step 3: define a JPEG-decoding serving function
+@tf.function(input_signature=[
+    tf.TensorSpec(shape=[None], dtype=tf.string, name="image_bytes")
+])
+def serve_jpeg(image_bytes):
+    def decode_one(img_bytes):
+        img = tf.image.decode_jpeg(img_bytes, channels=3)   # raw JPEG → RGB array
+        img = tf.image.resize(img, IMG_SIZE)                 # resize to 240×240
+        return tf.cast(img, tf.float32)                      # ensure float
+    images = tf.map_fn(decode_one, image_bytes, fn_output_signature=tf.float32)
+    result = loaded.serve(images)
+    return {"probabilities": result}
+
+# Step 4: save with the JPEG-decoding serving signature
+tf.saved_model.save(loaded, str(saved_model_path),
+                    signatures={"serving_default": serve_jpeg})</code></pre>
+    <p class="code-caption">export_for_sagemaker.py — the two-step export with JPEG-decoding serving signature</p>
+
+    <div class="content">
+      <p>The <strong>serving signature</strong> is the contract between the model and TF Serving. It defines: what input format to accept, and what output format to return. In production, the Lambda function sends raw JPEG bytes to the endpoint. The serving function decodes those bytes, resizes the image, runs inference, and returns probabilities. This means the Lambda doesn't need to know about image preprocessing — it just POSTs bytes and reads back probabilities.</p>
+
+      <p>The export script also validates that the model's class names match the hardcoded <code>CAT_NAMES</code> list in the Lambda function. This is a guard against a common deployment pitfall: training a new model with a different class ordering and deploying it without updating the Lambda, which would cause the wrong cat names to be assigned to the right probabilities.</p>
+
+      <p>The final packaged file, <code>model.tar.gz</code>, contains:</p>
+    </div>
+
+    <pre><code class="language-plaintext">model.tar.gz
+├── 1/                      ← versioned SavedModel (TF Serving expects this)
+│   ├── saved_model.pb      ← compiled TF graph
+│   └── variables/
+│       ├── variables.index
+│       └── variables.data-00000-of-00001
+└── class_names.json        ← ["Boots", "Chi", "Kappa", "Mu", "NoCat", "Tau", "Wolf"]</code></pre>
+    <p class="code-caption">Contents of model.tar.gz — uploaded to S3 and deployed to SageMaker</p>
+
+    <div class="content">
+      <p>The <code>1/</code> directory is TF Serving's convention for model versioning: the integer directory name is the version number. When a new model is deployed, you'd use <code>2/</code>, and TF Serving can serve both versions simultaneously during a rollout, switching traffic gradually.</p>
+    </div>
+  </section>
+
+  <!-- ═══ MODULE 15 ═══════════════════════════════════════ -->
+  <section class="module" id="m15">
+    <div class="module-header">
+      <span class="module-number">Module 15</span>
+      <h2>The Complete Picture</h2>
+    </div>
+    <div class="content">
+
+      <p>Here is the complete data and model lifecycle — from a cat sitting in front of the camera to a trained model correctly identifying it:</p>
+    </div>
+
+    <!-- Full lifecycle diagram -->
+    <div class="diagram">
+      <svg width="820" height="340" viewBox="0 0 820 340" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="11">
+
+        <!-- === OFFLINE TRAINING PIPELINE === -->
+        <rect x="5" y="5" width="810" height="150" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5" stroke-dasharray="5,3"/>
+        <text x="20" y="23" font-size="10" fill="#94a3b8" font-weight="600" letter-spacing="0.08em">OFFLINE: TRAINING PIPELINE</text>
+
+        <rect x="20" y="30" width="95" height="55" rx="6" fill="#e0e7ff" stroke="#6366f1" stroke-width="1.5"/>
+        <text x="67" y="55" text-anchor="middle" font-weight="600" fill="#4f46e5">DynamoDB</text>
+        <text x="67" y="70" text-anchor="middle" fill="#6366f1" font-size="9">human labels</text>
+
+        <polygon points="117,57 130,50 130,64" fill="#cbd5e1"/>
+
+        <rect x="133" y="30" width="100" height="55" rx="6" fill="#e0e7ff" stroke="#6366f1" stroke-width="1.5"/>
+        <text x="183" y="52" text-anchor="middle" font-weight="600" fill="#4f46e5">download_data</text>
+        <text x="183" y="65" text-anchor="middle" fill="#6366f1" font-size="9">_multiclass.py</text>
+        <text x="183" y="77" text-anchor="middle" fill="#94a3b8" font-size="9">split 79/20/1</text>
+
+        <polygon points="235,57 248,50 248,64" fill="#cbd5e1"/>
+
+        <rect x="251" y="30" width="100" height="55" rx="6" fill="#fdf4ff" stroke="#a855f7" stroke-width="1.5"/>
+        <text x="301" y="52" text-anchor="middle" font-weight="600" fill="#6b21a8">Augmentation</text>
+        <text x="301" y="65" text-anchor="middle" fill="#7e22ce" font-size="9">flip, rotate, zoom</text>
+        <text x="301" y="77" text-anchor="middle" fill="#94a3b8" font-size="9">train only</text>
+
+        <polygon points="353,57 366,50 366,64" fill="#cbd5e1"/>
+
+        <rect x="369" y="30" width="110" height="55" rx="6" fill="#fdf4ff" stroke="#a855f7" stroke-width="1.5"/>
+        <text x="424" y="52" text-anchor="middle" font-weight="600" fill="#6b21a8">EfficientNet</text>
+        <text x="424" y="65" text-anchor="middle" fill="#7e22ce" font-size="9">V2B1 + head</text>
+        <text x="424" y="77" text-anchor="middle" fill="#94a3b8" font-size="9">6.8M params</text>
+
+        <polygon points="481,57 494,50 494,64" fill="#cbd5e1"/>
+
+        <rect x="497" y="30" width="100" height="55" rx="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1.5"/>
+        <text x="547" y="52" text-anchor="middle" font-weight="600" fill="#166534">Training</text>
+        <text x="547" y="65" text-anchor="middle" fill="#16a34a" font-size="9">Adam + CE loss</text>
+        <text x="547" y="77" text-anchor="middle" fill="#94a3b8" font-size="9">early stopping</text>
+
+        <polygon points="599,57 612,50 612,64" fill="#cbd5e1"/>
+
+        <rect x="615" y="30" width="100" height="55" rx="6" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+        <text x="665" y="52" text-anchor="middle" font-weight="600" fill="#92400e">Export</text>
+        <text x="665" y="65" text-anchor="middle" fill="#b45309" font-size="9">→ SavedModel</text>
+        <text x="665" y="77" text-anchor="middle" fill="#94a3b8" font-size="9">→ model.tar.gz</text>
+
+        <polygon points="717,57 730,50 730,64" fill="#cbd5e1"/>
+
+        <rect x="733" y="30" width="75" height="55" rx="6" fill="#fee2e2" stroke="#ef4444" stroke-width="1.5"/>
+        <text x="770" y="52" text-anchor="middle" font-weight="600" fill="#991b1b">SageMaker</text>
+        <text x="770" y="65" text-anchor="middle" fill="#b91c1c" font-size="9">TF Serving</text>
+        <text x="770" y="77" text-anchor="middle" fill="#94a3b8" font-size="9">endpoint</text>
+
+        <!-- Feedback loop label (class weights, val accuracy) -->
+        <path d="M 547,85 Q 547,130 424,130 Q 301,130 301,97" fill="none" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+        <text x="424" y="120" text-anchor="middle" font-size="9" fill="#94a3b8">val_accuracy feedback (early stopping, best checkpoint)</text>
+
+        <!-- === PRODUCTION INFERENCE === -->
+        <rect x="5" y="170" width="810" height="160" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5" stroke-dasharray="5,3"/>
+        <text x="20" y="188" font-size="10" fill="#94a3b8" font-weight="600" letter-spacing="0.08em">ONLINE: PRODUCTION INFERENCE</text>
+
+        <rect x="20" y="198" width="90" height="55" rx="6" fill="#e0e7ff" stroke="#6366f1" stroke-width="1.5"/>
+        <text x="65" y="220" text-anchor="middle" font-weight="600" fill="#4f46e5">ESP32-S3</text>
+        <text x="65" y="235" text-anchor="middle" fill="#6366f1" font-size="9">captures JPEG</text>
+
+        <polygon points="112,225 125,218 125,232" fill="#cbd5e1"/>
+
+        <rect x="128" y="198" width="90" height="55" rx="6" fill="#fdf4ff" stroke="#a855f7" stroke-width="1.5"/>
+        <text x="173" y="220" text-anchor="middle" font-weight="600" fill="#6b21a8">IoT Core</text>
+        <text x="173" y="235" text-anchor="middle" fill="#7e22ce" font-size="9">MQTT → trigger</text>
+
+        <polygon points="220,225 233,218 233,232" fill="#cbd5e1"/>
+
+        <rect x="236" y="198" width="90" height="55" rx="6" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+        <text x="281" y="220" text-anchor="middle" font-weight="600" fill="#92400e">Lambda</text>
+        <text x="281" y="235" text-anchor="middle" fill="#b45309" font-size="9">infer-lambda</text>
+
+        <polygon points="328,225 341,218 341,232" fill="#cbd5e1"/>
+
+        <rect x="344" y="198" width="110" height="55" rx="6" fill="#fee2e2" stroke="#ef4444" stroke-width="1.5"/>
+        <text x="399" y="218" text-anchor="middle" font-weight="600" fill="#991b1b">SageMaker</text>
+        <text x="399" y="231" text-anchor="middle" fill="#b91c1c" font-size="9">endpoint</text>
+        <text x="399" y="244" text-anchor="middle" fill="#94a3b8" font-size="9">returns probabilities</text>
+
+        <polygon points="456,225 469,218 469,232" fill="#cbd5e1"/>
+
+        <rect x="472" y="198" width="110" height="55" rx="6" fill="#dcfce7" stroke="#22c55e" stroke-width="1.5"/>
+        <text x="527" y="218" text-anchor="middle" font-weight="600" fill="#166534">Decision</text>
+        <text x="527" y="231" text-anchor="middle" fill="#16a34a" font-size="9">Boots → spray</text>
+        <text x="527" y="244" text-anchor="middle" fill="#94a3b8" font-size="9">other → ignore</text>
+
+        <polygon points="584,225 597,218 597,232" fill="#cbd5e1"/>
+
+        <rect x="600" y="198" width="90" height="55" rx="6" fill="#f1f5f9" stroke="#64748b" stroke-width="1.5"/>
+        <text x="645" y="218" text-anchor="middle" font-weight="600" fill="#334155">Water Spray</text>
+        <text x="645" y="235" text-anchor="middle" fill="#475569" font-size="9">or silence</text>
+
+        <!-- Label under prod -->
+        <text x="399" y="310" text-anchor="middle" font-size="10" fill="#475569">Latency: ~200ms from capture to spray trigger</text>
+      </svg>
+      <p class="diagram-caption">The complete BootBoots lifecycle — offline training above, online inference below</p>
+    </div>
+
+    <div class="content">
+      <p><strong>What does 90.97% accuracy actually mean?</strong> On the held-out validation set — images the model has never seen during training — 9 in every 10 predictions are correct. More importantly, for the <em>operational</em> use case (spray Boots, don't spray anything else), the relevant measure is precision on the Boots class: of all the times the model predicted Boots, how often was it actually Boots? A false positive (spraying Chi) is worse than a false negative (missing Boots) because you want the system to be trustworthy, not trigger-happy.</p>
+
+      <p><strong>What the model doesn't know:</strong> It has no concept of time, no memory between frames, no knowledge of where the cats usually sit, and no awareness of whether it's night or day. It simply looks at a 240×240 image and returns a probability distribution. All the context and logic lives in the surrounding system (Lambda, IoT rules, spray timing logic). This is the correct architectural boundary: the ML model does one thing well, and the application logic decides what to do with the result.</p>
+
+      <p><strong>Continuing to improve the model:</strong> The cycle is simple — label more images, re-download, retrain. Each new round of labelling adds to the DynamoDB table, and the download script picks them up automatically. The most impactful thing you can do is label images that the current model gets wrong (hard cases, unusual lighting, Boots at an angle). This technique — selectively labelling the model's failure modes — is called <strong>active learning</strong>, and it's far more efficient than randomly labelling new images.</p>
+
+      <p>You now have a complete picture of the BootBoots training pipeline, from raw camera images to a deployed SageMaker endpoint. The same pattern — supervised learning, transfer learning, careful data management, augmentation, regularisation — is used by the vast majority of production image classification systems. The scale differs; the principles don't.</p>
+    </div>
+
+    <div class="callout info">
+      <div class="callout-title">Quick reference: key files</div>
+      <p><code>local-training/download_data_multiclass.py</code> — fetch labelled images from AWS, split into train/val/test</p>
+      <p><code>local-training/train_multiclass.py</code> — build, train, and checkpoint the model</p>
+      <p><code>local-training/predict.py</code> — run inference on local images after training</p>
+      <p><code>local-training/export_for_sagemaker.py</code> — convert .keras → model.tar.gz for deployment</p>
+      <p><code>local-training/serve.py</code> — local Flask server for testing with the sandbox web app</p>
+    </div>
+
+  </section>
+
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+
+</body>
+</html>
