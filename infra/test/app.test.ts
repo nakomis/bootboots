@@ -57,6 +57,25 @@ describe.each(['sandbox', 'prod'] as const)('%s device stacks', (deployEnv: Depl
     apiT.resourceCountIs('Custom::S3AutoDeleteObjects', 0);
   });
 
+  test('catadata is created by CDK only where it is managed (prod), and retained', () => {
+    if (config.manageCatadataTable) {
+      apiT.hasResource('AWS::DynamoDB::Table', {
+        Properties: {
+          TableName: 'catadata',
+          KeySchema: [
+            { AttributeName: 'imageName', KeyType: 'HASH' },
+            { AttributeName: 'uuid', KeyType: 'RANGE' },
+          ],
+        },
+        DeletionPolicy: 'Retain',
+      });
+    } else {
+      expect(Object.values(apiT.findResources('AWS::DynamoDB::Table')).map((t) => t.Properties.TableName)).toEqual([
+        'catcam-events',
+      ]);
+    }
+  });
+
   test('no sandbox domain leaks into prod', () => {
     const json = JSON.stringify(apiT.toJSON());
     if (deployEnv === 'prod') expect(json).not.toContain('sandbox.nakomis.com');

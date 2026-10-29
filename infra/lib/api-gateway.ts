@@ -50,6 +50,19 @@ export class ApiGatewayStack extends cdk.Stack {
         billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
         removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
+    // The labelling table (training mode writes a row per image; the panel labels them). Only
+    // created where config.manageCatadataTable says so: sandbox's predates the stacks.
+    if (config.manageCatadataTable) {
+        new dynamodb.Table(this, 'CatadataTable', {
+            tableName: BOOTBOOTS.catadataTable,
+            partitionKey: { name: 'imageName', type: dynamodb.AttributeType.STRING },
+            sortKey: { name: 'uuid', type: dynamodb.AttributeType.STRING },
+            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+            pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
+            removalPolicy: cdk.RemovalPolicy.RETAIN,
+        });
+    }
+
     catcamEventsTable.addGlobalSecondaryIndex({
         indexName: 'timestamp-index',
         partitionKey: { name: 'timestamp', type: dynamodb.AttributeType.STRING },
