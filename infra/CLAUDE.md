@@ -5,7 +5,7 @@ One CDK app (BOOT-8) holds every BootBoots stack, deployed per environment.
 ## Tooling
 
 - **pnpm 11** (`packageManager` in `package.json`); `lambda/infer-lambda` is a workspace member with its own deps (it bundles `@anthropic-ai/sdk` 0.39). `pnpm install` from `infra/`.
-- `aws-cdk-lib` 2.257 and a current `aws-cdk` CLI. esbuild is a local dev dependency, so Lambdas bundle without Docker; the training-script asset (`BootBootsAiTrainingStack`) still bundles in Docker, so **Docker must be running** for that stack.
+- `aws-cdk-lib` 2.257 and a current `aws-cdk` CLI. esbuild is a local dev dependency and the training-script asset is bundled with the local `tar`, so nothing needs Docker (it's only a fallback).
 - `pnpm build` type-checks, `pnpm test` runs the Jest suite (coverage gate 70%).
 
 ## Environments

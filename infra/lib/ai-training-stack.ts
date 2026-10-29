@@ -33,6 +33,9 @@ export class AiTrainingStack extends cdk.Stack {
 
     constructor(scope: Construct, id: string, props: AiTrainingStackProps) {
         super(scope, id, props);
+        if (props.deployEnv === 'sandbox' && !props.model) {
+            throw new Error('Sandbox serves the live bootboots endpoint: it must have a model (infra/model.json)');
+        }
 
         // Model artefacts and the role SageMaker serves them with: every environment.
         this.modelBucket = new s3.Bucket(this, 'ModelArtifactsBucket', {
@@ -245,6 +248,9 @@ export class AiTrainingStack extends cdk.Stack {
      * label creates a new pair and the endpoint switches to it in place (no downtime), after which
      * CloudFormation deletes the old pair. Matches what local-training/deploy_model.sh used to create
      * by hand (no container environment, no execution role on the config).
+     *
+     * Changing any property of the model or config below needs a new label too: they're custom-named,
+     * so CloudFormation can't replace them under the same name.
      */
     private createInferenceEndpoint(spec: ModelSpec): void {
         const model = new sagemaker.CfnModel(this, 'BootBootsModel', {

@@ -24,7 +24,12 @@ const LABEL = /^[A-Za-z0-9-]{1,40}$/;
 export const MODEL_FILE = path.join(__dirname, '..', 'model.json');
 
 export function parseModelFile(json: unknown): ModelFile {
+  if (typeof json !== 'object' || json === null || Array.isArray(json)) {
+    throw new Error('model.json: must be an object with "sandbox" and "prod" entries');
+  }
   const file = json as Record<string, unknown>;
+  const unknown = Object.keys(file).filter((k) => k !== 'sandbox' && k !== 'prod');
+  if (unknown.length) throw new Error(`model.json: unknown environment(s) ${unknown.join(', ')}`);
   const result = {} as ModelFile;
   for (const env of ['sandbox', 'prod'] as const) {
     if (!(env in file)) throw new Error(`model.json: no "${env}" entry (use null for no endpoint)`);
@@ -35,6 +40,11 @@ export function parseModelFile(json: unknown): ModelFile {
       }
       if (typeof spec.label !== 'string' || !LABEL.test(spec.label)) {
         throw new Error(`model.json: ${env}.label must be 1-40 letters, digits or hyphens`);
+      }
+      // The SageMaker names come from the label alone, and CloudFormation can't replace a resource
+      // in place under the same custom name: a new artefact must bring a new label.
+      if (!spec.artefact.split('/').includes(spec.label)) {
+        throw new Error(`model.json: ${env}.label must be a directory in its artefact path`);
       }
     }
     result[env] = spec;

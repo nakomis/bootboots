@@ -9,12 +9,14 @@
 # sandbox; other environments only ever get a model promoted to them.
 #
 # Profiles: SOURCE_PROFILE (default nakom.is-sandbox) and TARGET_PROFILE (default nakom.is-<env>).
+# Needs AWS CLI v2.22+ (put-object --if-none-match).
 # Then commit model.json and deploy BootBootsAiTrainingStack to <env>.
 
 set -euo pipefail
 
-ENV="${1:?usage: promote-model.sh <env>}"
-[ "$ENV" != sandbox ] || { echo "sandbox is the source; nothing to promote" >&2; exit 1; }
+ENV="${1:?usage: promote-model.sh prod}"
+# Sandbox is the source (training only happens there); prod is the only other environment.
+[ "$ENV" = prod ] || { echo "promote-model.sh: <env> must be prod" >&2; exit 1; }
 SOURCE_PROFILE="${SOURCE_PROFILE:-nakom.is-sandbox}"
 TARGET_PROFILE="${TARGET_PROFILE:-nakom.is-$ENV}"
 REGION="${AWS_REGION:-eu-west-2}"
@@ -26,18 +28,23 @@ s = json.load(open(sys.argv[1]))["sandbox"]
 print(s["artefact"], s["label"])' "$MODEL_JSON")
 
 account() { AWS_PROFILE="$1" aws sts get-caller-identity --query Account --output text; }
+sha256() { if command -v sha256sum > /dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
 SRC="bootboots-models-$(account "$SOURCE_PROFILE")"
 DST="bootboots-models-$(account "$TARGET_PROFILE")"
 [ "$SRC" != "$DST" ] || { echo "source and target are the same account" >&2; exit 1; }
 
 echo "Promoting $LABEL: s3://$SRC/$KEY -> s3://$DST/$KEY"
-if AWS_PROFILE="$TARGET_PROFILE" aws s3api head-object --bucket "$DST" --key "$KEY" --region "$REGION" > /dev/null 2>&1; then
-  echo "Already in $DST; not copying."
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+AWS_PROFILE="$SOURCE_PROFILE" aws s3 cp "s3://$SRC/$KEY" "$TMP/model.tar.gz" --region "$REGION" --only-show-errors
+SHA=$(sha256 "$TMP/model.tar.gz")
+EXISTING=$(AWS_PROFILE="$TARGET_PROFILE" aws s3api head-object --bucket "$DST" --key "$KEY" --region "$REGION" \
+  --query 'Metadata.sha256' --output text 2> /dev/null || true)
+if [ -n "$EXISTING" ]; then
+  # Only a promotion of the very same bytes counts: never point prod at a different file.
+  [ "$EXISTING" = "$SHA" ] || { echo "s3://$DST/$KEY exists with sha256 '$EXISTING', not $SHA: refusing" >&2; exit 1; }
+  echo "Already in $DST (same sha256); not copying."
 else
-  TMP=$(mktemp -d)
-  trap 'rm -rf "$TMP"' EXIT
-  AWS_PROFILE="$SOURCE_PROFILE" aws s3 cp "s3://$SRC/$KEY" "$TMP/model.tar.gz" --region "$REGION" --only-show-errors
-  SHA=$(shasum -a 256 "$TMP/model.tar.gz" | cut -d' ' -f1)
   AWS_PROFILE="$TARGET_PROFILE" aws s3api put-object --bucket "$DST" --key "$KEY" --body "$TMP/model.tar.gz" \
     --if-none-match '*' --metadata "sha256=$SHA,promoted-from=$SRC" --region "$REGION" > /dev/null
   echo "Copied ($SHA)."
