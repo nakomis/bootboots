@@ -93,10 +93,11 @@ export function DevicePage() {
     [dropConnection, forget, receive, receiveStatus, reset],
   );
 
-  // Fetch settings and version once connected (after a short pause for the link to settle).
+  // Fetch status, settings and version once connected (after a short pause for the link to settle).
   useEffect(() => {
     if (!connection) return;
     const timer = setTimeout(() => {
+      void actions.requestStatus();
       void actions.requestSettings();
       void actions.getVersion();
     }, 500);

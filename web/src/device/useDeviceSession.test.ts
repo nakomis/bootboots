@@ -124,21 +124,15 @@ test('without a transport, commands fail with "Not connected"', async () => {
   err.mockRestore();
 });
 
-test('requestStatus reads the status characteristic when the transport can', async () => {
+test('requestStatus sends get_status even when the transport can read the status characteristic', async () => {
   const status = { device: 'BootBoots', system: {}, statistics: {} };
   const transport = { send: vi.fn(async () => {}), readStatus: vi.fn(async () => status as never) };
   const { actions, state, hook } = setup(transport);
   await act(async () => {
     await actions().requestStatus();
   });
-  expect(state().status).toEqual(status);
-  expect(transport.send).not.toHaveBeenCalled();
-
-  transport.readStatus.mockRejectedValueOnce(new Error('gatt'));
-  await act(async () => {
-    await actions().requestStatus();
-  });
-  expect(state().error).toBe('Failed to read status: gatt');
+  expect(transport.send).toHaveBeenCalledWith({ command: 'get_status' });
+  expect(transport.readStatus).not.toHaveBeenCalled();
 
   act(() => hook.result.current.receiveStatus({ ...status, device: 'Again' } as never));
   expect(state().status?.device).toBe('Again');
