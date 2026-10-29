@@ -12,3 +12,6 @@ local-training/data_multiclass/
 local-training/models/
 local-training/models_multiclass/
 local-training/.venv/
+
+# Packaged model artefact from local training (~100 MB)
+local-training/model.tar.gz
