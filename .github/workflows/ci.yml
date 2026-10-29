@@ -124,14 +124,20 @@ jobs:
             ~/.cache/pip
           key: pio-${{ runner.os }}-${{ hashFiles('embedded/catcam/platformio.ini', 'embedded/bootloader/platformio.ini') }}
       - run: pip install platformio
-      # Compile check only: the template's empty strings stand in for the real secrets.
-      - name: Dummy secrets.h
-        run: |
-          if [ -f embedded/catcam/include/secrets.h.template ]; then
-            cp embedded/catcam/include/secrets.h.template embedded/catcam/include/secrets.h
-          fi
+      # No secrets.h any more (BOOT-10): the image holds no secrets; each device reads its own from
+      # its prov partition. The version is set at build time.
       - name: Catcam
+        env:
+          FIRMWARE_VERSION: 0.0.0-ci
         run: pio run -d embedded/catcam -e esp32s3cam
+      # Version tag, no PEM blocks, no per-device/per-environment strings. This job has no AWS
+      # credentials, so the Wi-Fi credential check (SSID/password from SSM) is skipped here;
+      # publish-firmware.sh always runs it. Nothing is published from CI yet: the camera needs its
+      # wired flash (partition table + prov) before a secret-less image can run on it.
+      - name: Image checks
+        env:
+          IMAGE_CHECKS_NO_AWS: '1'
+        run: embedded/catcam/scripts/image-checks.sh embedded/catcam/.pio/build/esp32s3cam/firmware.bin 0.0.0-ci
       - name: Factory bootloader app
         run: pio run -d embedded/bootloader -e esp32s3cam
 
