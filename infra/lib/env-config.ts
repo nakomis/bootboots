@@ -24,6 +24,12 @@ export interface EnvConfig {
   notificationEmail: string;
   /** Where firmware is published for Fleet OTA. */
   firmwareBucket: string;
+  /**
+   * Whether the API stack creates the `catadata` labelling table. Sandbox's was made by hand long
+   * before the stacks and holds every label, so it stays unmanaged (importing it is a separate,
+   * deliberate step); prod's is created by CDK.
+   */
+  manageCatadataTable: boolean;
 }
 
 const CONFIG: Record<DeployEnv, EnvConfig> = {
@@ -40,6 +46,7 @@ const CONFIG: Record<DeployEnv, EnvConfig> = {
     ],
     notificationEmail: 'bootboots@nakomis.com',
     firmwareBucket: 'nakomis-firmware-sandbox',
+    manageCatadataTable: false,
   },
   prod: {
     region: 'eu-west-2',
@@ -49,6 +56,7 @@ const CONFIG: Record<DeployEnv, EnvConfig> = {
     apiCorsOrigins: ['https://nakomis.com', 'https://app.nakomis.com'],
     notificationEmail: 'bootboots@nakomis.com',
     firmwareBucket: 'nakomis-firmware-prod',
+    manageCatadataTable: true,
   },
 };
 
@@ -58,7 +66,7 @@ export function envConfig(deployEnv: DeployEnv): EnvConfig {
 
 /** Resources the device stacks own and the panel uses. Names are the same in every environment. */
 export const BOOTBOOTS = {
-  /** Labelling data: partition key imageName, sort key uuid. Created by hand, not by any stack. */
+  /** Labelling data: partition key imageName, sort key uuid. Sandbox's predates the stacks (see manageCatadataTable). */
   catadataTable: 'catadata',
   imagesBucket: (account: string, region: string) => `bootboots-images-${account}-${region}`,
   /** Training images read by the labelling and bounding pages. */

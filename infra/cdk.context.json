@@ -13,5 +13,9 @@
   "hosted-zone:account=000000000000:domainName=nakomis.com:region=eu-west-2": {
     "Id": "/hostedzone/CI-SYNTH-PLACEHOLDER",
     "Name": "nakomis.com."
+  },
+  "hosted-zone:account=637423226886:domainName=nakomis.com:region=eu-west-2": {
+    "Id": "/hostedzone/Z019437529YGFB53BDUGR",
+    "Name": "nakomis.com."
   }
 }
