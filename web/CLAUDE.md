@@ -35,14 +35,14 @@ cd web && pnpm test && pnpm lint     # ≥70% lines
 ## Deploying
 
 ```bash
-cd infra && NPM_ENVIRONMENT=sandbox pnpm cdk deploy --all --profile nakom.is-sandbox --require-approval never --output cdk-sb.out
+cd infra && pnpm diff-sandbox NakomisBootbootsStack && pnpm deploy-sandbox NakomisBootbootsStack
 ```
 
-CI deploys infra and publishes the remote on merge to `main` (`.github/workflows/ci.yml`).
+The panel's stack is one of several in the repo's single CDK app (`infra/`); never deploy `--all` (see `infra/CLAUDE.md`). CI deploys it and publishes the remote on merge to `main` (`.github/workflows/ci.yml` at the repo root).
 
 ## Architecture diagrams
 
-Sources go in `docs/architecture/*.drawio` — SVGs are auto-regenerated on commit by `.githooks/pre-commit`.
+Sources go in `docs/architecture/*.drawio` at the repo root — SVGs are auto-regenerated on commit by `githooks/` (install with `scripts/install-hooks.sh`).
 
 ```bash
 git config core.hooksPath .githooks
