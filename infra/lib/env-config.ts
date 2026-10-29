@@ -74,6 +74,9 @@ export const SSM = {
   thingCertPrefix: 'BootsBoots',
   userPoolId: (env: DeployEnv) => `/nakomis-infra/${env}/cognito/user-pool-id`,
   shellClientId: (env: DeployEnv) => `/nakomis-shell/${env}/cognito/client-id`,
+  shellBucketName: (env: DeployEnv) => `/nakomis-shell/${env}/bucket-name`,
+  /** Prefix of Fleet's published parameters (api-url, ws-url) that the web panel's config.json copies. */
+  fleetPrefix: (env: DeployEnv) => `/nakomis-fleet/${env}`,
   shellRemoteDeployerPolicyArn: (env: DeployEnv) => `/nakomis-shell/${env}/remote-deployer-policy-arn`,
   /** Everything the BootBoots repo publishes for its own scripts and the web panel's config.json. */
   bootbootsPrefix: (env: DeployEnv) => `/nakomis-bootboots/${env}`,

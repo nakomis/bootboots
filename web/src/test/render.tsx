@@ -3,14 +3,28 @@ import { render } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { MemoryRouter } from 'react-router';
 import { type BootbootsContextValue, BootbootsProvider } from '../BootbootsContext';
-import { configFor } from '../config';
+import type { BootbootsConfig } from '../config';
 import { createAwsServices } from '../services/aws';
 import type { DeviceMessageEvent, FleetApi } from '../services/fleet';
 import type { LiveStatus, LiveUpdates } from '../services/liveUpdates';
 import type { ShellContext } from '../shell-contract';
 import { theme } from '../theme';
 
-export const config = { ...configFor('sandbox'), identityPoolId: 'eu-west-2:pool' };
+export const config: BootbootsConfig = {
+  environment: 'sandbox',
+  version: '1.2.3',
+  region: 'eu-west-2',
+  identityPoolId: 'eu-west-2:pool',
+  imagesBucket: 'bootboots-images-975050268859-eu-west-2',
+  catadataTable: 'catadata',
+  eventsApiUrl: 'https://api.bootboots.sandbox.nakomis.com/events',
+  samServerUrl: 'https://phi.nasbox.nakomis.com:7861',
+  localPredictUrl: 'http://localhost:8765/predict',
+  fleetApiUrl: 'https://api.fleet.sandbox.nakomis.com',
+  fleetWsUrl: 'wss://ws.fleet.sandbox.nakomis.com',
+  catcamThing: 'BootBootsThing',
+  project: 'bootboots',
+};
 
 export const credentials = async () => ({
   accessKeyId: 'AKID',
@@ -82,7 +96,7 @@ export function renderWithBootboots(
   };
   return render(
     <ThemeProvider theme={theme}>
-      <BootbootsProvider shell={shell} overrides={value}>
+      <BootbootsProvider shell={shell} config={config} overrides={value}>
         <MemoryRouter initialEntries={[path ?? '/']}>{ui}</MemoryRouter>
       </BootbootsProvider>
     </ThemeProvider>,

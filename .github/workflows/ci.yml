@@ -151,17 +151,32 @@ jobs:
   deploy-web-sandbox:
     name: Deploy web (sandbox)
     needs: [deploy-infra-sandbox]
-    uses: nakomis/nakomis-workflows/.github/workflows/deploy-static.yml@main
-    with:
-      environment: sandbox
-      aws-role-arn: ${{ vars.AWS_SANDBOX_ROLE_ARN }}
-      working-directory: web
-      ssm-bucket-param: /nakomis-shell/sandbox/bucket-name
-      ssm-distribution-param: /nakomis-shell/sandbox/distribution-id
-      prefix: remotes/bootboots
-      # Bakes in the identity pool id from SSM (/nakomis-bootboots/sandbox/identity-pool-id).
-      build-command: pnpm build:sandbox
-      invalidation-paths: /remotes/bootboots/*
+    runs-on: ubuntu-latest
+    environment: sandbox
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '25'
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Build
+        working-directory: web
+        run: pnpm install --frozen-lockfile && pnpm build
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_SANDBOX_ROLE_ARN }}
+          aws-region: eu-west-2
+      # config.json is generated from SSM, so the same build can go to any environment.
+      - name: Publish
+        env:
+          SHA: ${{ github.sha }}
+        run: RELEASE_VERSION="0.0.0-${SHA::7}" scripts/publish-web.sh sandbox web/dist
 
   # The "Protect main" ruleset requires a check with exactly this name.
   ci-status:
