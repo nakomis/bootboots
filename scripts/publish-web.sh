@@ -3,9 +3,9 @@
 #
 #   scripts/publish-web.sh [--dry-run] <env> <dist-dir>
 #
-# Generates config.json from SSM parameters for <env>, syncs <dist-dir> to
-# s3://<shell bucket>/remotes/bootboots/ (config.json excluded), uploads config.json with
-# Cache-Control: no-cache, then invalidates /remotes/bootboots/* on the shell's distribution.
+# Generates config.json from SSM parameters for <env> and uploads it first, then syncs <dist-dir> to
+# s3://<shell bucket>/remotes/bootboots/ (assets immutable, entry points no-cache; config.json excluded),
+# then invalidates /remotes/bootboots/* on the shell distribution.
 #
 # Uses the ambient AWS credentials (CI sets them; locally set AWS_PROFILE). The release version comes from
 # RELEASE_VERSION (default 0.0.0-dev). Everything environment-specific comes from SSM:
@@ -96,25 +96,34 @@ config_file="$(mktemp)"
 trap 'rm -f "$config_file"' EXIT
 printf '%s\n' "$config" > "$config_file"
 
-sync_cmd=(aws s3 sync "$dist_dir" "$dest/" --delete --exclude config.json)
-put_cmd=(aws s3 cp "$config_file" "$dest/config.json" --cache-control no-cache --content-type application/json)
-invalidate_cmd=(aws cloudfront create-invalidation --distribution-id "$distribution_id" --paths '/remotes/bootboots/*')
+immutable='public,max-age=31536000,immutable'
+# Order matters: config.json first (so a new bundle never meets old config), hashed assets before the entry
+# points that reference them, remoteEntry.js and index.html last. Only config.json, remoteEntry.js and
+# index.html are revalidated on every load; assets/* are content-hashed and cached for a year.
+# --delete is scoped to each sync's own tree, and config.json is excluded from the root sync so it survives.
+cmds=(
+  "aws s3 cp $config_file $dest/config.json --cache-control no-cache --content-type application/json"
+  "aws s3 sync $dist_dir/assets $dest/assets --delete --cache-control $immutable"
+  "aws s3 sync $dist_dir $dest/ --delete --exclude config.json --exclude 'assets/*' --exclude remoteEntry.js --exclude index.html"
+  "aws s3 cp $dist_dir/remoteEntry.js $dest/remoteEntry.js --cache-control no-cache"
+  "aws s3 cp $dist_dir/index.html $dest/index.html --cache-control no-cache"
+  "aws cloudfront create-invalidation --distribution-id $distribution_id --paths '/remotes/bootboots/*'"
+)
 
 if $dry_run; then
   echo "config.json:"
   echo "$config"
   echo
-  echo "Dry run, would run:"
-  printf "  %q " "${sync_cmd[@]}"
-  echo
-  printf '  %q ' "${put_cmd[@]}"
-  echo
-  printf '  %q ' "${invalidate_cmd[@]}"
-  echo
+  echo "Dry run, would run in this order:"
+  printf '  %s\n' "${cmds[@]}"
   exit 0
 fi
 
-"${sync_cmd[@]}"
-"${put_cmd[@]}"
-"${invalidate_cmd[@]}" > /dev/null
+aws s3 cp "$config_file" "$dest/config.json" --cache-control no-cache --content-type application/json
+aws s3 sync "$dist_dir/assets" "$dest/assets" --delete --cache-control "$immutable"
+aws s3 sync "$dist_dir" "$dest/" --delete --exclude config.json --exclude 'assets/*' --exclude remoteEntry.js \
+  --exclude index.html
+aws s3 cp "$dist_dir/remoteEntry.js" "$dest/remoteEntry.js" --cache-control no-cache
+aws s3 cp "$dist_dir/index.html" "$dest/index.html" --cache-control no-cache
+aws cloudfront create-invalidation --distribution-id "$distribution_id" --paths '/remotes/bootboots/*' > /dev/null
 echo "Published BootBoots $version to $dest and invalidated /remotes/bootboots/*"
