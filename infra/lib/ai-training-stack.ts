@@ -1,3 +1,4 @@
+import { spawnSync } from 'child_process';
 import * as path from 'path';
 import * as cdk from 'aws-cdk-lib';
 import * as s3 from 'aws-cdk-lib/aws-s3';
@@ -102,13 +103,21 @@ export class AiTrainingStack extends cdk.Stack {
         imagesBucket.grantRead(this.sagemakerRole);
 
         // Package the training script as a tar.gz CDK asset uploaded to the
-        // bootstrap bucket on every `cdk deploy`. Docker bundling is used so
-        // that SageMaker's TF container receives a proper tar.gz (it does not
-        // handle plain zip files). CDK re-bundles automatically when the
-        // content hash of infra/training/ changes.
+        // bootstrap bucket on every `cdk deploy`, so that SageMaker's TF container
+        // receives a proper tar.gz (it does not handle plain zip files). CDK
+        // re-bundles automatically when the content hash of infra/training/ changes.
+        // Bundled with the local tar when there is one (no Docker, and no image pull
+        // that public ECR rate-limits in CI); Docker is the fallback.
+        const trainingDir = path.join(__dirname, '../training');
         const trainingScriptAsset = new s3assets.Asset(this, 'TrainingScriptAsset', {
-            path: path.join(__dirname, '../training'),
+            path: trainingDir,
             bundling: {
+                local: {
+                    tryBundle(outputDir: string): boolean {
+                        const tar = spawnSync('tar', ['-czf', path.join(outputDir, 'sourcedir.tar.gz'), '-C', trainingDir, '.']);
+                        return tar.status === 0;
+                    },
+                },
                 image: cdk.DockerImage.fromRegistry('public.ecr.aws/docker/library/alpine:3.18'),
                 command: [
                     'sh', '-c',
