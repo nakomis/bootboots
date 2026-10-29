@@ -97,33 +97,37 @@ trap 'rm -f "$config_file"' EXIT
 printf '%s\n' "$config" > "$config_file"
 
 immutable='public,max-age=31536000,immutable'
-# Order matters: config.json first (so a new bundle never meets old config), hashed assets before the entry
-# points that reference them, remoteEntry.js and index.html last. Only config.json, remoteEntry.js and
-# index.html are revalidated on every load; assets/* are content-hashed and cached for a year.
-# --delete is scoped to each sync's own tree, and config.json is excluded from the root sync so it survives.
-cmds=(
-  "aws s3 cp $config_file $dest/config.json --cache-control no-cache --content-type application/json"
-  "aws s3 sync $dist_dir/assets $dest/assets --delete --cache-control $immutable"
-  "aws s3 sync $dist_dir $dest/ --delete --exclude config.json --exclude 'assets/*' --exclude remoteEntry.js --exclude index.html"
-  "aws s3 cp $dist_dir/remoteEntry.js $dest/remoteEntry.js --cache-control no-cache"
-  "aws s3 cp $dist_dir/index.html $dest/index.html --cache-control no-cache"
-  "aws cloudfront create-invalidation --distribution-id $distribution_id --paths '/remotes/bootboots/*'"
-)
+
+# Each step is defined once and either printed (--dry-run) or run.
+step() {
+  if $dry_run; then
+    printf '  '
+    printf '%q ' "$@"
+    echo
+  else
+    "$@"
+  fi
+}
 
 if $dry_run; then
   echo "config.json:"
   echo "$config"
   echo
   echo "Dry run, would run in this order:"
-  printf '  %s\n' "${cmds[@]}"
-  exit 0
 fi
 
-aws s3 cp "$config_file" "$dest/config.json" --cache-control no-cache --content-type application/json
-aws s3 sync "$dist_dir/assets" "$dest/assets" --delete --cache-control "$immutable"
-aws s3 sync "$dist_dir" "$dest/" --delete --exclude config.json --exclude 'assets/*' --exclude remoteEntry.js \
+# Order matters. config.json first, so a new bundle never meets old config. Hashed assets are added without
+# --delete, so a client still running the previous release keeps its chunks; the entry points that reference
+# the new chunks (remoteEntry.js, index.html) go last and are revalidated on every load, while assets/* are
+# content-hashed and cached for a year. Stale chunks are only removed after the invalidation. --delete is
+# scoped to each sync's own tree, and config.json is excluded from the root sync so it survives.
+step aws s3 cp "$config_file" "$dest/config.json" --cache-control no-cache --content-type application/json
+step aws s3 sync "$dist_dir/assets" "$dest/assets" --cache-control "$immutable"
+step aws s3 sync "$dist_dir" "$dest/" --delete --exclude config.json --exclude 'assets/*' --exclude remoteEntry.js \
   --exclude index.html
-aws s3 cp "$dist_dir/remoteEntry.js" "$dest/remoteEntry.js" --cache-control no-cache
-aws s3 cp "$dist_dir/index.html" "$dest/index.html" --cache-control no-cache
-aws cloudfront create-invalidation --distribution-id "$distribution_id" --paths '/remotes/bootboots/*' > /dev/null
-echo "Published BootBoots $version to $dest and invalidated /remotes/bootboots/*"
+step aws s3 cp "$dist_dir/remoteEntry.js" "$dest/remoteEntry.js" --cache-control no-cache
+step aws s3 cp "$dist_dir/index.html" "$dest/index.html" --cache-control no-cache
+step aws cloudfront create-invalidation --distribution-id "$distribution_id" --paths '/remotes/bootboots/*'
+step aws s3 sync "$dist_dir/assets" "$dest/assets" --delete --cache-control "$immutable"
+
+$dry_run || echo "Published BootBoots $version to $dest and invalidated /remotes/bootboots/*"
