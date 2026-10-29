@@ -16,6 +16,8 @@ export AWS_PROFILE=nakom.is-sandbox
 
 **Docker must be running** before deploying - CDK uses Docker to bundle NodejsFunction Lambda assets. If you see a Docker daemon connection error, ask the user to open Docker Desktop and retry.
 
+**Never `cdk deploy --all`, and don't deploy `BootBootsAiTrainingStack` casually.** The live `bootboots` SageMaker endpoint is owned by `local-training/deploy_model.sh`, which swaps in timestamped models outside CDK. Deploying the stack without `--context modelDataUrl=…` destroys the endpoint; deploying it with a URL reverts the endpoint to CDK's own `bootboots-cat-classifier` model. Deploy stacks by name (e.g. `cdk deploy BootBootsApiGatewayStack`), and always `cdk diff` first.
+
 ## IoT Resources
 
 The `lib/iot-device.ts` stack uses `ThingWithCert` from `cdk-iot-core-certificates-v3` and creates:
@@ -32,7 +34,7 @@ The `lib/iot-device.ts` stack uses `ThingWithCert` from `cdk-iot-core-certificat
 - The `bootboots-trigger-training` Lambda's IAM policy requires `sagemaker:AddTags` (needed when `CreateTrainingJob` includes Tags) - this is already in the policy as of Feb 2026.
 - Invoke the trigger Lambda with `--invocation-type Event` (async) - data prep takes ~90s and will cause CLI read timeout if invoked synchronously.
 - **Old training images** (pre-2026, numeric filenames like `540.jpeg`) were migrated in Feb 2026 from `bootbootstraining` S3 bucket into `bootboots-images-{account}-{region}/catcam-training/`. They were truncated JPEGs (missing FF D9 EOI marker) — the data prep Lambda patches them on copy.
-- **Binary classifier** (as of Feb 2026): model classifies Boots vs NotBoots. Previous 7-class model is at git tag `multi-cat-recognition`. `CAT_CLASSES = ['Boots', 'NotBoots']` in the stack. NotBoots is capped at `MAX_NOTBOOTS_SAMPLES` (default 600) to limit class imbalance.
+- **7-class classifier** (reverted from binary): model classifies Boots, Chi, Kappa, Mu, Tau, Wolf, NoCat. The binary Boots/NotBoots approach was abandoned — "NotBoots" was too vague a concept and the model struggled. The 7-class model runs at ~80–90% accuracy and collapses to a binary Boots/NotBoots decision at inference time for the spray pump trigger. The old binary classifier code is in git history; `multi-cat-recognition` tag predates it and has the earlier 7-class implementation.
 
 ## SSM Parameters
 
