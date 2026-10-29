@@ -71,6 +71,7 @@ test('connects, fetches settings, shows status and disconnects on reboot', async
   expect(command.writes.map((w) => w.command).sort()).toEqual([
     'get_camera_settings',
     'get_settings',
+    'get_status',
     'get_version',
   ]);
 

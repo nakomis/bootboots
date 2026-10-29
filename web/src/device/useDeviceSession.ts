@@ -85,19 +85,9 @@ export function useDeviceSession(transport: DeviceTransport | null, now: () => n
     () => ({
       clearError: () => update((s) => ({ ...s, error: null })),
       ping: () => send({ command: 'ping' }, 'send ping'),
-      requestStatus: async () => {
-        const t = transportRef.current;
-        if (t?.readStatus) {
-          try {
-            const status = await t.readStatus();
-            if (status) update((s) => applyStatus(s, status, now()));
-          } catch (err) {
-            update((s) => ({ ...s, error: `Failed to read status: ${message(err)}` }));
-          }
-        } else {
-          await send({ command: 'get_status' }, 'request status');
-        }
-      },
+      // Always ask with get_status: it reports live state. The BLE status characteristic is only set at
+      // boot (firmware 1.0.331 never refreshes it), so reading it shows stale peripherals.
+      requestStatus: () => send({ command: 'get_status' }, 'request status'),
       requestSettings: async () => {
         await send({ command: 'get_settings' }, 'request settings');
         await send({ command: 'get_camera_settings' }, 'request camera settings');
@@ -231,7 +221,7 @@ export function useDeviceSession(transport: DeviceTransport | null, now: () => n
         }));
       },
     }),
-    [now, send, update],
+    [send, update],
   );
 
   return { state: stateRef.current, receive, receiveStatus, reset, actions };
