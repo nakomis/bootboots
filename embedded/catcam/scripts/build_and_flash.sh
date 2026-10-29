@@ -13,6 +13,10 @@
 #   1. Close serial monitor if running
 #   2. Hold BOOT button, plug USB into OTG port, release BOOT
 #
+# The version comes from FIRMWARE_VERSION (default 0.0.0-dev; see extra_script.py). This writes the
+# app only: the device also needs the BOOT-10 partition table and its prov partition
+# (scripts/provision.sh; docs/provisioning.md) to get onto the network.
+#
 
 set -e  # Exit on any error
 
@@ -106,7 +110,7 @@ fi
 
 FIRMWARE_BIN="$CATCAM_DIR/.pio/build/$BUILD_ENV/firmware.bin"
 FIRMWARE_SIZE=$(stat -f%z "$FIRMWARE_BIN" 2>/dev/null || stat -c%s "$FIRMWARE_BIN" 2>/dev/null)
-VERSION=$(grep 'FIRMWARE_VERSION' "$CATCAM_DIR/include/version.h" | cut -d'"' -f2)
+VERSION="${FIRMWARE_VERSION:-0.0.0-dev}"
 echo -e "${GREEN}Built: v$VERSION ($FIRMWARE_SIZE bytes)${NC}"
 echo
 
@@ -117,6 +121,7 @@ if ! python3 "$ESPTOOL" \
     --chip esp32s3 \
     --port "$SERIAL_PORT" \
     --baud "$BAUD_RATE" \
+    --after watchdog_reset \
     write_flash -z \
     --flash_mode "$FLASH_MODE" \
     --flash_freq "$FLASH_FREQ" \
