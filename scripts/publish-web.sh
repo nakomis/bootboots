@@ -48,11 +48,20 @@ missing=()
 # records required parameters that do not exist. Not run in a subshell, so `missing` is kept.
 ssm() {
   local var="$1" name="$2" kind="$3" value
-  value="$(aws ssm get-parameters --names "$name" --query 'Parameters[0].Value' --output text)"
-  if [[ "$value" == "None" || -z "$value" ]]; then
-    [[ "$kind" == "optional" ]] || missing+=("$name")
-    value=""
+  # GetParameter (singular): it is all the shell's remote-deployer policy grants on /nakomis-shell/<env>/*.
+  local err
+  err="$(mktemp)"
+  if ! value="$(aws ssm get-parameter --name "$name" --query Parameter.Value --output text 2> "$err")"; then
+    if grep -q ParameterNotFound "$err"; then
+      [[ "$kind" == "optional" ]] || missing+=("$name")
+      value=""
+    else
+      cat "$err" >&2
+      rm -f "$err"
+      exit 1
+    fi
   fi
+  rm -f "$err"
   printf -v "$var" '%s' "$value"
 }
 

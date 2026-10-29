@@ -57,7 +57,19 @@ test.each(['sandbox', 'prod'] as const)(
         Resource: [
           'arn:aws:ssm:eu-west-2:123456789012:parameter/nakomis-bootboots/*',
           'arn:aws:ssm:eu-west-2:123456789012:parameter/bootboots/*',
+          `arn:aws:ssm:eu-west-2:123456789012:parameter/nakomis-fleet/${deployEnv}/*`,
         ],
+      },
+      // publish-web.sh's --delete passes, on the panel's own prefix of the shell bucket (named by SSM).
+      {
+        Effect: 'Allow',
+        Action: 's3:DeleteObject',
+        Resource: {
+          'Fn::Join': [
+            '',
+            ['arn:aws:s3:::', { Ref: expect.stringMatching(/bucketname/i) }, '/remotes/bootboots/*'],
+          ],
+        },
       },
       {
         Effect: 'Allow',
