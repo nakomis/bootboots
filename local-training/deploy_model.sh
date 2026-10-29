@@ -1,19 +1,26 @@
 #!/usr/bin/env bash
-# Deploy a locally trained model to the BootBoots SageMaker endpoint.
+# Ship a locally trained model to the BootBoots SageMaker endpoint (BOOT-9).
 #
 # Usage:
 #   ./deploy_model.sh [--model-dir models_multiclass]
 #
 # Steps:
 #   1. Export the .keras model to TF Serving SavedModel format + model.tar.gz
-#   2. Upload model.tar.gz to S3
-#   3. Create SageMaker Model + EndpointConfig with timestamped names
-#   4. Update the 'bootboots' endpoint to the new config
+#   2. Upload model.tar.gz to s3://bootboots-models-<sandbox account>/local-models/<timestamp>/
+#   3. Point infra/model.json's sandbox entry at it
+#
+# It makes no SageMaker calls: CDK owns the endpoint. Commit model.json and ship it through a PR
+# (CI deploys sandbox on merge), or deploy by hand with:
+#   cd infra && pnpm diff-sandbox BootBootsAiTrainingStack && pnpm deploy-stack-sandbox BootBootsAiTrainingStack
+# The endpoint switches to the new model in place. To serve it in prod: infra/scripts/promote-model.sh prod
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MODEL_JSON="$SCRIPT_DIR/../infra/model.json"
 MODEL_DIR="models_multiclass"
+PROFILE="${AWS_PROFILE:-nakom.is-sandbox}"
+REGION="eu-west-2"
 
 for arg in "$@"; do
     case "$arg" in
@@ -21,11 +28,6 @@ for arg in "$@"; do
         --model-dir)   shift; MODEL_DIR="$1" ;;
     esac
 done
-
-REGION="eu-west-2"
-ENDPOINT_NAME="bootboots"
-SAGEMAKER_ROLE="arn:aws:iam::975050268859:role/BootBootsSageMakerRole"
-TF_SERVING_IMAGE="763104351884.dkr.ecr.${REGION}.amazonaws.com/tensorflow-inference:2.16-cpu"
 
 echo "=== BootBoots Model Deploy ==="
 echo "Model dir : $MODEL_DIR"
@@ -40,57 +42,27 @@ python export_for_sagemaker.py --model-dir "$MODEL_DIR" --output "$TARBALL"
 echo
 
 # --- Upload to S3 ---
-ACCOUNT=$(AWS_PROFILE=nakom.is-sandbox aws sts get-caller-identity \
-    --query Account --output text --region "$REGION")
+ACCOUNT=$(AWS_PROFILE="$PROFILE" aws sts get-caller-identity --query Account --output text --region "$REGION")
 BUCKET="bootboots-models-$ACCOUNT"
-TIMESTAMP=$(date -u +%Y%m%dT%H%M%S)
-S3_KEY="local-models/$TIMESTAMP/model.tar.gz"
-S3_URL="s3://$BUCKET/$S3_KEY"
+LABEL=$(date -u +%Y%m%dT%H%M%S)
+S3_KEY="local-models/$LABEL/model.tar.gz"
 
-echo "Uploading to $S3_URL ..."
-AWS_PROFILE=nakom.is-sandbox aws s3 cp "$TARBALL" "$S3_URL" --region "$REGION"
+echo "Uploading to s3://$BUCKET/$S3_KEY ..."
+AWS_PROFILE="$PROFILE" aws s3 cp "$TARBALL" "s3://$BUCKET/$S3_KEY" --region "$REGION"
 echo
 
-# --- Create SageMaker Model ---
-MODEL_NAME="bootboots-local-$TIMESTAMP"
-echo "Creating SageMaker model: $MODEL_NAME ..."
-AWS_PROFILE=nakom.is-sandbox aws sagemaker create-model \
-    --region "$REGION" \
-    --model-name "$MODEL_NAME" \
-    --execution-role-arn "$SAGEMAKER_ROLE" \
-    --primary-container \
-        "Image=$TF_SERVING_IMAGE,ModelDataUrl=$S3_URL"
-echo
+# --- model.json ---
+python3 - "$MODEL_JSON" "$S3_KEY" "$LABEL" <<'EOF'
+import json, sys
+path, key, label = sys.argv[1:]
+models = json.load(open(path))
+models["sandbox"] = {"artefact": key, "label": label}
+with open(path, "w") as f:
+    json.dump(models, f, indent=2)
+    f.write("\n")
+EOF
 
-# --- Create Endpoint Config ---
-CONFIG_NAME="bootboots-local-config-$TIMESTAMP"
-echo "Creating endpoint config: $CONFIG_NAME ..."
-AWS_PROFILE=nakom.is-sandbox aws sagemaker create-endpoint-config \
-    --region "$REGION" \
-    --endpoint-config-name "$CONFIG_NAME" \
-    --production-variants \
-        "VariantName=AllTraffic,ModelName=$MODEL_NAME,ServerlessConfig={MemorySizeInMB=2048,MaxConcurrency=5}"
-echo
-
-# --- Update Endpoint ---
-echo "Updating endpoint '$ENDPOINT_NAME' to use new config ..."
-AWS_PROFILE=nakom.is-sandbox aws sagemaker update-endpoint \
-    --region "$REGION" \
-    --endpoint-name "$ENDPOINT_NAME" \
-    --endpoint-config-name "$CONFIG_NAME"
-
-echo
-echo "Waiting for endpoint to be InService (this can take a few minutes) ..."
-AWS_PROFILE=nakom.is-sandbox aws sagemaker wait endpoint-in-service \
-    --region "$REGION" \
-    --endpoint-name "$ENDPOINT_NAME"
-
-echo
-echo "=== Deploy complete ==="
-echo "Model    : $MODEL_NAME"
-echo "Config   : $CONFIG_NAME"
-echo "Endpoint : $ENDPOINT_NAME (InService)"
-echo
-echo "Test with:"
-echo "  curl -X POST -H 'Content-Type: image/jpeg' --data-binary @photo.jpg \\"
-echo "    https://api.bootboots.sandbox.nakomis.com/infer"
+echo "=== Uploaded; infra/model.json now names $LABEL for sandbox ==="
+echo "Next: commit infra/model.json and open a PR (CI deploys sandbox on merge), or deploy by hand:"
+echo "  cd infra && pnpm diff-sandbox BootBootsAiTrainingStack && pnpm deploy-stack-sandbox BootBootsAiTrainingStack"
+echo "Then test with a signed POST to https://api.bootboots.sandbox.nakomis.com/infer"
