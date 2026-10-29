@@ -35,9 +35,10 @@ public:
 
     /**
      * Configure the video upload API endpoint
-     * @param apiHost API Gateway host (e.g., "api.bootboots.sandbox.nakomis.com")
+     * @param apiHost API Gateway host (from the prov partition)
+     * @param roleAlias IoT role alias for credentials (from the prov partition)
      */
-    void setUploadConfig(const char* apiHost);
+    void setUploadConfig(const char* apiHost, const char* roleAlias);
 
     /**
      * Check if deterrent should be activated based on detection result
@@ -81,6 +82,7 @@ private:
 
     // Upload configuration
     const char* _apiHost = nullptr;
+    const char* _roleAlias = nullptr;
 
     /**
      * Upload a video file to the cloud
