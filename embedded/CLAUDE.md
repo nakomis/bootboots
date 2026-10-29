@@ -10,12 +10,10 @@ Both use the **Arduino framework** for simplicity and library compatibility.
 
 ## Related Projects
 
-- **Web App + Infra**: `/Users/martinmu_1/repos/nakomis/sandboxsite` - React web interface and AWS CDK infrastructure (see CLAUDE.md in that repo)
-  - `sandbox-app/` - React frontend for OTA updates and device control via Web Bluetooth
-  - `infra/` - AWS CDK stacks (CloudFront, Cognito, S3)
-- **S3 Bucket**: `nakomis-firmware-updates` - Stores firmware binaries and manifest (Lambda auto-updates manifest on upload)
-
-**Note:** When adding new API Gateway endpoints that the web app calls, ensure the URL pattern is excluded from cache-first in `sandbox-app/public/sw.js` to avoid stale data.
+- **Web panel**: `../web/` in this repo — the BootBoots remote of nakomis-shell (app.sandbox.nakomis.com/bootboots). Talks to the device over Web Bluetooth or through Fleet (MQTT). See `web/CLAUDE.md`.
+- **Infra**: `../infra/` in this repo — the single CDK app (IoT Thing and certificate, inference API, SageMaker endpoint, panel stack, CI role). See `infra/CLAUDE.md`.
+- **Fleet** (`nakomis-fleet`): device registry and OTA. Firmware lives in `s3://nakomis-firmware-sandbox/BootBoots/<version>/`.
+- **Device protocol** (commands, response types, MQTT topics, BLE UUIDs): `docs/protocol.md`.
 
 ## Supported Boards
 
@@ -190,7 +188,7 @@ build_flags =
 ## Build Commands
 
 ```bash
-cd /Users/martinmu_1/repos/nakomis/bootboots/embedded
+cd ~/repos/nakomis/bootboots/embedded
 
 # Build bootloader
 cd bootloader && pio run -e esp32s3cam
@@ -203,25 +201,24 @@ cd ../catcam && pio run -e esp32s3cam
 
 ### OTA Deployment (Preferred Method)
 
-**This is the preferred way to deploy firmware.** No USB connection required - the device is updated wirelessly via Bluetooth OTA from the web interface.
+**This is the preferred way to deploy firmware.** No USB connection required: Fleet sends the device an OTA command over MQTT, and the device downloads the image from S3.
+
+1. Publish the image to `s3://nakomis-firmware-sandbox/BootBoots/<version>/firmware.bin` (BOOT-10 adds `scripts/publish-firmware.sh`, which never replaces a published version; the old `build_and_upload.py` targeted the deleted `nakomis-firmware-updates` bucket).
+2. In Fleet (app.sandbox.nakomis.com/fleet), pick BootBootsThing and install that version.
+
+Fleet OTA round trip 1.0.331 → 1.0.328 → 1.0.331 verified on 29 Oct 2026.
+
+**Never open the catcam's USB serial port casually:** it resets the ESP32-S3. Flash with `esptool --after watchdog_reset`.
+
+### Logs over BLE
+
+`catcam/scripts/catcam_logs.py` pulls the SD card's log files over BLE (`list_logs` + `get_log_file`), no disassembly needed. It needs `bleak` (a venv with `pip install bleak`), and the browser must be disconnected from the camera first (one BLE connection at a time):
 
 ```bash
-cd /Users/martinmu_1/repos/nakomis/bootboots/embedded/catcam
-
-# Set AWS credentials for S3 upload
-export AWS_PROFILE=nakom.is-sandbox
-
-# Build, bump version, and upload to S3
-python3 scripts/build_and_upload.py
+python -I catcam/scripts/catcam_logs.py OUT_DIR [--list] [FILENAME ...]
 ```
 
-This script:
-1. Bumps the version number in `include/version.h`
-2. Builds the firmware for ESP32-S3
-3. Uploads to S3 bucket `nakomis-firmware-updates`
-4. Lambda automatically updates the manifest
-
-Then use the web interface at localhost:3000 to trigger the OTA update via Bluetooth.
+Only the newest 10 boot logs are kept on the card.
 
 ### USB Flash Commands (Backup Method)
 
@@ -234,7 +231,7 @@ Then use the web interface at localhost:3000 to trigger the OTA update via Bluet
 3. Run:
 
 ```bash
-cd /Users/martinmu_1/repos/nakomis/bootboots/embedded
+cd ~/repos/nakomis/bootboots/embedded
 
 ~/.platformio/packages/tool-esptoolpy/esptool.py --chip esp32s3 --port /dev/cu.usbmodem* --baud 921600 \
   write_flash -z --flash_mode dout --flash_freq 80m --flash_size 16MB \
@@ -249,7 +246,7 @@ cd /Users/martinmu_1/repos/nakomis/bootboots/embedded
 **Remember:** Close the serial monitor first, then put device in download mode.
 
 ```bash
-cd /Users/martinmu_1/repos/nakomis/bootboots/embedded
+cd ~/repos/nakomis/bootboots/embedded
 
 ~/.platformio/packages/tool-esptoolpy/esptool.py --chip esp32s3 --port /dev/cu.usbmodem* --baud 921600 \
   write_flash -z --flash_mode dout --flash_freq 80m --flash_size 16MB \
@@ -360,9 +357,9 @@ The device stores images in `/images/` directory with timestamp-based filenames:
 - 30ms delay between chunks to avoid overwhelming BLE stack
 - LED toggles green/blue during transfer for visual feedback
 
-### Web App Side (Bluetooth.tsx)
+### Web App Side (historical: sandboxsite's Bluetooth.tsx)
 
-**File:** `/Users/martinmu_1/repos/nakomis/sandboxsite/sandbox-app/src/components/pages/Bluetooth.tsx`
+The sandboxsite page described here was replaced by the panel in `../web/` (FLEET-4); see `docs/protocol.md` for the current protocol and `web/src/device/` for the client.
 
 **State Management:**
 - `imageList: string[]` - Available image filenames from device

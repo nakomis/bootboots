@@ -1,11 +1,17 @@
 {
   "acknowledged-issue-numbers": [
-    34892,
-    34892,
     34892
   ],
   "hosted-zone:account=975050268859:domainName=sandbox.nakomis.com:region=eu-west-2": {
     "Id": "/hostedzone/Z03586633NXU18LFL0JTL",
     "Name": "sandbox.nakomis.com."
+  },
+  "hosted-zone:account=000000000000:domainName=sandbox.nakomis.com:region=eu-west-2": {
+    "Id": "/hostedzone/CI-SYNTH-PLACEHOLDER",
+    "Name": "sandbox.nakomis.com."
+  },
+  "hosted-zone:account=000000000000:domainName=nakomis.com:region=eu-west-2": {
+    "Id": "/hostedzone/CI-SYNTH-PLACEHOLDER",
+    "Name": "nakomis.com."
   }
 }

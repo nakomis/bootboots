@@ -15,3 +15,14 @@ local-training/.venv/
 
 # Packaged model artefact from local training (~100 MB)
 local-training/model.tar.gz
+
+# Node / CDK (infra/ and web/)
+node_modules/
+cdk.out/
+cdk*.out/
+coverage/
+dist/
+*.tsbuildinfo
+
+# Per-session plans (Claude Code)
+PLAN.md
