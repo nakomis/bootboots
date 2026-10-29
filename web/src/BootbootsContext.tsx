@@ -1,6 +1,6 @@
 import { createContext, type ReactNode, useContext, useMemo, useRef } from 'react';
 import { shellCredentials } from './aws/credentials';
-import { type BootbootsConfig, configFor } from './config';
+import type { BootbootsConfig } from './config';
 import { type AwsServices, createAwsServices } from './services/aws';
 import { createFleetApi, type FleetApi } from './services/fleet';
 import { LiveUpdates } from './services/liveUpdates';
@@ -21,10 +21,13 @@ const Ctx = createContext<BootbootsContextValue | undefined>(undefined);
 
 export function BootbootsProvider({
   shell,
+  config: loadedConfig,
   children,
   overrides,
 }: {
   shell: ShellContext;
+  /** The runtime config.json, loaded by ConfigGate. */
+  config: BootbootsConfig;
   children: ReactNode;
   overrides?: Partial<Omit<BootbootsContextValue, 'shell'>>;
 }) {
@@ -32,9 +35,9 @@ export function BootbootsProvider({
   // changes, and always call the latest token/credential functions.
   const shellRef = useRef(shell);
   shellRef.current = shell;
-  const { env, region } = shell;
+  const { region } = shell;
   const sub = shell.user.sub;
-  const config = useMemo(() => overrides?.config ?? configFor(env), [overrides?.config, env]);
+  const config = overrides?.config ?? loadedConfig;
   const identityPoolId = config.identityPoolId;
 
   const services = useMemo(() => {

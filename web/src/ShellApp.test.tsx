@@ -1,9 +1,14 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import * as configModule from './config';
 import ShellApp from './ShellApp';
 import * as aws from './services/aws';
 import * as events from './services/events';
 import * as fleet from './services/fleet';
-import { shell } from './test/render';
+import { config, shell } from './test/render';
+
+beforeEach(() => {
+  vi.spyOn(configModule, 'loadConfig').mockResolvedValue(config);
+});
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -17,13 +22,13 @@ test('mounts under the shell basePath with its own router and tabs', async () =>
   expect(await screen.findByText('No events found above 50.0% confidence.')).toBeInTheDocument();
 });
 
-test('the Fleet link navigates the shell router without reloading', () => {
+test('the Fleet link navigates the shell router without reloading', async () => {
   vi.spyOn(events, 'getEvents').mockResolvedValue([]);
   window.history.replaceState({}, '', '/bootboots/device');
   const popstate = vi.fn();
   window.addEventListener('popstate', popstate);
   render(<ShellApp {...shell} />);
-  fireEvent.click(screen.getByRole('link', { name: 'Fleet' }));
+  fireEvent.click(await screen.findByRole('link', { name: 'Fleet' }));
   expect(window.location.pathname).toBe('/fleet/devices/BootBootsThing');
   expect(popstate).toHaveBeenCalled();
   window.removeEventListener('popstate', popstate);
@@ -65,4 +70,22 @@ test('a fresh ShellContext object from the shell does not rebuild services or re
   await fleetSpy.mock.results[0].value.listDevices();
   expect(latest).toHaveBeenCalled();
   vi.unstubAllGlobals();
+});
+
+test('shows the release version in the footer', async () => {
+  vi.spyOn(events, 'getEvents').mockResolvedValue([]);
+  window.history.replaceState({}, '', '/bootboots');
+  render(<ShellApp {...shell} />);
+  expect(await screen.findByRole('contentinfo')).toHaveTextContent('BootBoots v1.2.3 · sandbox');
+});
+
+test('renders a clear error instead of the app when config.json cannot be loaded', async () => {
+  vi.spyOn(configModule, 'loadConfig').mockRejectedValue(
+    new Error('config.json is missing required fields: region'),
+  );
+  render(<ShellApp {...shell} />);
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    'BootBoots could not load its configuration. config.json is missing required fields: region',
+  );
+  expect(screen.queryByRole('tab')).not.toBeInTheDocument();
 });

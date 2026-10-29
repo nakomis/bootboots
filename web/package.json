@@ -7,7 +7,6 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "build:sandbox": "VITE_BOOTBOOTS_IDENTITY_POOL_ID=$(aws ssm get-parameter --name /nakomis-bootboots/sandbox/identity-pool-id --query Parameter.Value --output text) && test -n \"$VITE_BOOTBOOTS_IDENTITY_POOL_ID\" && export VITE_BOOTBOOTS_IDENTITY_POOL_ID && pnpm build",
     "preview": "vite preview",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
