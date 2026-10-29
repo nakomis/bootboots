@@ -8,6 +8,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as sagemaker from 'aws-cdk-lib/aws-sagemaker';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import { Construct } from 'constructs';
+import { BOOTBOOTS } from './env-config';
 
 /**
  * Multiclass classification: one class per cat (alphabetical order).
@@ -35,7 +36,7 @@ export class AiTrainingStack extends cdk.Stack {
         const imagesBucket = s3.Bucket.fromBucketName(
             this,
             'ImagesBucket',
-            `bootboots-images-${this.account}-${this.region}`
+            BOOTBOOTS.imagesBucket(this.account, this.region)
         );
 
         // Create bucket for organized training data (folder structure by class)
@@ -115,7 +116,7 @@ export class AiTrainingStack extends cdk.Stack {
                 SOURCE_BUCKET: imagesBucket.bucketName,
                 SOURCE_PREFIX: 'catcam-training/',
                 TARGET_BUCKET: this.trainingBucket.bucketName,
-                CATADATA_TABLE: 'catadata',
+                CATADATA_TABLE: BOOTBOOTS.catadataTable,
                 CAT_CLASSES: CAT_CLASSES.join(','),
                 VALIDATION_SPLIT: '0.2', // 20% for validation
                 MAX_NOTBOOTS_SAMPLES: '600', // Cap NotBoots at ~3× Boots count to limit imbalance
@@ -133,7 +134,7 @@ export class AiTrainingStack extends cdk.Stack {
         dataPrepLambda.addToRolePolicy(new iam.PolicyStatement({
             effect: iam.Effect.ALLOW,
             actions: ['dynamodb:Scan'],
-            resources: [`arn:aws:dynamodb:${this.region}:${this.account}:table/catadata`],
+            resources: [`arn:aws:dynamodb:${this.region}:${this.account}:table/${BOOTBOOTS.catadataTable}`],
         }));
 
         // Log group for training trigger Lambda

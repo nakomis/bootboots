@@ -1,15 +1,14 @@
 import * as cdk from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
-import { BootbootsStack } from '../lib/bootboots-stack';
-import { githubSubjects, REPO } from '../lib/env-config';
+import { githubSubjects, LEGACY_PANEL_REPO } from '../lib/env-config';
+import { PanelStack } from '../lib/panel-stack';
 
 let t: Template;
 beforeAll(() => {
   const app = new cdk.App();
-  const stack = new BootbootsStack(app, 'Bootboots', {
+  const stack = new PanelStack(app, 'Bootboots', {
     env: { account: '123456789012', region: 'eu-west-2' },
     deployEnv: 'sandbox',
-    githubOidcProviderArn: 'arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com',
   });
   t = Template.fromStack(stack);
 });
@@ -72,13 +71,22 @@ test('authenticated role grants exactly what the pages use', () => {
     {
       Effect: 'Allow',
       Action: 'execute-api:Invoke',
-      Resource: 'arn:aws:execute-api:eu-west-2:123456789012:yn8jvnh99j/*/GET/events',
+      Resource: {
+        'Fn::Join': [
+          '',
+          [
+            'arn:aws:execute-api:eu-west-2:123456789012:',
+            { Ref: expect.stringMatching(/nakomisbootbootssandboxapiid/) },
+            '/*/GET/events',
+          ],
+        ],
+      },
     },
   ]);
 });
 
-test('CI role trusts both GitHub subject forms and can deploy and publish', () => {
-  expect(githubSubjects(REPO)).toEqual([
+test('old CI role still trusts nakomis-bootboots, both GitHub subject forms', () => {
+  expect(githubSubjects(LEGACY_PANEL_REPO)).toEqual([
     'repo:nakomis@1488244/nakomis-bootboots@1414620899:*',
     'repo:nakomis/nakomis-bootboots:*',
   ]);
@@ -89,7 +97,7 @@ test('CI role trusts both GitHub subject forms and can deploy and publish', () =
         Match.objectLike({
           Condition: {
             StringEquals: { 'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com' },
-            StringLike: { 'token.actions.githubusercontent.com:sub': githubSubjects(REPO) },
+            StringLike: { 'token.actions.githubusercontent.com:sub': githubSubjects(LEGACY_PANEL_REPO) },
           },
         }),
       ],
@@ -110,5 +118,12 @@ test('exports the identity pool id to SSM', () => {
   t.hasResourceProperties('AWS::SSM::Parameter', {
     Name: '/nakomis-bootboots/sandbox/identity-pool-id',
     Value: { Ref: 'IdentityPool' },
+  });
+});
+
+test('exports the catadata table name to SSM for the web panel', () => {
+  t.hasResourceProperties('AWS::SSM::Parameter', {
+    Name: '/nakomis-bootboots/sandbox/catadata-table',
+    Value: 'catadata',
   });
 });
