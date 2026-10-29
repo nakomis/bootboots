@@ -15,6 +15,8 @@
 #   4. Neither the house Wi-Fi SSID nor its password, fetched from SSM now (WIFI_PROFILE, default
 #      nakom.is-sandbox, where /Nakomis/Wifi/* lives) and handed to the scanner through its
 #      environment: never echoed, never on a command line, never on disk.
+#      IMAGE_CHECKS_NO_AWS=1 skips this one check (and only this one) where there are no AWS
+#      credentials, i.e. CI's compile job; publish-firmware.sh refuses to run with it set.
 #
 # Needs python3 and the AWS CLI.
 set -euo pipefail
@@ -29,17 +31,25 @@ version=${2:?$usage}
     exit 2
 }
 
-wifi_profile=${WIFI_PROFILE:-nakom.is-sandbox}
-ssid=$(aws ssm get-parameter --profile "$wifi_profile" --name /Nakomis/Wifi/SSID \
-    --query Parameter.Value --output text) || { echo "image-checks: can't read /Nakomis/Wifi/SSID (profile $wifi_profile)" >&2; exit 1; }
-password=$(aws ssm get-parameter --profile "$wifi_profile" --name /Nakomis/Wifi/Password --with-decryption \
-    --query Parameter.Value --output text) || { echo "image-checks: can't read /Nakomis/Wifi/Password (profile $wifi_profile)" >&2; exit 1; }
-if [ -n "${GITHUB_ACTIONS:-}" ]; then
-    echo "::add-mask::${ssid}"
-    echo "::add-mask::${password}"
+ssid= password= skip_wifi=
+if [ "${IMAGE_CHECKS_NO_AWS:-}" = 1 ]; then
+    # Only for builds with no AWS credentials (CI's compile job). Never set it for a publish:
+    # publish-firmware.sh refuses to run with it.
+    skip_wifi=1
+    echo "image-checks: IMAGE_CHECKS_NO_AWS=1: skipping the Wi-Fi credential check (no AWS); all other checks run" >&2
+else
+    wifi_profile=${WIFI_PROFILE:-nakom.is-sandbox}
+    ssid=$(aws ssm get-parameter --profile "$wifi_profile" --name /Nakomis/Wifi/SSID \
+        --query Parameter.Value --output text) || { echo "image-checks: can't read /Nakomis/Wifi/SSID (profile $wifi_profile)" >&2; exit 1; }
+    password=$(aws ssm get-parameter --profile "$wifi_profile" --name /Nakomis/Wifi/Password --with-decryption \
+        --query Parameter.Value --output text) || { echo "image-checks: can't read /Nakomis/Wifi/Password (profile $wifi_profile)" >&2; exit 1; }
+    if [ -n "${GITHUB_ACTIONS:-}" ]; then
+        echo "::add-mask::${ssid}"
+        echo "::add-mask::${password}"
+    fi
 fi
 
-BB_SSID=$ssid BB_PASSWORD=$password python3 - "$bin" "$version" <<'PY'
+BB_SKIP_WIFI=$skip_wifi BB_SSID=$ssid BB_PASSWORD=$password python3 -I - "$bin" "$version" <<'PY'
 import os, re, sys
 
 path, version = sys.argv[1], sys.argv[2]
@@ -65,7 +75,7 @@ for needle in (b"BootBootsThing", b"-ats.iot.", b".credentials.iot.", b"api.boot
         failures.append(f"the image contains a per-device/per-environment string ({needle.decode()})")
 
 # 4. The house Wi-Fi credentials: never print them.
-for name in ("SSID", "PASSWORD"):
+for name in () if os.environ.get("BB_SKIP_WIFI") else ("SSID", "PASSWORD"):
     value = os.environ.get(f"BB_{name}", "").encode()
     if not value:
         failures.append(f"no Wi-Fi {name.lower()} to check against")
@@ -76,6 +86,7 @@ if failures:
     for f in failures:
         print(f"image-checks: FAIL: {f}", file=sys.stderr)
     sys.exit(1)
+wifi = "Wi-Fi check skipped" if os.environ.get("BB_SKIP_WIFI") else "no Wi-Fi credentials"
 print(f"image-checks: OK: {os.path.basename(path)} is BootBoots {version}, {len(image)} bytes, "
-      "no PEM blocks, no per-device strings, no Wi-Fi credentials")
+      f"no PEM blocks, no per-device strings, {wifi}")
 PY

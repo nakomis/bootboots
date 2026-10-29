@@ -1,0 +1,9 @@
+# What scripts/provision.sh needs (BOOT-10), pinned. Make a venv once and point NVS_GEN_PYTHON at it:
+#
+#   python3 -m venv ~/.venvs/bootboots-prov && ~/.venvs/bootboots-prov/bin/pip install -r embedded/catcam/scripts/requirements-provision.txt
+#   export NVS_GEN_PYTHON=~/.venvs/bootboots-prov/bin/python
+#
+# esp-idf-nvs-partition-gen 0.1.9 is the version ESP-IDF 5.5 ships; esptool stays on 4.x, whose
+# command names (read_flash, write_flash, --after watchdog_reset) the scripts use.
+esp-idf-nvs-partition-gen==0.1.9
+esptool==4.12.0

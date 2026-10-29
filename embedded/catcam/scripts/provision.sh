@@ -26,9 +26,16 @@
 # disk. --image-only OUT copies the finished image to OUT (mode 0600; it holds the private key and
 # the Wi-Fi password: keep it private, delete it once flashed).
 #
-# AWS_PROFILE defaults to nakom.is-<env>. Needs the AWS CLI, PlatformIO (for esptool and its
-# Python) and a Python with ESP-IDF's NVS partition generator (esp_idf_nvs_partition_gen; the IDF
-# Python env under ~/.espressif has it, or set NVS_GEN_PYTHON).
+# AWS_PROFILE defaults to nakom.is-<env>. Needs the AWS CLI and a Python with ESP-IDF's NVS
+# partition generator, pinned (with esptool) in scripts/requirements-provision.txt:
+#
+#   python3 -m venv ~/.venvs/bootboots-prov && ~/.venvs/bootboots-prov/bin/pip install -r embedded/catcam/scripts/requirements-provision.txt
+#   export NVS_GEN_PYTHON=~/.venvs/bootboots-prov/bin/python
+#
+# NVS_GEN_PYTHON is used if set (and must work); otherwise the newest ESP-IDF Python env under
+# ~/.espressif, then python3, whichever has the module. esptool comes from that same Python if it has
+# it, else from PlatformIO. If PlatformIO's framework-espidf package is installed, ESP-IDF's own NVS
+# integrity check runs too, after scripts/prov_image.py's.
 set -euo pipefail
 umask 077
 
@@ -41,7 +48,7 @@ while [ $# -gt 0 ]; do
             image_only=$2
             shift 2
             ;;
-        -h | --help) sed -n '2,31p' "$0"; exit 0 ;;
+        -h | --help) sed -n '2,38p' "$0"; exit 0 ;;
         -*) echo "unknown option: $1" >&2; exit 2 ;;
         *) positional+=("$1"); shift ;;
     esac
@@ -83,27 +90,48 @@ prov_size=$(awk -F', *' '$1 == "prov" { print $5 }' "$table")
 [ -n "$prov_offset" ] && [ -n "$prov_size" ] || { echo "no prov partition in $table" >&2; exit 1; }
 [ -s "$root_ca" ] || { echo "missing $root_ca" >&2; exit 1; }
 
-pio_python="$HOME/.platformio/penv/bin/python"
-esptool="$HOME/.platformio/packages/tool-esptoolpy/esptool.py"
 nvs_gen_shim="$HOME/.platformio/packages/framework-espidf/components/nvs_flash/nvs_partition_generator/nvs_partition_gen.py"
-nvs_tool="$HOME/.platformio/packages/framework-espidf/components/nvs_flash/nvs_partition_tool/nvs_tool.py"
-gen_part="$HOME/.platformio/packages/framework-arduinoespressif32/tools/gen_esp32part.py"
+idf_nvs_tool_dir="$HOME/.platformio/packages/framework-espidf/components/nvs_flash/nvs_partition_tool"
 
-# A Python that has the NVS partition generator (the PlatformIO framework-espidf shim just runs
-# `python -m esp_idf_nvs_partition_gen`, so the module is what matters).
+# A Python that has the NVS partition generator (PlatformIO's framework-espidf copy of
+# nvs_partition_gen.py is only a shim for `python -m esp_idf_nvs_partition_gen`, so the module is
+# what matters).
+has_nvs_gen() { "$1" -c 'import esp_idf_nvs_partition_gen' 2> /dev/null; }
 nvs_python=
-candidates=("${NVS_GEN_PYTHON:-}")
-idf_pythons=("$HOME"/.espressif/python_env/idf*/bin/python)
-for ((i = ${#idf_pythons[@]} - 1; i >= 0; i--)); do candidates+=("${idf_pythons[i]}"); done   # newest IDF first
-candidates+=(python3)
-for candidate in "${candidates[@]}"; do
-    [ -n "$candidate" ] && [ -x "$candidate" ] || command -v "$candidate" > /dev/null 2>&1 || continue
-    if "$candidate" -c 'import esp_idf_nvs_partition_gen' 2> /dev/null; then nvs_python=$candidate; break; fi
-done
+if [ -n "${NVS_GEN_PYTHON:-}" ]; then
+    has_nvs_gen "$NVS_GEN_PYTHON" || {
+        echo "NVS_GEN_PYTHON=$NVS_GEN_PYTHON can't import esp_idf_nvs_partition_gen: pip install -r $here/requirements-provision.txt" >&2
+        exit 1
+    }
+    nvs_python=$NVS_GEN_PYTHON
+else
+    candidates=()
+    idf_pythons=("$HOME"/.espressif/python_env/idf*/bin/python)
+    for ((i = ${#idf_pythons[@]} - 1; i >= 0; i--)); do candidates+=("${idf_pythons[i]}"); done   # newest IDF first
+    candidates+=(python3)
+    for candidate in "${candidates[@]}"; do
+        if has_nvs_gen "$candidate"; then nvs_python=$candidate; break; fi
+    done
+fi
 [ -n "$nvs_python" ] || {
-    echo "no Python with esp_idf_nvs_partition_gen: pip install esp-idf-nvs-partition-gen, or set NVS_GEN_PYTHON" >&2
+    echo "no Python with esp_idf_nvs_partition_gen: create one with" >&2
+    echo "  python3 -m venv ~/.venvs/bootboots-prov && ~/.venvs/bootboots-prov/bin/pip install -r $here/requirements-provision.txt" >&2
+    echo "and set NVS_GEN_PYTHON=~/.venvs/bootboots-prov/bin/python" >&2
     exit 1
 }
+
+# esptool: from the same Python if it has it, else PlatformIO's (only needed to flash).
+esptool=()
+if [ -z "$image_only" ]; then
+    if "$nvs_python" -c 'import esptool' 2> /dev/null; then
+        esptool=("$nvs_python" -m esptool)
+    elif [ -f "$HOME/.platformio/packages/tool-esptoolpy/esptool.py" ]; then
+        esptool=("$HOME/.platformio/penv/bin/python" "$HOME/.platformio/packages/tool-esptoolpy/esptool.py")
+    else
+        echo "no esptool: pip install -r $here/requirements-provision.txt into NVS_GEN_PYTHON's environment" >&2
+        exit 1
+    fi
+fi
 
 dir=$(mktemp -d)
 trap 'rm -rf "$dir"' EXIT
@@ -129,7 +157,7 @@ cp "$root_ca" "$dir/root_ca"
 # Normalise (the CLI's text output ends in a newline), check the sizes against what NVS and
 # ESP-IDF's Wi-Fi accept, and write the generator's CSV: every value as a file, so nothing secret
 # is in the CSV itself or needs quoting.
-python3 - "$dir" <<'PY'
+python3 -I - "$dir" <<'PY'
 import csv, os, sys
 
 d = sys.argv[1]
@@ -169,43 +197,10 @@ else
     "$nvs_python" -m esp_idf_nvs_partition_gen generate "$dir/prov.csv" "$dir/prov.bin" "$prov_size" > /dev/null
 fi
 
-# Read the image back with ESP-IDF's NVS parser: right size, passes its integrity check (CRCs,
-# a free page), and every key is in the "prov" namespace. Prints key names and sizes, never values.
-"$pio_python" - "$dir/prov.bin" "$prov_size" "$(dirname "$nvs_tool")" <<'PY'
-import contextlib, io, os, sys
-
-image, size, tool_dir = sys.argv[1], int(sys.argv[2], 0), sys.argv[3]
-actual = os.path.getsize(image)
-if actual != size:
-    sys.exit(f"provision: the image is {actual} bytes, not the partition's {size}")
-want = {"thing", "wifi_ssid", "wifi_pass", "iot_endpoint", "cred_endpoint", "api_host", "role_alias",
-        "region", "env", "root_ca", "cert", "key"}
-sys.path.insert(0, tool_dir)
-import nvs_check, nvs_logger, nvs_parser  # noqa: E402
-
-nvs = nvs_parser.NVS_Partition(os.path.basename(image), bytearray(open(image, "rb").read()))
-log = nvs_logger.NVS_Logger(color="always")
-report = io.StringIO()
-with contextlib.redirect_stdout(report):
-    nvs_check.integrity_check(nvs, log)
-if nvs_logger.NVS_Logger.ansi["red"] in report.getvalue() or nvs_logger.NVS_Logger.ansi["yellow"] in report.getvalue():
-    sys.exit("provision: the image fails ESP-IDF's NVS integrity check")
-
-namespaces, sizes = {}, {}
-for page in nvs.pages:
-    for entry in page.entries:
-        if entry.state == "Written" and entry.metadata["namespace"] == 0:
-            namespaces[entry.data["value"]] = entry.key
-for page in nvs.pages:
-    for entry in page.entries:
-        if entry.state == "Written" and entry.metadata["namespace"] != 0 and entry.metadata["type"] == "string":
-            if namespaces.get(entry.metadata["namespace"]) == "prov":
-                sizes[entry.key] = entry.data["size"]
-missing = want - set(sizes)
-if missing:
-    sys.exit(f"provision: the image lacks {', '.join(sorted(missing))}")
-print(f"provision: image OK: {actual} bytes, namespace 'prov', keys {', '.join(sorted(sizes))}")
-PY
+# Read the image back (page and entry CRCs, a free page, every key in "prov"; names only), plus
+# ESP-IDF's own integrity check when PlatformIO's framework-espidf is installed. Fails unless the
+# checks return True.
+python3 -I "$here/prov_image.py" verify "$dir/prov.bin" "$prov_size" "$idf_nvs_tool_dir"
 
 if [ -n "$image_only" ]; then
     cp "$dir/prov.bin" "$image_only"
@@ -215,14 +210,13 @@ if [ -n "$image_only" ]; then
 fi
 
 # The device must already have the BOOT-10 partition table, or this would land in spiffs.
-"$pio_python" "$esptool" --chip esp32s3 --port "$port" --after no_reset \
+"${esptool[@]}" --chip esp32s3 --port "$port" --after no_reset \
     read_flash 0x8000 0xc00 "$dir/table.bin" > /dev/null
-"$pio_python" "$gen_part" --quiet "$dir/table.bin" "$dir/table.csv"
-awk -F, -v off="$prov_offset" '$1 == "prov" && $3 == "nvs" && tolower($4) == tolower(off) { found = 1 } END { exit !found }' "$dir/table.csv" || {
+python3 -I "$here/prov_image.py" table "$dir/table.bin" "$prov_offset" || {
     echo "the device's partition table has no prov partition at ${prov_offset}: flash the BOOT-10 partition table first (docs/provisioning.md)" >&2
     exit 1
 }
 
-"$pio_python" "$esptool" --chip esp32s3 --port "$port" --baud 921600 --after watchdog_reset \
+"${esptool[@]}" --chip esp32s3 --port "$port" --baud 921600 --after watchdog_reset \
     write_flash "$prov_offset" "$dir/prov.bin"
 echo "provisioned ${thing} (${env}) at ${prov_offset}"

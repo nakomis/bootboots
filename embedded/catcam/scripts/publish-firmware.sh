@@ -38,6 +38,8 @@ case "$env" in sandbox | prod) ;; *) echo "env must be sandbox or prod" >&2; exi
 export AWS_PROFILE=${AWS_PROFILE:-nakom.is-${env}}
 export AWS_REGION=${AWS_REGION:-eu-west-2}
 
+[ -z "${IMAGE_CHECKS_NO_AWS:-}" ] || { echo "IMAGE_CHECKS_NO_AWS is set: a publish must run every image check" >&2; exit 2; }
+
 here=$(cd "$(dirname "$0")" && pwd)
 "$here/image-checks.sh" "$bin" "$version"
 
@@ -46,12 +48,20 @@ object="BootBoots/${version}/firmware.bin"
 sha=$(shasum -a 256 "$bin" | cut -d' ' -f1)
 size=$(wc -c < "$bin" | tr -d ' ')
 
-if existing=$(aws s3api head-object --bucket "$bucket" --key "$object" --query 'Metadata.sha256' --output text 2> /dev/null); then
+# Is this version already there? Only "not found" means go ahead: AccessDenied, expired
+# credentials or a network failure stop here rather than being taken for "not published".
+errfile=$(mktemp)
+trap 'rm -f "$errfile"' EXIT
+if existing=$(aws s3api head-object --bucket "$bucket" --key "$object" --query 'Metadata.sha256' --output text 2> "$errfile"); then
     if [ "$existing" = "$sha" ]; then
         echo "BootBoots ${version} is already published to ${env} with these bytes"
         exit 0
     fi
     echo "s3://${bucket}/${object} already exists with other bytes: a published version is never replaced" >&2
+    exit 1
+elif ! grep -q -E '\((404|NotFound|NoSuchKey)\)|Not Found' "$errfile"; then
+    echo "can't tell whether s3://${bucket}/${object} exists (profile ${AWS_PROFILE}): not publishing" >&2
+    sed 's/^/  /' "$errfile" >&2
     exit 1
 fi
 
