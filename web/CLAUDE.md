@@ -45,5 +45,5 @@ The panel's stack is one of several in the repo's single CDK app (`infra/`); nev
 Sources go in `docs/architecture/*.drawio` at the repo root — SVGs are auto-regenerated on commit by `githooks/` (install with `scripts/install-hooks.sh`).
 
 ```bash
-git config core.hooksPath .githooks
+./scripts/install-hooks.sh   # from the repo root
 ```

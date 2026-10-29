@@ -15,7 +15,7 @@ const deployEnv = npmEnvironment;
 const config = envConfig(deployEnv);
 
 // The account comes from the profile the deploy runs under, never a literal.
-const env = { account: process.env.CDK_DEFAULT_ACCOUNT, region: process.env.CDK_DEFAULT_REGION ?? 'eu-west-2' };
+const env = { account: process.env.CDK_DEFAULT_ACCOUNT, region: config.region };
 
 const app = new cdk.App();
 

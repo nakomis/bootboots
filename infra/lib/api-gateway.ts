@@ -134,7 +134,9 @@ const inferLambdaLogGroup = new logs.LogGroup(this, 'BootBootsInferLambdaLogGrou
         environment: {
             NOTIFICATION_EMAIL: config.notificationEmail,
             SENDER_EMAIL: config.notificationEmail,
-            NOTIFICATION_PHONE: process.env.NOTIFICATION_PHONE ?? '',
+            // SMS is off (it is empty in the deployed Lambda too). It used to come from the deployer's
+            // shell, so a deploy from CI would silently blank it; turning SMS on needs an SSM-backed number.
+            NOTIFICATION_PHONE: '',
         },
         bundling: {
             minify: true,

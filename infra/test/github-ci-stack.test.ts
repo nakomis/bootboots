@@ -25,7 +25,7 @@ test('subjects pin the bootboots repo by id and by name', () => {
 
 test.each([
   ['sandbox' as const, githubSubjects(REPO)],
-  ['prod' as const, githubSubjects(REPO, 'ref:refs/heads/main')],
+  ['prod' as const, [...githubSubjects(REPO, 'ref:refs/heads/main'), ...githubSubjects(REPO, 'environment:prod')]],
 ])('%s role trusts the right refs only', (deployEnv, subjects) => {
   synth(deployEnv).hasResourceProperties('AWS::IAM::Role', {
     RoleName: `nakomis-bootboots-github-ci-${deployEnv}`,

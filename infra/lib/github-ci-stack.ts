@@ -16,7 +16,10 @@ export interface GithubCiStackProps extends cdk.StackProps {
  * record deployments in the shared tracker (which allow-lists the role in nakomis-infra).
  *
  * Sandbox trusts any ref of the repository (PRs run as `pull_request`; forks get no OIDC token).
- * Prod trusts only `main`: only Martin merges to main.
+ * Prod trusts only `main`: only Martin merges to main. A job that names a GitHub environment (the
+ * shared cdk-deploy and deploy-static workflows do) gets the subject `environment:<name>` instead of
+ * its ref, so prod also trusts `environment:prod`; that environment must allow deployments from
+ * `main` only (its deployment-branch rule), which keeps the 'main only' guarantee.
  */
 export class GithubCiStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: GithubCiStackProps) {
@@ -38,7 +41,9 @@ export class GithubCiStack extends cdk.Stack {
         StringEquals: { 'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com' },
         StringLike: {
           'token.actions.githubusercontent.com:sub':
-            deployEnv === 'prod' ? githubSubjects(REPO, 'ref:refs/heads/main') : githubSubjects(REPO),
+            deployEnv === 'prod'
+              ? [...githubSubjects(REPO, 'ref:refs/heads/main'), ...githubSubjects(REPO, 'environment:prod')]
+              : githubSubjects(REPO),
         },
       }),
       // Sync to the shell bucket's remotes/bootboots/ and invalidate CloudFront: the shell's own policy.

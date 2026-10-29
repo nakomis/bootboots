@@ -10,6 +10,8 @@ export function isDeployEnv(value: string | undefined): value is DeployEnv {
 }
 
 export interface EnvConfig {
+  /** Every stack's region. Not CDK_DEFAULT_REGION: with no AWS config (CI) the CLI sets that to us-east-1. */
+  region: string;
   /** Route 53 zone the API's custom domain is created in. */
   parentDomain: string;
   /** Custom domain of the BootBoots API (inference, video upload, events). */
@@ -26,6 +28,7 @@ export interface EnvConfig {
 
 const CONFIG: Record<DeployEnv, EnvConfig> = {
   sandbox: {
+    region: 'eu-west-2',
     parentDomain: 'sandbox.nakomis.com',
     apiDomain: 'api.bootboots.sandbox.nakomis.com',
     imagesBucketCorsOrigins: ['https://sandbox.nakomis.com', 'https://app.sandbox.nakomis.com', 'http://localhost:3000'],
@@ -39,6 +42,7 @@ const CONFIG: Record<DeployEnv, EnvConfig> = {
     firmwareBucket: 'nakomis-firmware-sandbox',
   },
   prod: {
+    region: 'eu-west-2',
     parentDomain: 'nakomis.com',
     apiDomain: 'api.bootboots.nakomis.com',
     imagesBucketCorsOrigins: ['https://nakomis.com', 'https://app.nakomis.com'],

@@ -105,7 +105,7 @@ The CI role is created by this repo's own stack, so the **first deploy must be r
 By hand:
 
 ```bash
-cd infra && pnpm deploy-sandbox
+cd infra && pnpm diff-sandbox NakomisBootbootsStack && pnpm deploy-sandbox NakomisBootbootsStack
 cd ../web && AWS_PROFILE=nakom.is-sandbox pnpm build:sandbox
 aws s3 sync dist/assets s3://nakomis-shell-sandbox/remotes/bootboots/assets/ --cache-control "public,max-age=31536000,immutable"
 aws s3 sync dist s3://nakomis-shell-sandbox/remotes/bootboots/ --exclude "assets/*" --cache-control no-cache
