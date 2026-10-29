@@ -120,6 +120,10 @@ describe('AI stack', () => {
     });
   });
 
+  test('sandbox refuses to synth without a model (it would remove the live endpoint)', () => {
+    expect(() => new AiTrainingStack(newApp(), 'Ai', { env, deployEnv: 'sandbox', model: null })).toThrow(/must have a model/);
+  });
+
   test('training lives in sandbox only', () => {
     sandbox.resourceCountIs('AWS::Lambda::Function', 2);
     const prod = Template.fromStack(new AiTrainingStack(newApp(), 'Ai', { env, deployEnv: 'prod', model: null }));

@@ -32,6 +32,10 @@ test.each([
   [{ sandbox: { ...good, label: 'has spaces' }, prod: null }, /label/],
   [{ sandbox: { ...good, label: 'x'.repeat(41) }, prod: null }, /label/],
   [{ sandbox: { artefact: good.artefact }, prod: null }, /label/],
+  [{ sandbox: { ...good, label: '20991231T000000' }, prod: null }, /directory in its artefact path/],
+  [{ sandbox: good, prod: null, staging: null }, /unknown environment/],
+  [null, /must be an object/],
+  [[good], /must be an object/],
 ])('rejects %j', (json, message) => {
   expect(() => parseModelFile(json)).toThrow(message);
 });
