@@ -75,7 +75,7 @@ ai/
 
 ```bash
 cd infra
-AWS_PROFILE=nakom.is-sandbox npx cdk deploy BootBootsAiTrainingStack
+pnpm diff-sandbox BootBootsAiTrainingStack && pnpm deploy-stack-sandbox BootBootsAiTrainingStack
 ```
 
 This creates:
@@ -133,9 +133,9 @@ AWS_PROFILE=nakom.is-sandbox aws sagemaker describe-training-job \
   --query 'ModelArtifacts.S3ModelArtifacts' \
   --output text
 
-# Deploy with the model
-AWS_PROFILE=nakom.is-sandbox npx cdk deploy BootBootsAiTrainingStack \
-  --context modelDataUrl=s3://bootboots-models-975050268859/training-output/<job-name>/output/model.tar.gz
+# Serve it: point infra/model.json's sandbox entry at the artefact (BOOT-9), commit, deploy.
+#   "sandbox": { "artefact": "training-output/<job-name>/output/model.tar.gz", "label": "<job-name>" }
+cd infra && pnpm diff-sandbox BootBootsAiTrainingStack && pnpm deploy-stack-sandbox BootBootsAiTrainingStack
 ```
 
 ## Training Configuration

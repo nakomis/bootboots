@@ -47,7 +47,7 @@ cd web && pnpm test && pnpm lint     # ≥70% lines
 ## Deploying
 
 ```bash
-cd infra && pnpm diff-sandbox NakomisBootbootsStack && pnpm deploy-sandbox NakomisBootbootsStack
+cd infra && pnpm diff-sandbox NakomisBootbootsStack && pnpm deploy-stack-sandbox NakomisBootbootsStack
 ```
 
 The panel's stack is one of several in the repo's single CDK app (`infra/`); never deploy `--all` (see `infra/CLAUDE.md`). CI deploys it and publishes the remote on merge to `main` (`.github/workflows/ci.yml` at the repo root).

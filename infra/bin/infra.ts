@@ -6,6 +6,7 @@ import { AiTrainingStack } from '../lib/ai-training-stack';
 import { PanelStack } from '../lib/panel-stack';
 import { GithubCiStack } from '../lib/github-ci-stack';
 import { envConfig, isDeployEnv } from '../lib/env-config';
+import { modelFor } from '../lib/model-config';
 
 const npmEnvironment = process.env.NPM_ENVIRONMENT;
 if (!isDeployEnv(npmEnvironment)) {
@@ -23,11 +24,13 @@ const apiGateway = new ApiGatewayStack(app, 'BootBootsApiGatewayStack', { env, d
 
 new IotDeviceStack(app, 'BootBootsIoTStack', { env, deployEnv, api: apiGateway.api });
 
-// Pass modelDataUrl context to deploy with a pre-trained model:
-//   pnpm deploy-sandbox BootBootsAiTrainingStack --context modelDataUrl=s3://bucket/path/model.tar.gz
-// Without it the stack has no endpoint, and deploying it deletes the live one.
-const modelDataUrl = app.node.tryGetContext('modelDataUrl');
-new AiTrainingStack(app, 'BootBootsAiTrainingStack', { env, modelDataUrl });
+// The endpoint serves the model infra/model.json names for this environment (BOOT-9).
+new AiTrainingStack(app, 'BootBootsAiTrainingStack', {
+    env,
+    deployEnv,
+    model: modelFor(deployEnv),
+    description: `BootBoots SageMaker endpoint${deployEnv === 'sandbox' ? ' and training pipeline' : ''} (${deployEnv})`,
+});
 
 // The web panel's AWS access. Named before the repos merged; renaming would recreate the identity pool.
 const panel = new PanelStack(app, 'NakomisBootbootsStack', {

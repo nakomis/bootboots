@@ -11,11 +11,13 @@
     "synth-prod": "NPM_ENVIRONMENT=prod cdk synth --profile nakom.is-prod --all",
     "diff-sandbox": "NPM_ENVIRONMENT=sandbox cdk diff --profile nakom.is-sandbox",
     "diff-prod": "NPM_ENVIRONMENT=prod cdk diff --profile nakom.is-prod",
-    "deploy-sandbox": "NPM_ENVIRONMENT=sandbox cdk deploy --profile nakom.is-sandbox",
-    "deploy-prod": "NPM_ENVIRONMENT=prod cdk deploy --profile nakom.is-prod",
+    "deploy-sandbox": "NPM_ENVIRONMENT=sandbox cdk deploy --profile nakom.is-sandbox --all",
+    "deploy-prod": "NPM_ENVIRONMENT=prod cdk deploy --profile nakom.is-prod --all",
+    "deploy-stack-sandbox": "NPM_ENVIRONMENT=sandbox cdk deploy --profile nakom.is-sandbox",
+    "deploy-stack-prod": "NPM_ENVIRONMENT=prod cdk deploy --profile nakom.is-prod",
     "ci-synth-sandbox": "NPM_ENVIRONMENT=sandbox CDK_DEFAULT_ACCOUNT=000000000000 cdk synth --all --output cdk-ci-sandbox.out",
     "ci-synth-prod": "NPM_ENVIRONMENT=prod CDK_DEFAULT_ACCOUNT=000000000000 cdk synth --all --output cdk-ci-prod.out",
-    "ci-deploy-sandbox": "NPM_ENVIRONMENT=sandbox cdk deploy NakomisBootbootsStack BootBootsGithubCiStack --exclusively --require-approval never --output cdk-deploy.out"
+    "ci-deploy-sandbox": "NPM_ENVIRONMENT=sandbox cdk deploy --all --require-approval never --output cdk-deploy.out"
   },
   "dependencies": {
     "@aws-lambda-powertools/logger": "^2.27.0",

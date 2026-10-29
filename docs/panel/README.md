@@ -130,7 +130,7 @@ The CI role is created by this repo's own stack, so the **first deploy must be r
 By hand:
 
 ```bash
-cd infra && pnpm diff-sandbox NakomisBootbootsStack && pnpm deploy-sandbox NakomisBootbootsStack
+cd infra && pnpm diff-sandbox NakomisBootbootsStack && pnpm deploy-stack-sandbox NakomisBootbootsStack
 cd ../web && pnpm build
 AWS_PROFILE=nakom.is-sandbox RELEASE_VERSION=0.0.0-local ../scripts/publish-web.sh sandbox dist
 ```
