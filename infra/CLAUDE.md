@@ -16,6 +16,8 @@ export AWS_PROFILE=nakom.is-sandbox
 
 **Docker must be running** before deploying - CDK uses Docker to bundle NodejsFunction Lambda assets. If you see a Docker daemon connection error, ask the user to open Docker Desktop and retry.
 
+**Never `cdk deploy --all`, and don't deploy `BootBootsAiTrainingStack` casually.** The live `bootboots` SageMaker endpoint is owned by `local-training/deploy_model.sh`, which swaps in timestamped models outside CDK. Deploying the stack without `--context modelDataUrl=…` destroys the endpoint; deploying it with a URL reverts the endpoint to CDK's own `bootboots-cat-classifier` model. Deploy stacks by name (e.g. `cdk deploy BootBootsApiGatewayStack`), and always `cdk diff` first.
+
 ## IoT Resources
 
 The `lib/iot-device.ts` stack uses `ThingWithCert` from `cdk-iot-core-certificates-v3` and creates:
