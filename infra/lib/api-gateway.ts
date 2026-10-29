@@ -32,13 +32,15 @@ export class ApiGatewayStack extends cdk.Stack {
         versioned: false,
         publicReadAccess: false,
         blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-        removalPolicy: cdk.RemovalPolicy.DESTROY,
+        // Years of cat photos and labelled training data: never deleted with the stack (BOOT-8).
+        // Turning autoDeleteObjects off is safe: CDK's handler only empties a bucket that still
+        // carries the aws-cdk:auto-delete-objects tag, and the bucket update removes it first.
+        removalPolicy: cdk.RemovalPolicy.RETAIN,
         cors: [{
             allowedOrigins: config.imagesBucketCorsOrigins,
             allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.PUT, s3.HttpMethods.POST],
             allowedHeaders: ['*'],
         }],
-        autoDeleteObjects: true,
     });
 
     // DynamoDB table for catcam inference events (near-misses and detections)
@@ -46,7 +48,7 @@ export class ApiGatewayStack extends cdk.Stack {
         tableName: 'catcam-events',
         partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
         billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-        removalPolicy: cdk.RemovalPolicy.DESTROY,
+        removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
     catcamEventsTable.addGlobalSecondaryIndex({
         indexName: 'timestamp-index',

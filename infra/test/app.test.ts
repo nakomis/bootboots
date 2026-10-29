@@ -51,6 +51,12 @@ describe.each(['sandbox', 'prod'] as const)('%s device stacks', (deployEnv: Depl
     });
   });
 
+  test('data survives the stack: images bucket and events table are retained, never auto-emptied', () => {
+    apiT.hasResource('AWS::S3::Bucket', { DeletionPolicy: 'Retain', UpdateReplacePolicy: 'Retain' });
+    apiT.hasResource('AWS::DynamoDB::Table', { DeletionPolicy: 'Retain', UpdateReplacePolicy: 'Retain' });
+    apiT.resourceCountIs('Custom::S3AutoDeleteObjects', 0);
+  });
+
   test('no sandbox domain leaks into prod', () => {
     const json = JSON.stringify(apiT.toJSON());
     if (deployEnv === 'prod') expect(json).not.toContain('sandbox.nakomis.com');
