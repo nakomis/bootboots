@@ -1,22 +1,50 @@
 # Claude Code Guidelines for BootBoots Infrastructure
 
-## AWS Configuration
+One CDK app (BOOT-8) holds every BootBoots stack, deployed per environment.
 
-Always use the sandbox profile when working with AWS CLI:
+## Tooling
 
-```bash
-export AWS_PROFILE=nakom.is-sandbox
-```
+- **pnpm 11** (`packageManager` in `package.json`); `lambda/infer-lambda` is a workspace member with its own deps (it bundles `@anthropic-ai/sdk` 0.39). `pnpm install` from `infra/`.
+- `aws-cdk-lib` 2.257 and a current `aws-cdk` CLI. esbuild is a local dev dependency, so Lambdas bundle without Docker; the training-script asset (`BootBootsAiTrainingStack`) still bundles in Docker, so **Docker must be running** for that stack.
+- `pnpm build` type-checks, `pnpm test` runs the Jest suite (coverage gate 70%).
 
-## File Locations
+## Environments
 
-- **CDK stacks**: `lib/` directory
+- `NPM_ENVIRONMENT` must be `sandbox` or `prod`; the scripts set it. The **account comes from the profile** (`nakom.is-sandbox` / `nakom.is-prod`), never a literal.
+- Everything that differs per environment is in `lib/env-config.ts` (domains, CORS origins, SSM paths, firmware bucket). Add new per-environment values there, not in stacks.
+- `ci-synth-sandbox` / `ci-synth-prod` synthesise as account `000000000000` with no AWS access: `cdk.context.json` holds placeholder hosted-zone answers for that account (`CI-SYNTH-PLACEHOLDER`). A new context lookup needs a placeholder entry too, or CI synth fails.
+
+## Stacks
+
+| Stack | What |
+|---|---|
+| `BootBootsApiGatewayStack` | API (`api.bootboots.{sandbox.}nakomis.com`), inference/events/video Lambdas, images bucket, `catcam-events` |
+| `BootBootsIoTStack` | `BootBootsThing`, its certificate (SSM `/BootsBoots/*`), role alias, IoT policies |
+| `BootBootsAiTrainingStack` | SageMaker endpoint and training pipeline (see the warning below) |
+| `NakomisBootbootsStack` | Web panel identity pool and role (`lib/panel-stack.ts`; the name predates the merge, and renaming it would recreate the identity pool), plus nakomis-bootboots' old CI role until that repo is archived |
+| `BootBootsGithubCiStack` | `nakomis-bootboots-github-ci-{env}`: sandbox trusts any ref of `nakomis/bootboots`, prod only `main` |
+
+The stacks publish what the panel and `scripts/publish-web.sh` read under `/nakomis-bootboots/{env}/` (`api-id`, `images-bucket`, `events-api-url`, `catcam-thing`, `catadata-table`, `identity-pool-id`). The panel stack reads `api-id`, so deploy the API stack first in a new environment.
+
+No `MH-Version` tag: a per-release tag on every resource makes every deploy update everything (PIPE-8). `MH-Project=bootboots` only.
+
+## Scripts
+
+| Script | |
+|---|---|
+| `pnpm diff-sandbox <Stack>` / `pnpm diff-prod <Stack>` | Diff one stack (always first) |
+| `pnpm deploy-sandbox <Stack>` / `pnpm deploy-prod <Stack>` | Deploy by stack name |
+| `pnpm synth-sandbox` / `pnpm synth-prod` | Synth everything with real credentials |
+| `pnpm ci-synth-sandbox` / `pnpm ci-synth-prod` | Synth with no AWS access (CI) |
+| `pnpm ci-deploy-sandbox` | What CI deploys on merge to main |
+
+## Data
+
+The images bucket, `catcam-events`, and the training and model buckets are `RETAIN`: deleting or replacing a stack never deletes them. `catadata` (labels) isn't in any stack. A full copy of the buckets and both tables as of 29 Oct 2026 is on Leia: `/Volumes/share/bootbootsbackup/bootboots-2026-10-29.zip`.
 
 ## CDK Deployment Requirements
 
-**Docker must be running** before deploying - CDK uses Docker to bundle NodejsFunction Lambda assets. If you see a Docker daemon connection error, ask the user to open Docker Desktop and retry.
-
-**Never `cdk deploy --all`, and don't deploy `BootBootsAiTrainingStack` casually.** The live `bootboots` SageMaker endpoint is owned by `local-training/deploy_model.sh`, which swaps in timestamped models outside CDK. Deploying the stack without `--context modelDataUrl=…` destroys the endpoint; deploying it with a URL reverts the endpoint to CDK's own `bootboots-cat-classifier` model. Deploy stacks by name (e.g. `cdk deploy BootBootsApiGatewayStack`), and always `cdk diff` first.
+**Never `cdk deploy --all`, and don't deploy `BootBootsAiTrainingStack` casually.** The live `bootboots` SageMaker endpoint is owned by `local-training/deploy_model.sh`, which swaps in timestamped models outside CDK. Deploying the stack without `--context modelDataUrl=…` destroys the endpoint; deploying it with a URL reverts the endpoint to that model. Deploy stacks by name, and always diff first. (BOOT-9 replaces this with a committed `model.json`.)
 
 ## IoT Resources
 

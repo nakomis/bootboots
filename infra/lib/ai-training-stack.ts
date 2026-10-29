@@ -1,3 +1,4 @@
+import { spawnSync } from 'child_process';
 import * as path from 'path';
 import * as cdk from 'aws-cdk-lib';
 import * as s3 from 'aws-cdk-lib/aws-s3';
@@ -8,6 +9,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as sagemaker from 'aws-cdk-lib/aws-sagemaker';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import { Construct } from 'constructs';
+import { BOOTBOOTS } from './env-config';
 
 /**
  * Multiclass classification: one class per cat (alphabetical order).
@@ -35,7 +37,7 @@ export class AiTrainingStack extends cdk.Stack {
         const imagesBucket = s3.Bucket.fromBucketName(
             this,
             'ImagesBucket',
-            `bootboots-images-${this.account}-${this.region}`
+            BOOTBOOTS.imagesBucket(this.account, this.region)
         );
 
         // Create bucket for organized training data (folder structure by class)
@@ -78,13 +80,21 @@ export class AiTrainingStack extends cdk.Stack {
         imagesBucket.grantRead(this.sagemakerRole);
 
         // Package the training script as a tar.gz CDK asset uploaded to the
-        // bootstrap bucket on every `cdk deploy`. Docker bundling is used so
-        // that SageMaker's TF container receives a proper tar.gz (it does not
-        // handle plain zip files). CDK re-bundles automatically when the
-        // content hash of infra/training/ changes.
+        // bootstrap bucket on every `cdk deploy`, so that SageMaker's TF container
+        // receives a proper tar.gz (it does not handle plain zip files). CDK
+        // re-bundles automatically when the content hash of infra/training/ changes.
+        // Bundled with the local tar when there is one (no Docker, and no image pull
+        // that public ECR rate-limits in CI); Docker is the fallback.
+        const trainingDir = path.join(__dirname, '../training');
         const trainingScriptAsset = new s3assets.Asset(this, 'TrainingScriptAsset', {
-            path: path.join(__dirname, '../training'),
+            path: trainingDir,
             bundling: {
+                local: {
+                    tryBundle(outputDir: string): boolean {
+                        const tar = spawnSync('tar', ['-czf', path.join(outputDir, 'sourcedir.tar.gz'), '-C', trainingDir, '.']);
+                        return tar.status === 0;
+                    },
+                },
                 image: cdk.DockerImage.fromRegistry('public.ecr.aws/docker/library/alpine:3.18'),
                 command: [
                     'sh', '-c',
@@ -115,7 +125,7 @@ export class AiTrainingStack extends cdk.Stack {
                 SOURCE_BUCKET: imagesBucket.bucketName,
                 SOURCE_PREFIX: 'catcam-training/',
                 TARGET_BUCKET: this.trainingBucket.bucketName,
-                CATADATA_TABLE: 'catadata',
+                CATADATA_TABLE: BOOTBOOTS.catadataTable,
                 CAT_CLASSES: CAT_CLASSES.join(','),
                 VALIDATION_SPLIT: '0.2', // 20% for validation
                 MAX_NOTBOOTS_SAMPLES: '600', // Cap NotBoots at ~3× Boots count to limit imbalance
@@ -133,7 +143,7 @@ export class AiTrainingStack extends cdk.Stack {
         dataPrepLambda.addToRolePolicy(new iam.PolicyStatement({
             effect: iam.Effect.ALLOW,
             actions: ['dynamodb:Scan'],
-            resources: [`arn:aws:dynamodb:${this.region}:${this.account}:table/catadata`],
+            resources: [`arn:aws:dynamodb:${this.region}:${this.account}:table/${BOOTBOOTS.catadataTable}`],
         }));
 
         // Log group for training trigger Lambda

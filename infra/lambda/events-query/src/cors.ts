@@ -1,11 +1,8 @@
-// Browser origins allowed to call the events API. The nakomis-shell BootBoots panel lives at
-// app.sandbox.nakomis.com; the legacy sandbox site stays until it is retired.
-export const ALLOWED_ORIGINS = [
-    'https://sandbox.nakomis.com',
-    'https://app.sandbox.nakomis.com',
-    'http://localhost:3000',
-    'http://localhost:3001',
-];
+// Browser origins allowed to call the events API, per environment, from infra/lib/env-config.ts
+// (apiCorsOrigins), passed in as a comma-separated ALLOWED_ORIGINS environment variable.
+export function allowedOrigins(): string[] {
+    return (process.env.ALLOWED_ORIGINS ?? '').split(',').map((o) => o.trim()).filter(Boolean);
+}
 
 /** CORS response headers: echoes the request Origin only when it is on the allow-list. */
 export function corsHeadersFor(headers: Record<string, string | undefined> | null | undefined): Record<string, string> {
@@ -16,6 +13,6 @@ export function corsHeadersFor(headers: Record<string, string | undefined> | nul
         'Content-Type': 'application/json',
         Vary: 'Origin',
     };
-    if (origin && ALLOWED_ORIGINS.includes(origin)) result['Access-Control-Allow-Origin'] = origin;
+    if (origin && allowedOrigins().includes(origin)) result['Access-Control-Allow-Origin'] = origin;
     return result;
 }

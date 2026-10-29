@@ -1,3 +1,5 @@
+> **Historical.** The firmware cleanup stack described here no longer exists; firmware now lives in `nakomis-firmware-{env}` and is managed through Fleet. For current deploys see [CLAUDE.md](CLAUDE.md).
+
 # Firmware Cleanup Lambda - Deployment Guide
 
 ## Prerequisites
