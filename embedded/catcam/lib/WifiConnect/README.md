@@ -27,7 +27,7 @@ WifiConnect wifi;
 void setup() {
     Serial.begin(115200);
 
-    int result = wifi.connect();
+    int result = wifi.connect(ssid, password);
 
     if (result == 0) {
         // Serial.println("WiFi connection successful!");
@@ -49,7 +49,7 @@ void setup() {
     int maxAttempts = 3;
 
     while (attempts < maxAttempts) {
-        int result = wifi.connect();
+        int result = wifi.connect(ssid, password);
 
         if (result == 0) {
             // Serial.println("Successfully connected to WiFi");
@@ -78,7 +78,7 @@ void setup() {
 if (WiFi.status() == WL_CONNECTED) {
     // Serial.println("Already connected");
 } else {
-    wifi.connect();
+    wifi.connect(ssid, password);
 }
 ```
 
@@ -91,44 +91,16 @@ The `connect()` method returns an integer status code:
 
 ## Configuration
 
-### Credentials File
+### Credentials
 
-WifiConnect reads credentials from `include/secrets.h`:
-
-```cpp
-// include/secrets.h
-#ifndef SECRETS_H
-#define SECRETS_H
-
-#define WIFI_SSID "YourNetworkName"
-#define WIFI_PASSWORD "YourNetworkPassword"
-
-#endif
-```
-
-### Template File
-
-A template is typically provided at `include/secrets.h.template`:
+`connect(ssid, password)` takes the credentials from the caller. In the catcam they come from the
+device's `prov` partition (`lib/Provisioning`, written by `scripts/provision.sh`), never from the
+firmware image; there is no `secrets.h` any more (BOOT-10, see `docs/provisioning.md`).
 
 ```cpp
-// include/secrets.h.template
-#ifndef SECRETS_H
-#define SECRETS_H
-
-#define WIFI_SSID "your_ssid_here"
-#define WIFI_PASSWORD "your_password_here"
-
-// Add other secrets as needed:
-// #define AWS_ACCESS_KEY "your_key"
-// #define AWS_SECRET_KEY "your_secret"
-
-#endif
+const ProvisioningData& prov = Provisioning::getInstance().data();
+wifi.connect(prov.wifiSsid.c_str(), prov.wifiPassword.c_str());
 ```
-
-**Setup Instructions**:
-1. Copy `secrets.h.template` to `secrets.h`
-2. Update with your actual credentials
-3. Add `secrets.h` to `.gitignore` to prevent committing credentials
 
 ## Connection Output
 
@@ -187,7 +159,7 @@ void setup() {
     SDLogger::getInstance().init();
 
     SDLogger::getInstance().info("Attempting WiFi connection...");
-    int result = wifi.connect();
+    int result = wifi.connect(ssid, password);
 
     if (result == 0) {
         SDLogger::getInstance().infof("WiFi connected: %s",
@@ -209,7 +181,7 @@ OTAUpdate ota;
 
 void setup() {
     // Connect to WiFi first
-    if (wifi.connect() == 0) {
+    if (wifi.connect(ssid, password) == 0) {
         // Initialize OTA updates (requires WiFi)
         ota.init("BootBoots-CatCam", "ota_password");
         // Serial.println("OTA updates enabled");
@@ -223,7 +195,7 @@ void loop() {
         ota.handle();
     } else {
         // Reconnect if disconnected
-        wifi.connect();
+        wifi.connect(ssid, password);
     }
 }
 ```
@@ -239,7 +211,7 @@ void loop() {
     if (millis() - lastCheck > CHECK_INTERVAL) {
         if (WiFi.status() != WL_CONNECTED) {
             // Serial.println("WiFi disconnected, reconnecting...");
-            wifi.connect();
+            wifi.connect(ssid, password);
         }
         lastCheck = millis();
     }
@@ -254,7 +226,7 @@ void loop() {
 - `WiFi.h` - ESP32 WiFi library (Arduino core)
 
 ### Internal
-- `secrets.h` - WiFi credentials (user-provided)
+- None: the caller passes the credentials (the catcam takes them from `lib/Provisioning`)
 
 ## WiFi Mode
 
@@ -274,7 +246,7 @@ void setup() {
     delay(100);            // Brief delay for Serial to stabilize
 
     WifiConnect wifi;
-    wifi.connect();
+    wifi.connect(ssid, password);
 }
 ```
 
@@ -288,18 +260,16 @@ if (WiFi.status() == WL_CONNECTED) {
 
 ### 3. Handle Failures Gracefully
 ```cpp
-if (wifi.connect() != 0) {
+if (wifi.connect(ssid, password) != 0) {
     // Continue in offline mode
     // or implement retry logic
     // or enter deep sleep and retry later
 }
 ```
 
-### 4. Secure Your Credentials
-```bash
-# Add to .gitignore
-echo "include/secrets.h" >> .gitignore
-```
+### 4. Keep Credentials Out of the Image
+Pass them in from provisioning storage (the catcam's `prov` partition), never compile them in:
+a firmware image is published and shared between devices.
 
 ### 5. Use Connection Monitoring
 ```cpp
@@ -308,7 +278,7 @@ void checkWiFi() {
     static WifiConnect wifi;
 
     if (WiFi.status() != WL_CONNECTED) {
-        wifi.connect();
+        wifi.connect(ssid, password);
     }
 }
 ```
@@ -318,7 +288,7 @@ void checkWiFi() {
 ### Connection Always Fails
 
 **Possible causes**:
-1. **Wrong credentials**: Double-check SSID and password in `secrets.h`
+1. **Wrong credentials**: Double-check `/Nakomis/Wifi/*` in SSM and re-run `scripts/provision.sh`
 2. **Out of range**: Move device closer to router
 3. **2.4GHz vs 5GHz**: ESP32 only supports 2.4GHz networks
 4. **Router issues**: Restart your router
@@ -412,9 +382,9 @@ Creates a new WifiConnect instance.
 
 #### Methods
 ```cpp
-int connect()
+int connect(const char* ssid, const char* password)
 ```
-Attempts to connect to WiFi using credentials from `secrets.h`.
+Attempts to connect to WiFi with the given credentials.
 
 **Returns**:
 - `0`: Success (connected or already connected)
@@ -432,10 +402,9 @@ Attempts to connect to WiFi using credentials from `secrets.h`.
 
 ### Credential Protection
 
-- Never commit `secrets.h` to version control
-- Use `.gitignore` to exclude credentials
-- Use environment-specific configuration files
-- Consider encrypted credential storage for production
+- Never compile credentials into the firmware image; the catcam reads them from its `prov`
+  partition (BOOT-10, `docs/provisioning.md`)
+- The prov partition is plain flash: consider NVS encryption for production
 
 ### Network Security
 

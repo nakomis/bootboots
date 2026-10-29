@@ -24,30 +24,9 @@ This library provides AWS authentication capabilities for ESP32 devices using Io
 
 ### 2. Certificates Configuration
 
-Update your `secrets.h` file with the certificates:
-
-```cpp
-// Amazon Root CA 1
-static const char AWS_CERT_CA[] PROGMEM = R"EOF(
------BEGIN CERTIFICATE-----
-[Your Root CA Certificate]
------END CERTIFICATE-----
-)EOF";
-
-// Device Certificate
-static const char AWS_CERT_CRT[] PROGMEM = R"KEY(
------BEGIN CERTIFICATE-----
-[Your Device Certificate]
------END CERTIFICATE-----
-)KEY";
-
-// Device Private Key
-static const char AWS_CERT_PRIVATE[] PROGMEM = R"KEY(
------BEGIN RSA PRIVATE KEY-----
-[Your Private Key]
------END RSA PRIVATE KEY-----
-)KEY";
-```
+The root CA, device certificate and private key (PEM), the credentials-provider endpoint and the
+Thing name come from the device's `prov` partition (`lib/Provisioning`, written by
+`scripts/provision.sh`), never from the firmware image (BOOT-10, see `docs/provisioning.md`).
 
 ### 3. AWS IAM Role Setup
 
@@ -81,7 +60,7 @@ Attach necessary permissions to the role for your API Gateway and other AWS serv
 
 ```cpp
 #include "AWSAuth.h"
-#include "secrets.h"
+#include "Provisioning.h"
 
 const char* AWS_REGION = "us-east-1";
 const char* AWS_ROLE_ARN = "arn:aws:iam::123456789012:role/ESP32IoTRole";
@@ -89,8 +68,10 @@ const char* AWS_ROLE_ARN = "arn:aws:iam::123456789012:role/ESP32IoTRole";
 AWSAuth awsAuth(AWS_REGION);
 
 void setup() {
-    // Initialize with certificates
-    awsAuth.initialize(AWS_CERT_CA, AWS_CERT_CRT, AWS_CERT_PRIVATE);
+    // Initialise with the certificates, endpoint and Thing name from the prov partition
+    const ProvisioningData& prov = Provisioning::getInstance().data();
+    awsAuth.initialize(prov.rootCa.c_str(), prov.deviceCert.c_str(), prov.deviceKey.c_str(),
+                       prov.credentialsEndpoint.c_str(), prov.thingName.c_str());
     
     // Get AWS credentials
     if (awsAuth.getCredentials(AWS_ROLE_ARN, "ESP32Session")) {
