@@ -3,25 +3,26 @@ import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import type { Construct } from 'constructs';
-import { BOOTBOOTS, type DeployEnv, githubSubjects, REPO } from './env-config';
+import { BOOTBOOTS, type DeployEnv, githubSubjects, LEGACY_PANEL_REPO, SSM } from './env-config';
 
-export interface BootbootsStackProps extends cdk.StackProps {
+export interface PanelStackProps extends cdk.StackProps {
   deployEnv: DeployEnv;
-  githubOidcProviderArn: string;
 }
 
 /**
  * The BootBoots panel's AWS access: an identity pool on the shared user pool (shell client) whose
- * authenticated role can do exactly what the pages do, plus the GitHub CI role that publishes the remote.
+ * authenticated role can do exactly what the pages do, plus the old nakomis-bootboots CI role.
  * Device control goes through Fleet (JWT), so no IoT permissions are needed here.
+ *
+ * Deployed as NakomisBootbootsStack: renaming it would recreate the identity pool.
  */
-export class BootbootsStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props: BootbootsStackProps) {
+export class PanelStack extends cdk.Stack {
+  constructor(scope: Construct, id: string, props: PanelStackProps) {
     super(scope, id, props);
 
     const { deployEnv } = props;
-    const userPoolId = ssm.StringParameter.valueForStringParameter(this, `/nakomis-infra/${deployEnv}/cognito/user-pool-id`);
-    const shellClientId = ssm.StringParameter.valueForStringParameter(this, `/nakomis-shell/${deployEnv}/cognito/client-id`);
+    const userPoolId = ssm.StringParameter.valueForStringParameter(this, SSM.userPoolId(deployEnv));
+    const shellClientId = ssm.StringParameter.valueForStringParameter(this, SSM.shellClientId(deployEnv));
 
     // ── Identity pool ──────────────────────────────────────────────────────
     const identityPool = new cognito.CfnIdentityPool(this, 'IdentityPool', {
@@ -67,10 +68,12 @@ export class BootbootsStack extends cdk.Stack {
       }),
     );
     // Catches: the bootboots events API (IAM auth). Its Lambda presigns the image URLs itself.
+    // The API id comes from the API stack through SSM (deploy BootBootsApiGatewayStack first).
+    const apiId = ssm.StringParameter.valueForStringParameter(this, `${SSM.bootbootsPrefix(deployEnv)}/api-id`);
     userRole.addToPolicy(
       new iam.PolicyStatement({
         actions: ['execute-api:Invoke'],
-        resources: [`arn:aws:execute-api:${this.region}:${this.account}:${BOOTBOOTS.apiId}/*/GET/events`],
+        resources: [`arn:aws:execute-api:${this.region}:${this.account}:${apiId}/*/GET/events`],
       }),
     );
 
@@ -79,20 +82,25 @@ export class BootbootsStack extends cdk.Stack {
       roles: { authenticated: userRole.roleArn },
     });
 
-    // ── CI ─────────────────────────────────────────────────────────────────
-    const oidc = iam.OpenIdConnectProvider.fromOpenIdConnectProviderArn(this, 'GithubOidc', props.githubOidcProviderArn);
+    // ── Old CI ─────────────────────────────────────────────────────────────
+    // nakomis-bootboots' CI role. BootBootsGithubCiStack's role replaces it; remove this once that repo is archived.
+    const oidc = iam.OpenIdConnectProvider.fromOpenIdConnectProviderArn(
+      this,
+      'GithubOidc',
+      `arn:aws:iam::${this.account}:oidc-provider/token.actions.githubusercontent.com`,
+    );
     const ciRole = new iam.Role(this, 'CiRole', {
       roleName: `nakomis-nakomis-bootboots-github-ci-${deployEnv}`,
       description: `Assumed by nakomis-bootboots GitHub Actions CI (${deployEnv})`,
       assumedBy: new iam.WebIdentityPrincipal(oidc.openIdConnectProviderArn, {
         StringEquals: { 'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com' },
-        StringLike: { 'token.actions.githubusercontent.com:sub': githubSubjects(REPO) },
+        StringLike: { 'token.actions.githubusercontent.com:sub': githubSubjects(LEGACY_PANEL_REPO) },
       }),
       managedPolicies: [
         iam.ManagedPolicy.fromManagedPolicyArn(
           this,
           'RemoteDeployer',
-          ssm.StringParameter.valueForStringParameter(this, `/nakomis-shell/${deployEnv}/remote-deployer-policy-arn`),
+          ssm.StringParameter.valueForStringParameter(this, SSM.shellRemoteDeployerPolicyArn(deployEnv)),
         ),
       ],
     });
@@ -112,8 +120,13 @@ export class BootbootsStack extends cdk.Stack {
 
     // ── Exports ────────────────────────────────────────────────────────────
     new ssm.StringParameter(this, 'IdentityPoolIdParam', {
-      parameterName: `/nakomis-bootboots/${deployEnv}/identity-pool-id`,
+      parameterName: `${SSM.bootbootsPrefix(deployEnv)}/identity-pool-id`,
       stringValue: identityPool.ref,
+    });
+    new ssm.StringParameter(this, 'CatadataTableParam', {
+      parameterName: `${SSM.bootbootsPrefix(deployEnv)}/catadata-table`,
+      stringValue: BOOTBOOTS.catadataTable,
+      description: 'Labelling table read by the web panel',
     });
 
     new cdk.CfnOutput(this, 'IdentityPoolId', { value: identityPool.ref });
