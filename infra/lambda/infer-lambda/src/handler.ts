@@ -33,8 +33,8 @@ async function getAnthropicClient(): Promise<Anthropic> {
 }
 
 // Cat names in order corresponding to the probability array indices
-// [0]=Boots, [1]=NotBoots (binary classifier)
-const CAT_NAMES = ['Boots', 'NotBoots'];
+// Alphabetical order (matches Keras class discovery): Boots, Chi, Kappa, Mu, NoCat, Tau, Wolf
+const CAT_NAMES = ['Boots', 'Chi', 'Kappa', 'Mu', 'NoCat', 'Tau', 'Wolf'];
 
 // Minimum Boots confidence to record an event in catcam-events table
 const EVENTS_MIN_CONFIDENCE = parseFloat(process.env.EVENTS_MIN_CONFIDENCE ?? '0.5');
