@@ -2,6 +2,7 @@ import { ThemeProvider } from '@mui/material/styles';
 import { BrowserRouter } from 'react-router';
 import { BootbootsProvider } from './BootbootsContext';
 import { BootbootsRoutes } from './BootbootsRoutes';
+import { ConfigGate } from './ConfigGate';
 import type { ShellContext } from './shell-contract';
 import { theme } from './theme';
 
@@ -9,11 +10,15 @@ import { theme } from './theme';
 export default function ShellApp(shell: ShellContext) {
   return (
     <ThemeProvider theme={theme}>
-      <BootbootsProvider shell={shell}>
-        <BrowserRouter basename={shell.basePath}>
-          <BootbootsRoutes />
-        </BrowserRouter>
-      </BootbootsProvider>
+      <ConfigGate>
+        {(config) => (
+          <BootbootsProvider shell={shell} config={config}>
+            <BrowserRouter basename={shell.basePath}>
+              <BootbootsRoutes />
+            </BrowserRouter>
+          </BootbootsProvider>
+        )}
+      </ConfigGate>
     </ThemeProvider>
   );
 }

@@ -1,5 +1,18 @@
 Import("env")
 
+import os
+import re
+
+# Firmware version (BOOT-10): set at build time from the FIRMWARE_VERSION environment variable,
+# never hand-bumped in include/version.h. A local build without it is 0.0.0-dev.
+#
+#   FIRMWARE_VERSION=1.0.333 pio run -e esp32s3cam
+version = os.environ.get("FIRMWARE_VERSION", "").strip() or "0.0.0-dev"
+if not re.fullmatch(r"\d{1,4}\.\d{1,4}\.\d{1,4}(-[0-9A-Za-z.]+)?", version):
+    raise SystemExit(f"FIRMWARE_VERSION must be x.y.z (optionally -suffix), not {version!r}")
+env.Append(CPPDEFINES=[("FIRMWARE_VERSION", env.StringifyMacro(version))])
+print(f"BootBoots firmware version {version}")
+
 # Override the maximum upload size to match OTA0 partition
 # PlatformIO defaults to the first app partition (factory)
 # but we want to flash to OTA0 which is much larger

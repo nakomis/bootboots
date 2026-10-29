@@ -16,12 +16,9 @@
 #include "BluetoothService.h"
 #include "CommandDispatcher.h"
 #include "Camera.h"
+#include "Provisioning.h"
 #include "version.h"
-#include "secrets.h"
-
-#ifndef OTA_PASSWORD
-#define OTA_PASSWORD "bootboots-ota-2025"
-#endif
+#include "banner.h"
 
 // Board-specific pin configuration
 #ifdef ESP32S3_CAM
@@ -45,9 +42,8 @@
 #define IMAGES_DIR "/images"
 #define MAX_IMAGES_TO_KEEP 20
 
-// AWS Auth configuration
-const char* AWS_ROLE_ALIAS = "BootBootsRoleAlias";
-const char* API_HOST = "api.bootboots.sandbox.nakomis.com";
+// Inference API path. The host, role alias and credentials are per environment and per device, so
+// they come from the prov partition (Provisioning), not from the image (BOOT-10).
 const char* API_PATH = "/infer";
 
 // Global system components
@@ -71,6 +67,8 @@ void setup() {
     delay(500);  // Give serial time to initialize
     Serial.println("\n\n=== CATCAM STARTING ===");
     Serial.printf("Version: %s\n", FIRMWARE_VERSION);
+    // The tag is what scripts/image-checks.sh looks for in a built image.
+    Serial.println(FIRMWARE_VERSION_TAG);
     Serial.flush();
 
     // CRITICAL: Set boot partition to factory so bootloader runs on next reboot
@@ -108,6 +106,22 @@ void setup() {
     SDLogger::getInstance().setLogLevel(LOG_DEBUG);
     SDLogger::getInstance().infof("=== BootBoots System Starting (%s) ===", BOARD_NAME);
 
+    // This device's identity, credentials and environment (prov partition, BOOT-10). If it's
+    // missing the device runs without networking; BLE still starts so it can be diagnosed.
+    Provisioning& provisioning = Provisioning::getInstance();
+    if (provisioning.load()) {
+        const ProvisioningData& prov = provisioning.data();
+        Serial.printf("[PROV] Provisioned as %s (%s)\n", prov.thingName.c_str(),
+                      prov.environment.length() ? prov.environment.c_str() : "env unset");
+        SDLogger::getInstance().infof("Provisioned as %s (env %s, API %s)", prov.thingName.c_str(),
+                                      prov.environment.length() ? prov.environment.c_str() : "unset",
+                                      prov.apiHost.c_str());
+    } else {
+        Serial.printf("[PROV] NOT PROVISIONED: %s. No networking; BLE only.\n", provisioning.problem().c_str());
+        SDLogger::getInstance().errorf("NOT PROVISIONED: %s. No networking; BLE only.", provisioning.problem().c_str());
+    }
+    Serial.flush();
+
     // Record system start time
     systemState.systemStartTime = millis();
 
@@ -136,9 +150,6 @@ void setup() {
         .imagesDir = IMAGES_DIR,
         .maxImagesToKeep = MAX_IMAGES_TO_KEEP,
         .deviceName = "BootBoots-CatCam",
-        .awsRegion = "eu-west-2",
-        .awsRoleAlias = AWS_ROLE_ALIAS,
-        .apiHost = API_HOST,
         .apiPath = API_PATH
     };
 

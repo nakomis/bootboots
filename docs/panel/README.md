@@ -18,6 +18,7 @@ If you find this useful, please consider buying me a coffee:
 - [Pages](#pages)
 - [AWS access](#aws-access)
 - [Local development](#local-development)
+- [Runtime configuration](#runtime-configuration)
 - [Deploying](#deploying)
 - [Logo](#logo)
 - [Licence](#licence)
@@ -32,8 +33,10 @@ politely mists him. It is a Module Federation **remote** of
 [nakomis-shell](https://github.com/nakomis/nakomis-shell), mounted at `app.sandbox.nakomis.com/bootboots`.
 It replaces the BootBoots tabs of the old `sandbox.nakomis.com` app (sandboxsite).
 
-BootBoots resources (the catcam Thing, the `catadata` table, the images bucket and the events API) only
-exist in the sandbox account, so there is no production deployment and the prod shell doesn't list it.
+BootBoots resources (the catcam Thing, the `catadata` table, the images bucket and the events API) currently
+exist only in the sandbox account, so the panel is only published there for now. A production deployment is
+planned (BOOT-12); the panel is already environment-neutral, because everything environment-specific is read at
+runtime from `config.json` (see [Runtime configuration](#runtime-configuration)).
 
 ## How it fits the shell
 
@@ -55,7 +58,7 @@ exist in the sandbox account, so there is no production deployment and the prod 
     and the Web Bluetooth and Fleet transports. The firmware's `CommandDispatcher` serves BLE and MQTT alike,
     so both tabs share one console (`src/components/DeviceConsole.tsx`).
   - `src/services/` — catadata (DynamoDB), training images (S3), events API (SigV4), SAM server, Fleet
-  - `src/config.ts` — per-environment settings (sandbox only)
+  - `src/config.ts`, `src/ConfigGate.tsx` — load and validate the runtime `config.json`
 - `infra/` — CDK (pnpm, Jest): `NakomisBootbootsStack`
 - `docs/` — logo candidates
 
@@ -82,8 +85,8 @@ The pool trusts the shell's app client, so **every user who can sign in to the s
 pool) gets this role, not just BootBoots users. Keep it to what the pages need, and add a Cognito group check
 (role mapping rules) before granting anything more sensitive.
 
-The pool id is exported to SSM `/nakomis-bootboots/sandbox/identity-pool-id`; `pnpm build:sandbox` bakes it
-into the build. The stack also creates the CI role `nakomis-nakomis-bootboots-github-ci-sandbox`.
+The pool id is exported to SSM `/nakomis-bootboots/sandbox/identity-pool-id`; `scripts/publish-web.sh` copies it
+into `config.json` at publish time. The stack also creates the CI role `nakomis-nakomis-bootboots-github-ci-sandbox`.
 
 ## Local development
 
@@ -93,7 +96,29 @@ pnpm test && pnpm lint
 ```
 
 `pnpm dev` runs a standalone harness (`src/main.tsx`) with a pasted access token, so only the Fleet-backed
-Remote tab works there; the AWS-backed tabs need the shell.
+Remote tab works there; the AWS-backed tabs need the shell. The harness needs a `config.json` too:
+
+```bash
+cd web && cp config.example.json public/config.json   # gitignored; sandbox values
+```
+
+## Runtime configuration
+
+Nothing environment-specific is built in. Before rendering, the panel fetches `config.json` (`cache: no-cache`)
+from beside `remoteEntry.js` (`/remotes/bootboots/config.json`; `/config.json` under `pnpm dev`) and shows an
+error instead of the app if it is missing or invalid. One build can therefore be published to any environment.
+
+| Field | Meaning |
+|---|---|
+| `environment`, `version` | Environment name and release version (shown in the panel footer) |
+| `region`, `identityPoolId` | AWS region and the Cognito identity pool for AWS credentials |
+| `imagesBucket`, `catadataTable`, `eventsApiUrl` | Training images, labels and the events API |
+| `fleetApiUrl`, `fleetWsUrl`, `catcamThing`, `project` | Fleet endpoints and the catcam's Thing / project |
+| `samServerUrl` (optional), `localPredictUrl` (optional) | Developer tools: Segment Anything server, local classifier |
+
+`scripts/publish-web.sh <env> <dist-dir>` generates `config.json` from SSM
+(`/nakomis-bootboots/<env>/...`, `/nakomis-fleet/<env>/...`, `/nakomis-shell/<env>/...`) and publishes the build;
+`RELEASE_VERSION` sets `version`, and `--dry-run` prints the config and commands without uploading.
 
 ## Deploying
 
@@ -106,10 +131,8 @@ By hand:
 
 ```bash
 cd infra && pnpm diff-sandbox NakomisBootbootsStack && pnpm deploy-stack-sandbox NakomisBootbootsStack
-cd ../web && AWS_PROFILE=nakom.is-sandbox pnpm build:sandbox
-aws s3 sync dist/assets s3://nakomis-shell-sandbox/remotes/bootboots/assets/ --cache-control "public,max-age=31536000,immutable"
-aws s3 sync dist s3://nakomis-shell-sandbox/remotes/bootboots/ --exclude "assets/*" --cache-control no-cache
-aws cloudfront create-invalidation --distribution-id E33S40PNNINT2G --paths "/remotes/bootboots/*"
+cd ../web && pnpm build
+AWS_PROFILE=nakom.is-sandbox RELEASE_VERSION=0.0.0-local ../scripts/publish-web.sh sandbox dist
 ```
 
 ## Logo

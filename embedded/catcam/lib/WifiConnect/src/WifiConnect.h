@@ -5,7 +5,8 @@ class WifiConnect
 {
 public:
     WifiConnect();
-    int connect();
+    // Credentials come from the prov partition (Provisioning), never from the image.
+    int connect(const char* ssid, const char* password);
 };
 
 #endif

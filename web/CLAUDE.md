@@ -1,20 +1,32 @@
 # nakomis-bootboots
 
 The BootBoots panel: a Module Federation remote of `nakomis-shell`, mounted at `app.sandbox.nakomis.com/bootboots`.
-Sandbox only — BootBoots resources don't exist in prod.
 
 ## AWS credentials
 
-- Sandbox: `AWS_PROFILE=nakom.is-sandbox` (account 975050268859, eu-west-2). There is no prod deployment.
+- Sandbox: `AWS_PROFILE=nakom.is-sandbox` (account 975050268859, eu-west-2). Only sandbox is deployed today; prod is coming (BOOT-12).
 
 ## Repository layout
 
 - `web/` — remote (pnpm, Vite 8, React 19, MUI 7, React Router 7, Vitest, Biome). `src/shell-contract.ts` is a
-  copy from nakomis-shell. `src/config.ts` holds per-env values; the identity pool id comes from SSM at build time
-  (`pnpm build:sandbox`).
+  copy from nakomis-shell. `src/config.ts` loads and validates `config.json` at runtime (see "Runtime config").
 - `web/src/device/` — catcam protocol shared by the Bluetooth (`/device`) and Remote (`/remote`) tabs. Keep message
   shapes in step with bootboots `embedded/catcam` (`CommandDispatcher` and `main.cpp` handlers).
 - `infra/` — CDK (pnpm, Jest): identity pool, its authenticated role, CI role, SSM export.
+
+## Runtime config
+
+Environment settings are not built in. The panel fetches `config.json` (no-cache) from beside `remoteEntry.js`
+before rendering and shows an error if it is missing or invalid; `version` (shown in the footer) and `environment`
+are in it too. `scripts/publish-web.sh [--dry-run] <env> <dist>` generates it from SSM (using `RELEASE_VERSION`) and
+publishes the build, `config.json` first. `config.ts` assumes its chunk is in `assets/`, one level below
+`remoteEntry.js`; `check-dist.mjs` (run by `pnpm build`) enforces that.
+
+For `pnpm dev`, copy the example (gitignored once copied):
+
+```bash
+cd web && cp config.example.json public/config.json
+```
 
 ## Rules
 

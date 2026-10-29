@@ -66,7 +66,18 @@ export class GithubCiStack extends cdk.Stack {
     role.addToPolicy(
       new iam.PolicyStatement({
         actions: ['ssm:GetParameter', 'ssm:GetParameters'],
-        resources: [param('/nakomis-bootboots/*'), param('/bootboots/*')],
+        // Fleet's api-url and ws-url too: scripts/publish-web.sh copies them into the panel's config.json.
+        resources: [param('/nakomis-bootboots/*'), param('/bootboots/*'), param(`${SSM.fleetPrefix(deployEnv)}/*`)],
+      }),
+    );
+    // scripts/publish-web.sh syncs with --delete, to drop stale hashed chunks and files that left the build. The
+    // shell's remote-deployer policy grants PutObject and ListBucket on remotes/* but not DeleteObject, so grant
+    // it here, on this remote's own prefix only.
+    const shellBucket = ssm.StringParameter.valueForStringParameter(this, SSM.shellBucketName(deployEnv));
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ['s3:DeleteObject'],
+        resources: [`arn:aws:s3:::${shellBucket}/remotes/bootboots/*`],
       }),
     );
     // SecureStrings use the account's aws/ssm key: decrypt only through SSM.

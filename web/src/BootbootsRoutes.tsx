@@ -1,7 +1,9 @@
 import Box from '@mui/material/Box';
 import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
+import Typography from '@mui/material/Typography';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router';
+import { useBootboots } from './BootbootsContext';
 import { BoundingPage } from './pages/BoundingPage';
 import { CatchesPage } from './pages/CatchesPage';
 import { DevicePage } from './pages/DevicePage';
@@ -17,6 +19,7 @@ const TABS = [
 ];
 
 export function BootbootsRoutes() {
+  const { config } = useBootboots();
   const { pathname } = useLocation();
   const tab = TABS.find((t) => pathname.startsWith(t.path))?.path ?? false;
 
@@ -38,6 +41,14 @@ export function BootbootsRoutes() {
         <Route path="/device" element={<DevicePage />} />
         <Route path="*" element={<Navigate to="/catches" replace />} />
       </Routes>
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        component="footer"
+        sx={{ display: 'block', mt: 3 }}
+      >
+        BootBoots v{config.version} · {config.environment}
+      </Typography>
     </Box>
   );
 }

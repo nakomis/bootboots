@@ -1,18 +1,7 @@
-#ifndef CATCAM_SECRETS_H
-#define CATCAM_SECRETS_H
+#ifndef CATCAM_BANNER_H
+#define CATCAM_BANNER_H
 
-const char WIFI_SSID[] = "";
-const char WIFI_PASSWORD[] = "";
-const char AWS_IOT_ENDPOINT[] = "";
-const char AWS_IOT_CREDENTIALS_ENDPOINT[] = "";
-
-// API Configuration
-const char* const API_URL = "";
-const char* const API_KEY = "";
-
-// OTA Update Configuration
-const char* const OTA_PASSWORD = "your-ota-password-here";
-
+// Logged at start-up. It used to live in secrets.h, but was never secret (BOOT-10).
 const char BANNER[] = R"WELCOME(
   
 o.oOOOo.                                 o                o.oOOOo.                          oO
@@ -26,24 +15,4 @@ o     .O o   O o   O   o           o   o   O O            o     .O o   O o   O  
   
 )WELCOME";
 
-// Amazon Root CA 1
-static const char AWS_CERT_CA[] PROGMEM = R"EOF(
------BEGIN CERTIFICATE-----
-...
------END CERTIFICATE-----
-)EOF";
-
-// Device Certificate
-static const char AWS_CERT_CRT[] PROGMEM = R"KEY(
------BEGIN CERTIFICATE-----
-...
------END CERTIFICATE-----
-)KEY";
-
-// Device Private Key
-static const char AWS_CERT_PRIVATE[] PROGMEM = R"KEY(
------BEGIN RSA PRIVATE KEY-----
-...
------END RSA PRIVATE KEY-----
-)KEY";
-#endif
+#endif // CATCAM_BANNER_H

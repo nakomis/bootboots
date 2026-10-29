@@ -54,9 +54,14 @@ Offset      Size       Name        Description
 0xe000      0x2000     otadata     OTA data
 0x10000     0x100000   factory     Arduino bootloader (1MB)
 0x110000    0x700000   ota_0       Main application (7MB)
-0x810000    0x7E0000   spiffs      File storage
+0x810000    0x10000    prov        Provisioning data (NVS, 64KB; BOOT-10)
+0x820000    0x7D0000   spiffs      Unused (nothing mounts it)
 0xFF0000    0x10000    coredump    Core dump storage
 ```
+
+`catcam/partitions_custom_s3.csv` and `bootloader/partitions_bootloader_s3.csv` must stay identical.
+Devices flashed before BOOT-10 have the old table (spiffs at 0x810000, no prov) until their first
+wired flash writes the new `partitions.bin` at 0x8000.
 
 ### Original ESP32-CAM (4MB Flash)
 ```
@@ -193,9 +198,16 @@ cd ~/repos/nakomis/bootboots/embedded
 # Build bootloader
 cd bootloader && pio run -e esp32s3cam
 
-# Build main app
-cd ../catcam && pio run -e esp32s3cam
+# Build main app (the version is set at build time; default 0.0.0-dev)
+cd ../catcam && FIRMWARE_VERSION=1.0.333 pio run -e esp32s3cam
+
+# What a published image must pass (version tag, no PEM blocks, no per-device strings, no Wi-Fi credentials)
+./scripts/image-checks.sh .pio/build/esp32s3cam/firmware.bin 1.0.333
 ```
+
+The firmware version comes from the `FIRMWARE_VERSION` environment variable via `extra_script.py`;
+`include/version.h` is never bumped by hand. Published versions continue from 1.0.333 (1.0.331 was
+the last hand-published one; 1.0.332 was committed but never published).
 
 ## Deployment Methods
 
@@ -203,7 +215,7 @@ cd ../catcam && pio run -e esp32s3cam
 
 **This is the preferred way to deploy firmware.** No USB connection required: Fleet sends the device an OTA command over MQTT, and the device downloads the image from S3.
 
-1. Publish the image to `s3://nakomis-firmware-sandbox/BootBoots/<version>/firmware.bin` (BOOT-10 adds `scripts/publish-firmware.sh`, which never replaces a published version; the old `build_and_upload.py` targeted the deleted `nakomis-firmware-updates` bucket).
+1. Publish the image with `catcam/scripts/publish-firmware.sh sandbox <firmware.bin> <x.y.z>` (`--dry-run` first): it runs `image-checks.sh`, then uploads `s3://nakomis-firmware-sandbox/BootBoots/<version>/firmware.bin` with `--if-none-match '*'`, so a published version is never replaced. The bucket's Lambda maintains the manifest.
 2. In Fleet (app.sandbox.nakomis.com/fleet), pick BootBootsThing and install that version.
 
 Fleet OTA round trip 1.0.331 → 1.0.328 → 1.0.331 verified on 29 Oct 2026.
@@ -239,6 +251,9 @@ cd ~/repos/nakomis/bootboots/embedded
   0x8000 bootloader/.pio/build/esp32s3cam/partitions.bin \
   0x10000 bootloader/.pio/build/esp32s3cam/firmware.bin \
   0x110000 catcam/.pio/build/esp32s3cam/firmware.bin
+
+# Then write the device's prov partition (0x810000); see "Provisioning" below
+catcam/scripts/provision.sh BootBootsThing /dev/cu.usbmodemXXXX sandbox
 ```
 
 #### Flash Only Main App (catcam)
@@ -296,10 +311,11 @@ embedded/
 │   ├── partitions_custom.csv          # 4MB partition table
 │   ├── partitions_custom_s3.csv       # 16MB partition table
 │   ├── include/
-│   │   ├── main.h
-│   │   ├── secrets.h                  # WiFi credentials (not in git)
+│   │   ├── banner.h                   # Start-up banner
 │   │   ├── SystemState.h
-│   │   └── version.h
+│   │   └── version.h                  # FIRMWARE_VERSION fallback (set at build time)
+│   ├── docs/provisioning.md           # prov partition, scripts, first wired flash
+│   ├── scripts/                       # provision.sh, image-checks.sh, publish-firmware.sh, ...
 │   ├── src/
 │   │   └── main.cpp
 │   └── lib/
@@ -315,6 +331,7 @@ embedded/
 │       ├── NeoPixel/                  # WS2812 driver
 │       ├── OTAUpdate/                 # Two-stage OTA
 │       ├── PCF8574Manager/            # I2C GPIO expander
+│       ├── Provisioning/              # Reads the prov partition
 │       ├── SDLogger/                  # Thread-safe logging
 │       ├── SystemManager/             # System state management
 │       ├── VideoRecorder/             # MJPEG recording
@@ -324,13 +341,22 @@ embedded/
 └── README.md                          # Embedded firmware documentation
 ```
 
-## Secrets
+## Provisioning (no secrets in the image)
 
-WiFi credentials are in `catcam/include/secrets.h` (gitignored):
-```cpp
-#define WIFI_SSID "your_ssid"
-#define WIFI_PASSWORD "your_password"
+Since BOOT-10 nothing secret or per-device is compiled in (there is no `secrets.h`). The Thing
+name, Wi-Fi SSID/password, IoT and credentials-provider endpoints, API host, root CA, device
+certificate and private key live in the `prov` NVS partition (namespace `prov`, 0x810000), read at
+boot by `catcam/lib/Provisioning`. Write it with:
+
+```bash
+catcam/scripts/provision.sh <thing> <port> [env]              # default env sandbox
+catcam/scripts/provision.sh <thing> [env] --image-only OUT    # build the image only
 ```
+
+It needs a Python with `esp-idf-nvs-partition-gen` (`NVS_GEN_PYTHON`, or the IDF env under
+`~/.espressif`; see `catcam/scripts/requirements-provision.txt`). Without a valid prov partition
+the device logs `NOT PROVISIONED`, skips Wi-Fi/AWS/MQTT and still starts BLE. Full details and the
+first-wired-flash checklist: `catcam/docs/provisioning.md`.
 
 ## Bluetooth Image Handling Architecture
 
