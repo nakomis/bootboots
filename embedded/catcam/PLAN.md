@@ -74,7 +74,8 @@ Rebuild the BootBoots catcam project incrementally by bringing in components fro
 **Next Steps**:
 1. **Upload firmware to S3** (build and upload):
    ```bash
-   python scripts/build_and_upload.py --version-type patch
+   FIRMWARE_VERSION=<x.y.z> pio run -e esp32s3cam
+   ./scripts/publish-firmware.sh sandbox .pio/build/esp32s3cam/firmware.bin <x.y.z>
    ```
 2. **Wire PCF8574** according to PCF8574_TESTING.md:
    - Connect SDA to GPIO1, SCL to GPIO3
@@ -316,7 +317,7 @@ Rebuild the BootBoots catcam project incrementally by bringing in components fro
 
 ## Next Steps
 1. **Hardware Test Phase 1**:
-   - Upload firmware to S3: `python scripts/build_and_upload.py --version-type patch`
+   - Upload firmware to S3: `scripts/publish-firmware.sh sandbox <firmware.bin> <x.y.z>`
    - Wire PCF8574 (no external pull-ups needed - internal pull-ups enabled automatically)
    - Deploy firmware via OTA (web interface → Firmware Manager)
      - **No disconnection needed!** OTA works wirelessly ✅

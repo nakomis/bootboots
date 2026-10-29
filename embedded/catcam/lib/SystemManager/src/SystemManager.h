@@ -44,9 +44,8 @@ public:
         const char* imagesDir;
         int maxImagesToKeep;
         const char* deviceName;
-        const char* awsRegion;
-        const char* awsRoleAlias;
-        const char* apiHost;
+        // Region, role alias, API host, endpoints, Thing name and credentials come from the
+        // prov partition (Provisioning), not from here: the image is environment-agnostic.
         const char* apiPath;
     };
 

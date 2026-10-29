@@ -29,9 +29,10 @@ class AWSAuth {
 public:
     AWSAuth(const char* region = "eu-west-2");
 
-    // Initialize with certificates from secrets.h
+    // Initialise with the certificates, endpoint and Thing name from the prov partition
+    // (Provisioning). The pointers are kept, so they must outlive this object.
     bool initialize(const char* awsCertCA, const char* awsCertCRT, const char* awsCertPrivate,
-                   const char* credentialsEndpoint);
+                   const char* credentialsEndpoint, const char* thingName);
 
     // Get temporary AWS credentials using IoT Credentials Provider
     bool getCredentialsWithRoleAlias(const char* roleAlias);
@@ -72,6 +73,7 @@ public:
 private:
     String region;
     String credentialsEndpointHost;
+    String thingName;
     const char* caCert;
     const char* clientCert;
     const char* clientKey;

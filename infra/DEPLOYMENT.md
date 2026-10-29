@@ -78,16 +78,13 @@ aws logs describe-log-groups --log-group-name-prefix /aws/lambda/FirmwareCleanup
 ### Test 1: Upload a Firmware File
 
 ```bash
-cd /Users/martinmu_1/repos/nakomis/bootboots/embedded/catcam/cpp/catcam
-python scripts/build_and_upload.py --version-type patch
+cd embedded/catcam
+FIRMWARE_VERSION=<x.y.z> pio run -e esp32s3cam
+./scripts/publish-firmware.sh sandbox .pio/build/esp32s3cam/firmware.bin <x.y.z>
 ```
 
-Expected output:
-```
-✅ Successfully uploaded firmware v1.0.55 to S3
-📝 Note: Manifest will be updated automatically by Lambda
-🎉 Ready for OTA deployment via web interface!
-```
+(`build_and_upload.py` was retired in BOOT-10; `publish-firmware.sh` checks the image and never
+replaces a published version. The manifest is still updated by the Lambda.)
 
 ### Test 2: Check Lambda Execution
 

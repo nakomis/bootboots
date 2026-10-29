@@ -13,11 +13,12 @@ AWSAuth::AWSAuth(const char* region) : region(region) {
 }
 
 bool AWSAuth::initialize(const char* awsCertCA, const char* awsCertCRT, const char* awsCertPrivate,
-                        const char* credentialsEndpoint) {
+                        const char* credentialsEndpoint, const char* thing) {
     caCert = awsCertCA;
     clientCert = awsCertCRT;
     clientKey = awsCertPrivate;
     credentialsEndpointHost = String(credentialsEndpoint);
+    thingName = String(thing);
 
     // Configure time for certificate validation and SigV4 signing
     configTime(0, 0, "pool.ntp.org", "time.nist.gov");
@@ -56,7 +57,7 @@ bool AWSAuth::getCredentialsWithRoleAlias(const char* roleAlias) {
 
     HTTPClient http;
     http.begin(sslClient, url);
-    http.addHeader("x-amzn-iot-thingname", "BootBootsThing");
+    http.addHeader("x-amzn-iot-thingname", thingName);
 
     int httpResponseCode = http.GET();
 

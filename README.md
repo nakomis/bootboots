@@ -201,32 +201,33 @@ bootboots/
 
 ### Initial Device Setup
 
-1. **Generate secrets** from AWS SSM Parameter Store:
-   ```bash
-   cd embedded/catcam
-   export AWS_PROFILE=nakom.is-sandbox
-   python3 scripts/generate_secrets.py
-   ```
-
-2. **Build and flash** (USB - for factory-new devices):
+1. **Build and flash** (USB - for factory-new devices):
    ```bash
    cd embedded/catcam
    ./scripts/factory_setup.sh /dev/cu.usbserial-XXXX
    ```
 
-See [embedded/README.md](embedded/README.md) for detailed setup instructions.
+2. **Provision** the device (Thing name, Wi-Fi, IoT certificate and endpoints go into its `prov`
+   partition, never into the firmware image):
+   ```bash
+   ./scripts/provision.sh BootBootsThing /dev/cu.usbmodemXXXX sandbox
+   ```
+
+See [embedded/README.md](embedded/README.md) and
+[embedded/catcam/docs/provisioning.md](embedded/catcam/docs/provisioning.md) for details.
 
 ### OTA Updates (Preferred)
 
-Once a device is set up, use OTA updates via Bluetooth:
+Once a device is set up, publish a checked image and push it through Fleet:
 
 ```bash
 cd embedded/catcam
-export AWS_PROFILE=nakom.is-sandbox
-python3 scripts/build_and_upload.py
+FIRMWARE_VERSION=1.0.333 pio run -e esp32s3cam
+./scripts/publish-firmware.sh sandbox .pio/build/esp32s3cam/firmware.bin 1.0.333
 ```
 
-Then use the web interface to push the update to the device via Bluetooth.
+The firmware version is set at build time (`FIRMWARE_VERSION`), and a published version is never
+replaced.
 
 ## Cat Safety Logic
 
