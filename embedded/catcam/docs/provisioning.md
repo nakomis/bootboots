@@ -90,12 +90,23 @@ All in `embedded/catcam/scripts/`.
 
 - `provision.sh <thing> <port> [env]` (default env `sandbox`, `AWS_PROFILE` default
   `nakom.is-<env>`): fetches the data above into a private `mktemp -d` (removed by a trap),
-  builds the NVS image with ESP-IDF's generator (`esp_idf_nvs_partition_gen`; the PlatformIO
-  `framework-espidf` copy of `nvs_partition_gen.py` is a shim for it, so it needs a Python that has
-  the module: the IDF env under `~/.espressif/python_env/`, or `NVS_GEN_PYTHON`), reads it back
-  with ESP-IDF's NVS parser (integrity check, every key present; names only), checks the device's
-  partition table has `prov` at 0x810000, then writes it with `esptool --after watchdog_reset`.
-  Secrets never reach argv, stdout or any other file.
+  builds the NVS image with ESP-IDF's generator (`esp_idf_nvs_partition_gen`), reads it back with
+  `scripts/prov_image.py` (page and entry CRCs, string data CRCs, a free page, every key in `prov`;
+  key names only) and, when PlatformIO's `framework-espidf` is installed, ESP-IDF's own NVS
+  integrity check too (an exception or a reported problem fails it), checks the device's partition
+  table has `prov` at 0x810000 (`prov_image.py table`), then writes it with
+  `esptool --after watchdog_reset`. Secrets never reach argv, stdout or any other file.
+
+  The generator and esptool are pinned in `scripts/requirements-provision.txt`. One-off setup:
+
+  ```bash
+  python3 -m venv ~/.venvs/bootboots-prov && ~/.venvs/bootboots-prov/bin/pip install -r embedded/catcam/scripts/requirements-provision.txt
+  export NVS_GEN_PYTHON=~/.venvs/bootboots-prov/bin/python
+  ```
+
+  `NVS_GEN_PYTHON`, if set, must have the generator (or the script stops); without it the script
+  tries the newest ESP-IDF env under `~/.espressif/python_env/`, then `python3`. esptool comes
+  from that Python if it has it, else from PlatformIO.
 - `provision.sh <thing> [env] --image-only OUT`: builds and checks the image, writes it to OUT
   (mode 0600) and stops. OUT holds the private key and Wi-Fi password: keep it private and delete it.
 - `image-checks.sh <firmware.bin> <version>`: the image has the `bootboots-version:<version>` tag
@@ -104,13 +115,16 @@ All in `embedded/catcam/scripts/`.
   image, so a bare `-----BEGIN` can't be the test); none of `BootBootsThing`, `-ats.iot.`,
   `.credentials.iot.`, `api.bootboots.`; neither the Wi-Fi SSID nor password (fetched from SSM at
   check time, passed to the scanner through its environment, never echoed). The old 1.0.331 image
-  fails all of these.
+  fails all of these. `IMAGE_CHECKS_NO_AWS=1` skips only the Wi-Fi check, for CI's compile job,
+  which has no AWS credentials (it builds `0.0.0-ci` and runs the rest); `publish-firmware.sh`
+  refuses to run with it set.
 - `publish-firmware.sh [--dry-run] <sandbox|prod> <firmware.bin> <x.y.z>`: runs image-checks,
   then `aws s3api put-object --if-none-match '*'` to
   `s3://nakomis-firmware-<env>/BootBoots/<x.y.z>/firmware.bin` with metadata `project`, `version`,
   `sha256`, `size`. The bucket's Lambda maintains `BootBoots/manifest.json` (what Fleet reads);
   the script never writes it. Same bytes again: a no-op; other bytes under a published version:
-  refused.
+  refused. Only a 404 from `head-object` counts as "not published yet"; AccessDenied, a missing
+  profile or a network error stops the publish with the AWS error.
 - `build_and_upload.py` (hand-bumped version.h, built with secrets, uploaded) is gone;
   `generate_secrets.py` and `include/secrets.h.template` too: nothing includes `secrets.h` any more.
 
