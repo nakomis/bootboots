@@ -62,6 +62,8 @@ describe.each(['sandbox', 'prod'] as const)('%s device stacks', (deployEnv: Depl
       apiT.hasResource('AWS::DynamoDB::Table', {
         Properties: {
           TableName: 'catadata',
+          DeletionProtectionEnabled: true,
+          PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true },
           KeySchema: [
             { AttributeName: 'imageName', KeyType: 'HASH' },
             { AttributeName: 'uuid', KeyType: 'RANGE' },

@@ -59,6 +59,7 @@ export class ApiGatewayStack extends cdk.Stack {
             sortKey: { name: 'uuid', type: dynamodb.AttributeType.STRING },
             billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
             pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
+            deletionProtection: true,
             removalPolicy: cdk.RemovalPolicy.RETAIN,
         });
     }
