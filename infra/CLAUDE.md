@@ -41,7 +41,7 @@ No `MH-Version` tag: a per-release tag on every resource makes every deploy upda
 
 ## Data
 
-The images bucket, `catcam-events`, and the training and model buckets are `RETAIN`: deleting or replacing a stack never deletes them. `catadata` (labels) isn't in any stack. A full copy of the buckets and both tables as of 29 Oct 2026 is on Leia: `/Volumes/share/bootbootsbackup/bootboots-2026-10-29.zip`.
+The images bucket, `catcam-events`, `catadata` (prod), and the training and model buckets are `RETAIN`: deleting or replacing a stack never deletes them. Sandbox's `catadata` (labels) predates the stacks and isn't managed by any (`manageCatadataTable: false`); prod's is created by the API stack. A full copy of the buckets and both tables as of 29 Oct 2026 is on Leia: `/Volumes/share/bootbootsbackup/bootboots-2026-10-29.zip`.
 
 ## The model and the endpoint (BOOT-9)
 
