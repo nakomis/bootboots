@@ -15,7 +15,7 @@ read these when the conversation turns to that area** - defer loading them to pr
 
 - Two environments, `sandbox` (account from profile `nakom.is-sandbox`) and `prod` (`nakom.is-prod`). Per-environment settings live in `infra/lib/env-config.ts`; never hard-code accounts, domains or ARNs.
 - CI (`.github/workflows/ci.yml`): PRs build, test and synth both environments; merges to `main` deploy to sandbox. The aggregate check is `CI Status`.
-- By hand: `cd infra && pnpm diff-sandbox <Stack>` then `pnpm deploy-sandbox <Stack>`. Always diff first, and read `infra/CLAUDE.md` before deploying `BootBootsAiTrainingStack`.
+- By hand: `cd infra && pnpm diff-sandbox` then `pnpm deploy-sandbox` (every stack), or `pnpm deploy-stack-sandbox <Stack>` for one. Always diff first.
 - The images bucket, `catcam-events` and the model/training buckets are retained if a stack goes; `catadata` isn't managed by any stack.
 - Merges are merge commits (the repo has squash and rebase off), so imported history survives.
 

@@ -5,7 +5,7 @@ One CDK app (BOOT-8) holds every BootBoots stack, deployed per environment.
 ## Tooling
 
 - **pnpm 11** (`packageManager` in `package.json`); `lambda/infer-lambda` is a workspace member with its own deps (it bundles `@anthropic-ai/sdk` 0.39). `pnpm install` from `infra/`.
-- `aws-cdk-lib` 2.257 and a current `aws-cdk` CLI. esbuild is a local dev dependency, so Lambdas bundle without Docker; the training-script asset (`BootBootsAiTrainingStack`) still bundles in Docker, so **Docker must be running** for that stack.
+- `aws-cdk-lib` 2.257 and a current `aws-cdk` CLI. esbuild is a local dev dependency and the training-script asset is bundled with the local `tar`, so nothing needs Docker (it's only a fallback).
 - `pnpm build` type-checks, `pnpm test` runs the Jest suite (coverage gate 70%).
 
 ## Environments
@@ -20,7 +20,7 @@ One CDK app (BOOT-8) holds every BootBoots stack, deployed per environment.
 |---|---|
 | `BootBootsApiGatewayStack` | API (`api.bootboots.{sandbox.}nakomis.com`), inference/events/video Lambdas, images bucket, `catcam-events` |
 | `BootBootsIoTStack` | `BootBootsThing`, its certificate (SSM `/BootsBoots/*`), role alias, IoT policies |
-| `BootBootsAiTrainingStack` | SageMaker endpoint and training pipeline (see the warning below) |
+| `BootBootsAiTrainingStack` | The `bootboots` SageMaker endpoint (model from `model.json`), the models bucket and SageMaker role; in sandbox also the training pipeline |
 | `NakomisBootbootsStack` | Web panel identity pool and role (`lib/panel-stack.ts`; the name predates the merge, and renaming it would recreate the identity pool), plus nakomis-bootboots' old CI role until that repo is archived |
 | `BootBootsGithubCiStack` | `nakomis-bootboots-github-ci-{env}`: sandbox trusts any ref of `nakomis/bootboots`, prod only `main` |
 
@@ -32,8 +32,9 @@ No `MH-Version` tag: a per-release tag on every resource makes every deploy upda
 
 | Script | |
 |---|---|
-| `pnpm diff-sandbox <Stack>` / `pnpm diff-prod <Stack>` | Diff one stack (always first) |
-| `pnpm deploy-sandbox <Stack>` / `pnpm deploy-prod <Stack>` | Deploy by stack name |
+| `pnpm diff-sandbox [Stack]` / `pnpm diff-prod [Stack]` | Diff every stack, or one (always first) |
+| `pnpm deploy-sandbox` / `pnpm deploy-prod` | Deploy every stack (`--all`) |
+| `pnpm deploy-stack-sandbox <Stack>` / `pnpm deploy-stack-prod <Stack>` | Deploy one stack (and the stacks it depends on) |
 | `pnpm synth-sandbox` / `pnpm synth-prod` | Synth everything with real credentials |
 | `pnpm ci-synth-sandbox` / `pnpm ci-synth-prod` | Synth with no AWS access (CI) |
 | `pnpm ci-deploy-sandbox` | What CI deploys on merge to main |
@@ -42,9 +43,15 @@ No `MH-Version` tag: a per-release tag on every resource makes every deploy upda
 
 The images bucket, `catcam-events`, and the training and model buckets are `RETAIN`: deleting or replacing a stack never deletes them. `catadata` (labels) isn't in any stack. A full copy of the buckets and both tables as of 29 Oct 2026 is on Leia: `/Volumes/share/bootbootsbackup/bootboots-2026-10-29.zip`.
 
-## CDK Deployment Requirements
+## The model and the endpoint (BOOT-9)
 
-**Never `cdk deploy --all`, and don't deploy `BootBootsAiTrainingStack` casually.** The live `bootboots` SageMaker endpoint is owned by `local-training/deploy_model.sh`, which swaps in timestamped models outside CDK. Deploying the stack without `--context modelDataUrl=…` destroys the endpoint; deploying it with a URL reverts the endpoint to that model. Deploy stacks by name, and always diff first. (BOOT-9 replaces this with a committed `model.json`.)
+CDK is the endpoint's only owner. `model.json` names, per environment, the artefact (a key in that environment's `bootboots-models-{account}` bucket) and a label; `null` means no endpoint (sandbox must always have one, and the stack refuses to synth without it). The model and endpoint config are named `bootboots-<label>` / `bootboots-config-<label>`: a new label creates a new pair, the endpoint switches to it in place, and CloudFormation deletes the old pair. The endpoint has `DeletionPolicy: Retain`.
+
+- **New model (sandbox):** `local-training/deploy_model.sh` exports, uploads and rewrites `model.json`'s sandbox entry. Commit it; CI deploys on merge (or `pnpm diff-sandbox BootBootsAiTrainingStack` then `pnpm deploy-stack-sandbox BootBootsAiTrainingStack`).
+- **Promote to prod:** `scripts/promote-model.sh prod` copies the sandbox artefact into prod's bucket (never overwriting) and writes the prod entry. Commit, then deploy to prod.
+- Never call SageMaker by hand to switch models: the next deploy would switch it back.
+- Training runs only in sandbox; prod has the endpoint, the models bucket and the SageMaker role only.
+- Verify a switch with a signed POST to `/infer` before and after (same image, same answer for the same model).
 
 ## IoT Resources
 

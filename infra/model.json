@@ -1,0 +1,7 @@
+{
+  "sandbox": {
+    "artefact": "local-models/20260331T203825/model.tar.gz",
+    "label": "20260331T203825"
+  },
+  "prod": null
+}

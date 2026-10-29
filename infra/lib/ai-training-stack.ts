@@ -9,7 +9,8 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as sagemaker from 'aws-cdk-lib/aws-sagemaker';
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import { Construct } from 'constructs';
-import { BOOTBOOTS } from './env-config';
+import { BOOTBOOTS, type DeployEnv } from './env-config';
+import type { ModelSpec } from './model-config';
 
 /**
  * Multiclass classification: one class per cat (alphabetical order).
@@ -17,21 +18,65 @@ import { BOOTBOOTS } from './env-config';
  */
 export const CAT_CLASSES = ['Boots', 'Chi', 'Kappa', 'Mu', 'NoCat', 'Tau', 'Wolf'] as const;
 
+/** TF Serving container the model runs in (AWS's deep learning container registry). */
+const TF_SERVING_IMAGE = (region: string) => `763104351884.dkr.ecr.${region}.amazonaws.com/tensorflow-inference:2.16-cpu`;
+
 export interface AiTrainingStackProps extends cdk.StackProps {
-    /**
-     * Optional S3 path to a pre-trained model to deploy
-     * If not provided, a new training job must be run first
-     */
-    modelDataUrl?: string;
+    deployEnv: DeployEnv;
+    /** The model the `bootboots` endpoint serves (infra/model.json); null for no endpoint. */
+    model: ModelSpec | null;
 }
 
 export class AiTrainingStack extends cdk.Stack {
-    public readonly trainingBucket: s3.IBucket;
     public readonly modelBucket: s3.IBucket;
     public readonly sagemakerRole: iam.Role;
 
-    constructor(scope: Construct, id: string, props?: AiTrainingStackProps) {
+    constructor(scope: Construct, id: string, props: AiTrainingStackProps) {
         super(scope, id, props);
+        if (props.deployEnv === 'sandbox' && !props.model) {
+            throw new Error('Sandbox serves the live bootboots endpoint: it must have a model (infra/model.json)');
+        }
+
+        // Model artefacts and the role SageMaker serves them with: every environment.
+        this.modelBucket = new s3.Bucket(this, 'ModelArtifactsBucket', {
+            bucketName: `bootboots-models-${this.account}`,
+            versioned: true, // Keep model versions
+            publicReadAccess: false,
+            blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+            removalPolicy: cdk.RemovalPolicy.RETAIN,
+        });
+
+        // IAM role for SageMaker training jobs and the endpoint's model
+        this.sagemakerRole = new iam.Role(this, 'SageMakerExecutionRole', {
+            roleName: 'BootBootsSageMakerRole',
+            assumedBy: new iam.ServicePrincipal('sagemaker.amazonaws.com'),
+            managedPolicies: [
+                iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonSageMakerFullAccess'),
+            ],
+        });
+        this.modelBucket.grantReadWrite(this.sagemakerRole);
+
+        // Training only happens in sandbox; other environments get a trained model promoted to them.
+        if (props.deployEnv === 'sandbox') {
+            this.createTrainingPipeline();
+        }
+
+        if (props.model) {
+            this.createInferenceEndpoint(props.model);
+        }
+
+        new cdk.CfnOutput(this, 'ModelBucketName', {
+            value: this.modelBucket.bucketName,
+            description: 'S3 bucket for model artifacts',
+        });
+
+        new cdk.CfnOutput(this, 'SageMakerRoleArn', {
+            value: this.sagemakerRole.roleArn,
+            description: 'IAM role for SageMaker',
+        });
+    }
+
+    private createTrainingPipeline(): void {
 
         // Reference the existing images bucket
         const imagesBucket = s3.Bucket.fromBucketName(
@@ -41,7 +86,7 @@ export class AiTrainingStack extends cdk.Stack {
         );
 
         // Create bucket for organized training data (folder structure by class)
-        this.trainingBucket = new s3.Bucket(this, 'TrainingDataBucket', {
+        const trainingBucket = new s3.Bucket(this, 'TrainingDataBucket', {
             bucketName: `bootboots-training-data-${this.account}`,
             versioned: false,
             publicReadAccess: false,
@@ -56,27 +101,8 @@ export class AiTrainingStack extends cdk.Stack {
             ],
         });
 
-        // Create bucket for model artifacts
-        this.modelBucket = new s3.Bucket(this, 'ModelArtifactsBucket', {
-            bucketName: `bootboots-models-${this.account}`,
-            versioned: true, // Keep model versions
-            publicReadAccess: false,
-            blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-            removalPolicy: cdk.RemovalPolicy.RETAIN,
-        });
-
-        // IAM role for SageMaker training jobs
-        this.sagemakerRole = new iam.Role(this, 'SageMakerExecutionRole', {
-            roleName: 'BootBootsSageMakerRole',
-            assumedBy: new iam.ServicePrincipal('sagemaker.amazonaws.com'),
-            managedPolicies: [
-                iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonSageMakerFullAccess'),
-            ],
-        });
-
         // Grant S3 access to SageMaker role
-        this.trainingBucket.grantRead(this.sagemakerRole);
-        this.modelBucket.grantReadWrite(this.sagemakerRole);
+        trainingBucket.grantRead(this.sagemakerRole);
         imagesBucket.grantRead(this.sagemakerRole);
 
         // Package the training script as a tar.gz CDK asset uploaded to the
@@ -124,7 +150,7 @@ export class AiTrainingStack extends cdk.Stack {
             environment: {
                 SOURCE_BUCKET: imagesBucket.bucketName,
                 SOURCE_PREFIX: 'catcam-training/',
-                TARGET_BUCKET: this.trainingBucket.bucketName,
+                TARGET_BUCKET: trainingBucket.bucketName,
                 CATADATA_TABLE: BOOTBOOTS.catadataTable,
                 CAT_CLASSES: CAT_CLASSES.join(','),
                 VALIDATION_SPLIT: '0.2', // 20% for validation
@@ -139,7 +165,7 @@ export class AiTrainingStack extends cdk.Stack {
 
         // Grant permissions to data prep Lambda
         imagesBucket.grantRead(dataPrepLambda);
-        this.trainingBucket.grantReadWrite(dataPrepLambda);
+        trainingBucket.grantReadWrite(dataPrepLambda);
         dataPrepLambda.addToRolePolicy(new iam.PolicyStatement({
             effect: iam.Effect.ALLOW,
             actions: ['dynamodb:Scan'],
@@ -163,7 +189,7 @@ export class AiTrainingStack extends cdk.Stack {
             timeout: cdk.Duration.minutes(5),
             memorySize: 512,
             environment: {
-                TRAINING_BUCKET: this.trainingBucket.bucketName,
+                TRAINING_BUCKET: trainingBucket.bucketName,
                 MODEL_BUCKET: this.modelBucket.bucketName,
                 SAGEMAKER_ROLE_ARN: this.sagemakerRole.roleArn,
                 DATA_PREP_FUNCTION: dataPrepLambda.functionName,
@@ -202,28 +228,12 @@ export class AiTrainingStack extends cdk.Stack {
             resources: [dataPrepLambda.functionArn],
         }));
 
-        this.trainingBucket.grantRead(trainingTriggerLambda);
+        trainingBucket.grantRead(trainingTriggerLambda);
         this.modelBucket.grantRead(trainingTriggerLambda);
 
-        // Create serverless inference endpoint if model URL provided
-        if (props?.modelDataUrl) {
-            this.createInferenceEndpoint(props.modelDataUrl);
-        }
-
-        // Outputs
         new cdk.CfnOutput(this, 'TrainingBucketName', {
-            value: this.trainingBucket.bucketName,
+            value: trainingBucket.bucketName,
             description: 'S3 bucket for training data',
-        });
-
-        new cdk.CfnOutput(this, 'ModelBucketName', {
-            value: this.modelBucket.bucketName,
-            description: 'S3 bucket for model artifacts',
-        });
-
-        new cdk.CfnOutput(this, 'SageMakerRoleArn', {
-            value: this.sagemakerRole.roleArn,
-            description: 'IAM role for SageMaker',
         });
 
         new cdk.CfnOutput(this, 'TriggerTrainingCommand', {
@@ -232,29 +242,30 @@ export class AiTrainingStack extends cdk.Stack {
         });
     }
 
-    private createInferenceEndpoint(modelDataUrl: string): void {
-        // Create SageMaker Model
+    /**
+     * The `bootboots` serverless endpoint, serving the model named in infra/model.json. SageMaker
+     * models and endpoint configs are immutable, so both are named from the model's label: a new
+     * label creates a new pair and the endpoint switches to it in place (no downtime), after which
+     * CloudFormation deletes the old pair. Matches what local-training/deploy_model.sh used to create
+     * by hand (no container environment, no execution role on the config).
+     *
+     * Changing any property of the model or config below needs a new label too: they're custom-named,
+     * so CloudFormation can't replace them under the same name.
+     */
+    private createInferenceEndpoint(spec: ModelSpec): void {
         const model = new sagemaker.CfnModel(this, 'BootBootsModel', {
-            // No custom modelName — CDK generates a unique name so CloudFormation can
-            // replace the model resource when the S3 model URL changes between deploys.
+            modelName: `bootboots-${spec.label}`,
             executionRoleArn: this.sagemakerRole.roleArn,
             primaryContainer: {
-                // TensorFlow serving container for JumpStart models
-                image: `763104351884.dkr.ecr.${this.region}.amazonaws.com/tensorflow-inference:2.16-cpu`,
-                modelDataUrl: modelDataUrl,
-                environment: {
-                    SAGEMAKER_PROGRAM: 'inference.py',
-                },
+                image: TF_SERVING_IMAGE(this.region),
+                modelDataUrl: `s3://${this.modelBucket.bucketName}/${spec.artefact}`,
             },
         });
 
-        // Create Serverless Inference Config
         const endpointConfig = new sagemaker.CfnEndpointConfig(this, 'BootBootsEndpointConfig', {
-            // No custom endpointConfigName — same reason as above.
-            // ExecutionRoleArn required when the endpoint has Inference Components enabled.
-            executionRoleArn: this.sagemakerRole.roleArn,
+            endpointConfigName: `bootboots-config-${spec.label}`,
             productionVariants: [{
-                modelName: model.modelName!,
+                modelName: model.attrModelName,
                 variantName: 'AllTraffic',
                 serverlessConfig: {
                     maxConcurrency: 5,
@@ -263,20 +274,20 @@ export class AiTrainingStack extends cdk.Stack {
             }],
         });
 
-        endpointConfig.addDependency(model);
-
-        // Create Endpoint
         const endpoint = new sagemaker.CfnEndpoint(this, 'BootBootsEndpoint', {
             endpointName: 'bootboots',
-            // endpointConfig has no custom name, so use .ref which resolves to the generated name
-            endpointConfigName: endpointConfig.ref,
+            endpointConfigName: endpointConfig.attrEndpointConfigName,
         });
-
-        endpoint.addDependency(endpointConfig);
+        // Taking the model out of model.json (or the stack away) leaves the endpoint running.
+        endpoint.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);
 
         new cdk.CfnOutput(this, 'EndpointName', {
             value: endpoint.endpointName!,
             description: 'SageMaker inference endpoint name',
+        });
+        new cdk.CfnOutput(this, 'ModelLabel', {
+            value: spec.label,
+            description: 'The model the endpoint serves (infra/model.json)',
         });
     }
 }
