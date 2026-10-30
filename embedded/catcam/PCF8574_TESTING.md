@@ -49,9 +49,8 @@ The PCF8574 uses GPIO1 (TX) and GPIO3 (RX) which are UART0 pins. This creates a 
 
 1. **Build and upload firmware**:
    ```bash
-   python scripts/build_and_upload.py --version-type patch
-   # or
-   python scripts/build_and_upload.py --no-bump
+   FIRMWARE_VERSION=<x.y.z> pio run -e esp32s3cam
+   ./scripts/publish-firmware.sh sandbox .pio/build/esp32s3cam/firmware.bin <x.y.z>
    ```
 
 2. **Deploy via web interface**:

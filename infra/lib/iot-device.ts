@@ -5,21 +5,24 @@ import * as iot from 'aws-cdk-lib/aws-iot';
 import * as cr from 'aws-cdk-lib/custom-resources';
 import { ThingWithCert } from 'cdk-iot-core-certificates-v3';
 import { RestApi } from 'aws-cdk-lib/aws-apigateway';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
+import { BOOTBOOTS, type DeployEnv, SSM } from './env-config';
 
 export interface IoTDeviceStackProps extends cdk.StackProps {
-    api: RestApi
+    api: RestApi;
+    deployEnv: DeployEnv;
 }
 
 export class IotDeviceStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props?: IoTDeviceStackProps) {
+  constructor(scope: Construct, id: string, props: IoTDeviceStackProps) {
     super(scope, id, props);
 
-    const thingName = "BootBootsThing";
+    const thingName = BOOTBOOTS.thingName;
 
     const thingWithCert = new ThingWithCert(this, 'MyThing', {
       thingName: thingName,
       saveToParamStore: true,
-      paramPrefix: 'BootsBoots',
+      paramPrefix: SSM.thingCertPrefix,
     });
     const { thingArn, certId, certPem, privKey } = thingWithCert;
 
@@ -84,7 +87,7 @@ export class IotDeviceStack extends cdk.Stack {
     bbPolicy.addStatements(new iam.PolicyStatement({
       actions: ["execute-api:Invoke"],
       effect: iam.Effect.ALLOW,
-      resources: [props!.api.arnForExecuteApi('*', '/*', '*')]
+      resources: [props.api.arnForExecuteApi('*', '/*', '*')]
     }));
 
     const bbRoleAlias = new iot.CfnRoleAlias(this, 'BootBootsRoleAlias', {
@@ -133,6 +136,13 @@ export class IotDeviceStack extends cdk.Stack {
     bbPolicyPrincipalAttachment.addDependency(bbIoTPolicy);
 
     // Note: ThingWithCert already attaches the certificate to the thing, so no ThingPrincipalAttachment needed
+
+    // For publish-web.sh (the web panel's config.json) and the firmware scripts.
+    new ssm.StringParameter(this, 'CatcamThingParam', {
+      parameterName: `${SSM.bootbootsPrefix(props.deployEnv)}/catcam-thing`,
+      stringValue: thingName,
+      description: "The catcam's IoT Thing name",
+    });
 
     new cdk.CfnOutput(this, 'ThingArn', {
       value: thingArn,

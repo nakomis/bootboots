@@ -11,27 +11,36 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3n from 'aws-cdk-lib/aws-s3-notifications';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
+import { BOOTBOOTS, type DeployEnv, type EnvConfig, SSM } from './env-config';
+
+export interface ApiGatewayStackProps extends cdk.StackProps {
+  deployEnv: DeployEnv;
+  config: EnvConfig;
+}
 
 export class ApiGatewayStack extends cdk.Stack {
   public api: apigateway.RestApi; 
 
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props: ApiGatewayStackProps) {
     super(scope, id, props);
+    const { deployEnv, config } = props;
 
 
     // Create S3 bucket for storing JPEG images
     const imagesBucket = new s3.Bucket(this, 'BootBootsImagesBucket', {
-        bucketName: `bootboots-images-${this.account}-${this.region}`,
+        bucketName: BOOTBOOTS.imagesBucket(this.account, this.region),
         versioned: false,
         publicReadAccess: false,
         blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-        removalPolicy: cdk.RemovalPolicy.DESTROY,
+        // Years of cat photos and labelled training data: never deleted with the stack (BOOT-8).
+        // Turning autoDeleteObjects off is safe: CDK's handler only empties a bucket that still
+        // carries the aws-cdk:auto-delete-objects tag, and the bucket update removes it first.
+        removalPolicy: cdk.RemovalPolicy.RETAIN,
         cors: [{
-            allowedOrigins: ['https://sandbox.nakomis.com', 'https://app.sandbox.nakomis.com', 'http://localhost:3000'],
+            allowedOrigins: config.imagesBucketCorsOrigins,
             allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.PUT, s3.HttpMethods.POST],
             allowedHeaders: ['*'],
         }],
-        autoDeleteObjects: true,
     });
 
     // DynamoDB table for catcam inference events (near-misses and detections)
@@ -39,8 +48,22 @@ export class ApiGatewayStack extends cdk.Stack {
         tableName: 'catcam-events',
         partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
         billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-        removalPolicy: cdk.RemovalPolicy.DESTROY,
+        removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
+    // The labelling table (training mode writes a row per image; the panel labels them). Only
+    // created where config.manageCatadataTable says so: sandbox's predates the stacks.
+    if (config.manageCatadataTable) {
+        new dynamodb.Table(this, 'CatadataTable', {
+            tableName: BOOTBOOTS.catadataTable,
+            partitionKey: { name: 'imageName', type: dynamodb.AttributeType.STRING },
+            sortKey: { name: 'uuid', type: dynamodb.AttributeType.STRING },
+            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+            pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
+            deletionProtection: true,
+            removalPolicy: cdk.RemovalPolicy.RETAIN,
+        });
+    }
+
     catcamEventsTable.addGlobalSecondaryIndex({
         indexName: 'timestamp-index',
         partitionKey: { name: 'timestamp', type: dynamodb.AttributeType.STRING },
@@ -71,7 +94,7 @@ const inferLambdaLogGroup = new logs.LogGroup(this, 'BootBootsInferLambdaLogGrou
             IMAGES_BUCKET_NAME: imagesBucket.bucketName,
             CATCAM_EVENTS_TABLE_NAME: catcamEventsTable.tableName,
             EVENTS_MIN_CONFIDENCE: '0.5',
-            ANTHROPIC_API_KEY_SSM_PATH: '/bootboots/anthropic-api-key',
+            ANTHROPIC_API_KEY_SSM_PATH: SSM.anthropicApiKey,
         },
         bundling: {
             minify: true,
@@ -84,7 +107,7 @@ const inferLambdaLogGroup = new logs.LogGroup(this, 'BootBootsInferLambdaLogGrou
     inferLambda.addToRolePolicy(new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         actions: ['ssm:GetParameter'],
-        resources: [`arn:aws:ssm:${this.region}:${this.account}:parameter/bootboots/anthropic-api-key`],
+        resources: [`arn:aws:ssm:${this.region}:${this.account}:parameter${SSM.anthropicApiKey}`],
     }));
 
     // Grant SageMaker invoke permissions to the Lambda function
@@ -101,7 +124,7 @@ const inferLambdaLogGroup = new logs.LogGroup(this, 'BootBootsInferLambdaLogGrou
     inferLambda.addToRolePolicy(new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         actions: ['dynamodb:PutItem'],
-        resources: [`arn:aws:dynamodb:${this.region}:${this.account}:table/catadata`],
+        resources: [`arn:aws:dynamodb:${this.region}:${this.account}:table/${BOOTBOOTS.catadataTable}`],
     }));
 
     // Grant DynamoDB write permissions for catcam-events table
@@ -123,9 +146,11 @@ const inferLambdaLogGroup = new logs.LogGroup(this, 'BootBootsInferLambdaLogGrou
         timeout: cdk.Duration.seconds(30),
         memorySize: 256,
         environment: {
-            NOTIFICATION_EMAIL: 'bootboots@nakomis.com',
-            SENDER_EMAIL: 'bootboots@nakomis.com',
-            NOTIFICATION_PHONE: process.env.NOTIFICATION_PHONE ?? '',
+            NOTIFICATION_EMAIL: config.notificationEmail,
+            SENDER_EMAIL: config.notificationEmail,
+            // SMS is off (it is empty in the deployed Lambda too). It used to come from the deployer's
+            // shell, so a deploy from CI would silently blank it; turning SMS on needs an SSM-backed number.
+            NOTIFICATION_PHONE: '',
         },
         bundling: {
             minify: true,
@@ -176,6 +201,7 @@ const inferLambdaLogGroup = new logs.LogGroup(this, 'BootBootsInferLambdaLogGrou
         environment: {
             CATCAM_EVENTS_TABLE_NAME: catcamEventsTable.tableName,
             IMAGES_BUCKET_NAME: imagesBucket.bucketName,
+            ALLOWED_ORIGINS: config.apiCorsOrigins.join(','),
         },
         bundling: {
             minify: true,
@@ -203,7 +229,7 @@ const inferLambdaLogGroup = new logs.LogGroup(this, 'BootBootsInferLambdaLogGrou
       description: 'BootBoots Inference API Gateway with POST /infer endpoint',
       binaryMediaTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/octet-stream', 'video/x-msvideo', 'video/avi'],
       defaultCorsPreflightOptions: {
-        allowOrigins: ['https://sandbox.nakomis.com', 'https://app.sandbox.nakomis.com', 'http://localhost:3000', 'http://localhost:3001'],
+        allowOrigins: config.apiCorsOrigins,
         allowMethods: ['GET', 'POST', 'PUT', 'OPTIONS'],
         allowHeaders: [
           'Content-Type',
@@ -365,7 +391,7 @@ const inferLambdaLogGroup = new logs.LogGroup(this, 'BootBootsInferLambdaLogGrou
 
     // Add Gateway Responses with CORS headers so 403/5xx errors are readable by the browser.
     // A gateway response takes one value, so echo the caller's Origin (error bodies carry nothing sensitive
-    // and the API uses SigV4 rather than cookies) so both sandbox.nakomis.com and app.sandbox.nakomis.com work.
+    // and the API uses SigV4 rather than cookies) so every origin in config.apiCorsOrigins works.
     const corsResponseHeaders = {
       'Access-Control-Allow-Origin': 'method.request.header.Origin',
       'Vary': "'Origin'",
@@ -394,7 +420,7 @@ const inferLambdaLogGroup = new logs.LogGroup(this, 'BootBootsInferLambdaLogGrou
 
     // Output the upload-video endpoint URL
     new cdk.CfnOutput(this, 'UploadVideoEndpointUrl', {
-      value: `https://api.bootboots.sandbox.nakomis.com/upload-video/{filename}`,
+      value: `https://${config.apiDomain}/upload-video/{filename}`,
       description: 'URL for the /upload-video/{filename} PUT endpoint',
     });
 
@@ -421,20 +447,20 @@ const inferLambdaLogGroup = new logs.LogGroup(this, 'BootBootsInferLambdaLogGrou
       stage: this.api.deploymentStage,
     });
 
-    // Look up the existing hosted zone for sandbox.nakomis.com
+    // Look up the environment's existing hosted zone (the construct id predates prod)
     const hostedZone = route53.HostedZone.fromLookup(this, 'SandboxHostedZone', {
-      domainName: 'sandbox.nakomis.com',
+      domainName: config.parentDomain,
     });
 
     // Create SSL certificate for the custom domain with DNS validation
     const certificate = new acm.Certificate(this, 'BootBootsApiCertificate', {
-      domainName: 'api.bootboots.sandbox.nakomis.com',
+      domainName: config.apiDomain,
       validation: acm.CertificateValidation.fromDns(hostedZone),
     });
 
     // Create custom domain for API Gateway
     const customDomain = new apigateway.DomainName(this, 'BootBootsApiDomain', {
-      domainName: 'api.bootboots.sandbox.nakomis.com',
+      domainName: config.apiDomain,
       certificate: certificate,
       endpointType: apigateway.EndpointType.REGIONAL,
     });
@@ -447,9 +473,20 @@ const inferLambdaLogGroup = new logs.LogGroup(this, 'BootBootsInferLambdaLogGrou
     // Create Route53 A record to point to the custom domain
     new route53.ARecord(this, 'BootBootsApiAliasRecord', {
       zone: hostedZone,
-      recordName: 'api.bootboots',
+      recordName: config.apiDomain,
       target: route53.RecordTarget.fromAlias(new targets.ApiGatewayDomain(customDomain)),
     });
+
+    // ── Exports for the panel stack and publish-web.sh (the web panel's config.json) ──
+    const param = (name: string, stringValue: string, description: string) =>
+      new ssm.StringParameter(this, `Param-${name}`, {
+        parameterName: `${SSM.bootbootsPrefix(deployEnv)}/${name}`,
+        stringValue,
+        description,
+      });
+    param('api-id', this.api.restApiId, 'BootBoots REST API id (the panel role may invoke GET /events on it)');
+    param('images-bucket', imagesBucket.bucketName, 'Bucket holding catcam images and training images');
+    param('events-api-url', `https://${config.apiDomain}/events`, 'GET /events, IAM auth');
 
     // Output the API Gateway URL
     new cdk.CfnOutput(this, 'BootBootsInferApiGatewayUrl', {
@@ -465,13 +502,13 @@ const inferLambdaLogGroup = new logs.LogGroup(this, 'BootBootsInferLambdaLogGrou
 
     // Output the custom domain URL
     new cdk.CfnOutput(this, 'CustomDomainUrl', {
-      value: `https://api.bootboots.sandbox.nakomis.com`,
+      value: `https://${config.apiDomain}`,
       description: 'Custom domain URL for the API',
     });
 
     // Output the custom domain /infer endpoint URL
     new cdk.CfnOutput(this, 'CustomDomainInferEndpointUrl', {
-      value: `https://api.bootboots.sandbox.nakomis.com/infer`,
+      value: `https://${config.apiDomain}/infer`,
       description: 'Custom domain URL for the /infer POST endpoint',
     });
 
@@ -483,7 +520,7 @@ const inferLambdaLogGroup = new logs.LogGroup(this, 'BootBootsInferLambdaLogGrou
 
     // Output usage instructions
     new cdk.CfnOutput(this, 'ApiUsageInstructions', {
-      value: 'Use: curl -X POST -H "X-API-Key: <API_KEY>" -H "Content-Type: image/jpeg" --data-binary "@image.jpg" https://api.bootboots.sandbox.nakomis.com/infer',
+      value: `Use: curl -X POST -H "X-API-Key: <API_KEY>" -H "Content-Type: image/jpeg" --data-binary "@image.jpg" https://${config.apiDomain}/infer`,
       description: 'How to use the API with authentication',
     });
   }

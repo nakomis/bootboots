@@ -92,19 +92,26 @@ See [local-training/README.md](local-training/README.md) for the full workflow.
 
 ### AWS Infrastructure
 
-The [infra](infra) directory contains AWS CDK stacks (TypeScript) for cloud services:
+The [infra](infra) directory is a single AWS CDK app (TypeScript, pnpm) deployed per environment (`NPM_ENVIRONMENT=sandbox|prod`; settings in `infra/lib/env-config.ts`):
 
-- **IoT Device Stack** - AWS IoT Thing provisioning, certificate generation, and SSM Parameter Store integration
-- **API Gateway Stack** - REST API endpoints for device communication
-- **AI Training Stack** - SageMaker serverless endpoint (TF Serving 2.16, EfficientNetV2B1), inference Lambda, and API Gateway for camera-to-cloud classification requests
-- **Firmware Cleanup Stack** - Lambda function that manages firmware versions in S3, keeping only the 3 most recent versions and auto-updating the manifest
+- **BootBootsApiGatewayStack** - the BootBoots API (`/infer`, `/upload-video`, `/events`), the inference Lambda, the images bucket and the `catcam-events` table
+- **BootBootsIoTStack** - the catcam's IoT Thing, its certificate (in SSM) and the role it assumes
+- **BootBootsAiTrainingStack** - the SageMaker serverless endpoint (TF Serving 2.16, EfficientNetV2B1) and the training pipeline
+- **NakomisBootbootsStack** - the web panel's Cognito identity pool and its role
+- **BootBootsGithubCiStack** - the role GitHub Actions assumes to deploy and publish
+
+### Web Panel
+
+The [web](web) directory is the BootBoots panel: a Module Federation remote of nakomis-shell (app.sandbox.nakomis.com/bootboots) for labelling, bounding, catches and device control over Web Bluetooth or [Fleet](https://github.com/nakomis/nakomis-fleet). It came from `nakomis/nakomis-bootboots`, history and all; its own docs are in [docs/panel/README.md](docs/panel/README.md).
 
 ### Documentation
 
-The [docs](docs) directory contains architecture diagrams:
+The [docs](docs) directory contains:
 
 - `architecture/architecture-deterrence.drawio` - Live deterrence system architecture
 - `architecture/architecture-training.drawio` - ML training pipeline architecture
+- [protocol.md](docs/protocol.md) - the device protocol: commands, response types, MQTT topics, BLE UUIDs
+- [panel/](docs/panel/README.md) - the web panel's README
 
 SVG versions are auto-generated via pre-commit hook when `.drawio` files change.
 
@@ -141,8 +148,12 @@ The [githooks](githooks) directory contains git hooks for auto-generating archit
 
 ```
 bootboots/
+├── .github/workflows/ci.yml   # CI: build, test, synth; deploy to sandbox on merge
+│
 ├── docs/
-│   └── architecture/          # System architecture diagrams (.drawio + .svg)
+│   ├── architecture/          # System architecture diagrams (.drawio + .svg)
+│   ├── panel/                 # Web panel docs
+│   └── protocol.md            # Device protocol reference
 │
 ├── embedded/
 │   ├── bootloader/            # Factory bootloader (OTA staging)
@@ -156,9 +167,12 @@ bootboots/
 │
 ├── githooks/                  # Git hooks for automation
 │
-├── infra/                     # AWS CDK infrastructure (TypeScript)
-│   ├── lib/                   # CDK stack definitions
+├── infra/                     # Single AWS CDK app (TypeScript, pnpm)
+│   ├── bin/infra.ts           # Entry point: NPM_ENVIRONMENT=sandbox|prod
+│   ├── lib/                   # CDK stacks and env-config.ts
 │   └── lambda/                # Lambda function code
+│
+├── web/                       # Web panel (nakomis-shell remote, React/Vite)
 │
 ├── local-training/            # Offline ML training pipeline (M-series Mac)
 │   ├── download_data_multiclass.py   # Pull labelled images from S3/DynamoDB
@@ -180,39 +194,40 @@ bootboots/
 
 - Python 3.11 (managed via `asdf`; required for TensorFlow)
 - PlatformIO CLI
-- Node.js and npm (for infrastructure)
+- Node.js 22+ and pnpm 11 (for infra and the web panel)
 - AWS CLI configured with `nakom.is-sandbox` profile
 - draw.io desktop app (for architecture diagram generation)
 - githooks installed using `./scripts/install-hooks.sh`
 
 ### Initial Device Setup
 
-1. **Generate secrets** from AWS SSM Parameter Store:
-   ```bash
-   cd embedded/catcam
-   export AWS_PROFILE=nakom.is-sandbox
-   python3 scripts/generate_secrets.py
-   ```
-
-2. **Build and flash** (USB - for factory-new devices):
+1. **Build and flash** (USB - for factory-new devices):
    ```bash
    cd embedded/catcam
    ./scripts/factory_setup.sh /dev/cu.usbserial-XXXX
    ```
 
-See [embedded/README.md](embedded/README.md) for detailed setup instructions.
+2. **Provision** the device (Thing name, Wi-Fi, IoT certificate and endpoints go into its `prov`
+   partition, never into the firmware image):
+   ```bash
+   ./scripts/provision.sh BootBootsThing /dev/cu.usbmodemXXXX sandbox
+   ```
+
+See [embedded/README.md](embedded/README.md) and
+[embedded/catcam/docs/provisioning.md](embedded/catcam/docs/provisioning.md) for details.
 
 ### OTA Updates (Preferred)
 
-Once a device is set up, use OTA updates via Bluetooth:
+Once a device is set up, publish a checked image and push it through Fleet:
 
 ```bash
 cd embedded/catcam
-export AWS_PROFILE=nakom.is-sandbox
-python3 scripts/build_and_upload.py
+FIRMWARE_VERSION=1.0.333 pio run -e esp32s3cam
+./scripts/publish-firmware.sh sandbox .pio/build/esp32s3cam/firmware.bin 1.0.333
 ```
 
-Then use the web interface to push the update to the device via Bluetooth.
+The firmware version is set at build time (`FIRMWARE_VERSION`), and a published version is never
+replaced.
 
 ## Cat Safety Logic
 

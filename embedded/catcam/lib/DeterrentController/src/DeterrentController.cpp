@@ -15,8 +15,9 @@ DeterrentController::DeterrentController(PCF8574Manager* pcfManager, CaptureCont
 {
 }
 
-void DeterrentController::setUploadConfig(const char* apiHost) {
+void DeterrentController::setUploadConfig(const char* apiHost, const char* roleAlias) {
     _apiHost = apiHost;
+    _roleAlias = roleAlias;
 }
 
 bool DeterrentController::shouldActivate(const DetectionResult& result, float triggerThresh) const {
@@ -170,7 +171,7 @@ void DeterrentController::emergencyStop() {
 }
 
 bool DeterrentController::uploadVideo(const String& filepath) {
-    if (!_awsAuth || !_apiHost) {
+    if (!_awsAuth || !_apiHost || !_roleAlias) {
         SDLogger::getInstance().warnf("DeterrentController: Upload not configured (awsAuth=%p, apiHost=%p)",
             _awsAuth, _apiHost);
         return false;
@@ -182,7 +183,7 @@ bool DeterrentController::uploadVideo(const String& filepath) {
     // Refresh credentials if needed
     if (!_awsAuth->areCredentialsValid()) {
         SDLogger::getInstance().infof("DeterrentController: Refreshing AWS credentials...");
-        if (!_awsAuth->getCredentialsWithRoleAlias("BootBootsRoleAlias")) {
+        if (!_awsAuth->getCredentialsWithRoleAlias(_roleAlias)) {
             SDLogger::getInstance().errorf("DeterrentController: Failed to refresh AWS credentials");
             _awsAuth->resumeMqtt();
             return false;

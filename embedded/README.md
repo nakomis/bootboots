@@ -76,8 +76,11 @@ embedded/
 |   |   |-- VideoRecorder/   # MJPEG recording
 |   |   +-- WifiConnect/     # WiFi management
 |   |-- scripts/
-|   |   |-- build_and_upload.py  # Build & upload to S3
+|   |   |-- provision.sh         # Write a device's prov partition (Thing, Wi-Fi, certs)
+|   |   |-- image-checks.sh      # What a published image must pass
+|   |   |-- publish-firmware.sh  # Check + upload to S3 (never replaces a version)
 |   |   +-- factory_setup.sh     # Factory setup script
+|   |-- docs/provisioning.md     # prov partition, scripts, first wired flash
 |   |-- partitions_custom.csv      # 4MB partition table
 |   |-- partitions_custom_s3.csv   # 16MB partition table
 |   +-- platformio.ini       # Build configuration
@@ -94,29 +97,22 @@ embedded/
 - PlatformIO CLI
 - AWS CLI configured (for S3 uploads)
 
-### Generate Secrets
+### Provisioning (no secrets in the image)
 
-Before building the firmware, you need to generate `secrets.h` with WiFi credentials and AWS IoT certificates from AWS Systems Manager Parameter Store:
+The firmware no longer compiles in any secrets or per-environment settings (BOOT-10; there is no
+`secrets.h`). Each device reads its Thing name, Wi-Fi credentials, IoT and credentials-provider
+endpoints, API host, root CA, certificate and private key from its `prov` partition (0x810000,
+64 KB), which `scripts/provision.sh` writes over USB:
 
 ```bash
 cd catcam
-export AWS_PROFILE=nakom.is-sandbox
-python3 scripts/generate_secrets.py
+./scripts/provision.sh BootBootsThing /dev/cu.usbmodemXXXX sandbox
 ```
 
-This fetches the following parameters and generates `include/secrets.h`:
-
-| Parameter | Description |
-|-----------|-------------|
-| `/Nakomis/Wifi/SSID` | WiFi network name |
-| `/Nakomis/Wifi/Password` | WiFi password |
-| `/BootsBoots/BootBootsThing/certPem` | AWS IoT device certificate |
-| `/BootsBoots/BootBootsThing/privKey` | AWS IoT private key |
-| AWS IoT endpoint | Fetched via `iot:describe_endpoint` API |
-
-The script also reads `AmazonRootCA1.pem` from the catcam directory for the AWS root CA.
-
-**Note**: `secrets.h` is gitignored and should never be committed.
+It reads `/Nakomis/Wifi/SSID`, `/Nakomis/Wifi/Password`, `/BootsBoots/<thing>/certPem` and
+`/BootsBoots/<thing>/privKey` from SSM and the endpoints from IoT. Without a prov partition the
+device runs with BLE only and logs `NOT PROVISIONED`. See
+[catcam/docs/provisioning.md](catcam/docs/provisioning.md).
 
 ### Quick Setup
 
@@ -133,6 +129,8 @@ This script will:
 3. Flash bootloader to factory partition
 4. Flash catcam app to OTA0 partition
 5. Set otadata to point to factory partition
+
+Then provision it (`scripts/provision.sh <thing> <port> [env]`).
 
 ### Manual Setup
 
@@ -163,6 +161,9 @@ pio run -e esp32s3cam
   0x8000 ../bootloader/.pio/build/esp32s3cam/partitions.bin \
   0x10000 ../bootloader/.pio/build/esp32s3cam/firmware.bin \
   0x110000 .pio/build/esp32s3cam/firmware.bin
+
+# Then write its prov partition (0x810000)
+./scripts/provision.sh BootBootsThing /dev/cu.usbmodemXXXX sandbox
 ```
 
 #### Step 3: Verify Boot Sequence
@@ -180,10 +181,11 @@ You should see:
 
 ### Via Web Interface (Recommended)
 
-1. Build and upload new firmware:
+1. Build, check and publish new firmware (a published version is never replaced):
    ```bash
    cd catcam
-   AWS_PROFILE=nakom.is-sandbox python scripts/build_and_upload.py --version-type patch
+   FIRMWARE_VERSION=1.0.333 pio run -e esp32s3cam
+   ./scripts/publish-firmware.sh sandbox .pio/build/esp32s3cam/firmware.bin 1.0.333
    ```
 
 2. Open web interface at http://localhost:3000/firmware
@@ -233,25 +235,20 @@ pio run -e esp32s3cam
 pio run -e esp32s3cam --target upload --upload-port /dev/cu.usbmodem*
 ```
 
-**Build, version bump, and upload to S3**:
+**Check and publish to S3** (`--dry-run` to see what it would do):
 ```bash
-AWS_PROFILE=nakom.is-sandbox python scripts/build_and_upload.py --version-type patch
+./scripts/image-checks.sh .pio/build/esp32s3cam/firmware.bin 1.0.333
+./scripts/publish-firmware.sh sandbox .pio/build/esp32s3cam/firmware.bin 1.0.333
 ```
 
-### Version Bumping
+### Firmware Version
+
+The version is set at build time from the `FIRMWARE_VERSION` environment variable (default
+`0.0.0-dev`); `include/version.h` is no longer bumped by hand. Published versions continue from
+1.0.333 (1.0.331 was the last hand-published one; 1.0.332 was committed but never published).
 
 ```bash
-# Patch version (1.0.40 -> 1.0.41)
-python scripts/build_and_upload.py --version-type patch
-
-# Minor version (1.0.40 -> 1.1.0)
-python scripts/build_and_upload.py --version-type minor
-
-# Major version (1.0.40 -> 2.0.0)
-python scripts/build_and_upload.py --version-type major
-
-# Build only (no upload)
-python scripts/build_and_upload.py --build-only
+FIRMWARE_VERSION=1.0.333 pio run -e esp32s3cam
 ```
 
 ### Serial Monitoring

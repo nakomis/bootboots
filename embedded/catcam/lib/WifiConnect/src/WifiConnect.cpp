@@ -1,6 +1,5 @@
 #include "WiFi.h"
 #include "WifiConnect.h"
-#include "../../../include/secrets.h"
 
 const unsigned long WIFI_CONNECT_TIMEOUT_MILLIS = 20 * 1000;
 
@@ -8,7 +7,7 @@ WifiConnect::WifiConnect()
 {
 }
 
-int WifiConnect::connect()
+int WifiConnect::connect(const char* ssid, const char* password)
 {
     if (WiFi.status() == WL_CONNECTED)
     {
@@ -17,7 +16,7 @@ int WifiConnect::connect()
     
     Serial.print("Connecting to Wi-Fi.");
     WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    WiFi.begin(ssid, password);
     unsigned long startMillis = millis();
     while (WiFi.status() != WL_CONNECTED)
     {

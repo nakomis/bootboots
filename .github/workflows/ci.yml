@@ -1,0 +1,200 @@
+name: CI
+
+# BOOT-8: one CI for firmware, infra and the web panel. PRs (into main and the boot-8-develop
+# integration branch) build, test and synth both environments; merges to main deploy to sandbox.
+# Prod deploys and firmware publishing come with CLOUD-27 / BOOT-10.
+
+on:
+  pull_request:
+    branches: [main, boot-8-develop]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Check out the post-merge state on PRs so CI validates what will land.
+env:
+  CHECKOUT_REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
+
+# A newer push to a PR supersedes its run; main's runs (which deploy) are never cancelled.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  changes:
+    name: Changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      infra: ${{ steps.filter.outputs.infra }}
+      web: ${{ steps.filter.outputs.web }}
+      firmware: ${{ steps.filter.outputs.firmware }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            infra:
+              - 'infra/**'
+              - '.github/workflows/ci.yml'
+            web:
+              - 'web/**'
+              - 'scripts/**'
+              - '.github/workflows/ci.yml'
+            firmware:
+              - 'embedded/**'
+              - '.github/workflows/ci.yml'
+
+  infra:
+    name: Infra (CDK)
+    needs: changes
+    if: needs.changes.outputs.infra == 'true' || github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: infra/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: infra/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Type-check
+        run: pnpm build
+      - name: Test
+        run: pnpm test
+      # Placeholder account and hosted-zone context (cdk.context.json): no AWS access needed.
+      - name: Synth (sandbox and prod)
+        run: pnpm ci-synth-sandbox && pnpm ci-synth-prod
+
+  web:
+    name: Web panel
+    needs: changes
+    if: needs.changes.outputs.web == 'true' || github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '25'
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build
+
+  firmware:
+    name: Firmware (PlatformIO)
+    needs: changes
+    if: needs.changes.outputs.firmware == 'true' || github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-${{ hashFiles('embedded/catcam/platformio.ini', 'embedded/bootloader/platformio.ini') }}
+      - run: pip install platformio
+      # No secrets.h any more (BOOT-10): the image holds no secrets; each device reads its own from
+      # its prov partition. The version is set at build time.
+      - name: Catcam
+        env:
+          FIRMWARE_VERSION: 0.0.0-ci
+        run: pio run -d embedded/catcam -e esp32s3cam
+      # Version tag, no PEM blocks, no per-device/per-environment strings. This job has no AWS
+      # credentials, so the Wi-Fi credential check (SSID/password from SSM) is skipped here;
+      # publish-firmware.sh always runs it. Nothing is published from CI yet: the camera needs its
+      # wired flash (partition table + prov) before a secret-less image can run on it.
+      - name: Image checks
+        env:
+          IMAGE_CHECKS_NO_AWS: '1'
+        run: embedded/catcam/scripts/image-checks.sh embedded/catcam/.pio/build/esp32s3cam/firmware.bin 0.0.0-ci
+      - name: Factory bootloader app
+        run: pio run -d embedded/bootloader -e esp32s3cam
+
+  # ── Merges to main: deploy to sandbox ────────────────────────────────────────────────────────
+  # BootBootsGithubCiStack has to be deployed by hand once (it creates the role this assumes), and
+  # the repo needs the variable AWS_SANDBOX_ROLE_ARN and the environment 'sandbox'.
+  deploy-infra-sandbox:
+    name: Deploy infra (sandbox)
+    needs: [infra, web, firmware]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: nakomis/nakomis-workflows/.github/workflows/cdk-deploy.yml@main
+    with:
+      environment: sandbox
+      aws-role-arn: ${{ vars.AWS_SANDBOX_ROLE_ARN }}
+      command: pnpm ci-deploy-sandbox
+
+  deploy-web-sandbox:
+    name: Deploy web (sandbox)
+    needs: [deploy-infra-sandbox]
+    runs-on: ubuntu-latest
+    environment: sandbox
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '25'
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Build
+        working-directory: web
+        run: pnpm install --frozen-lockfile && pnpm build
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_SANDBOX_ROLE_ARN }}
+          aws-region: eu-west-2
+      # config.json is generated from SSM, so the same build can go to any environment.
+      - name: Publish
+        env:
+          SHA: ${{ github.sha }}
+        run: RELEASE_VERSION="0.0.0-${SHA::7}" scripts/publish-web.sh sandbox web/dist
+
+  # The "Protect main" ruleset requires a check with exactly this name.
+  ci-status:
+    name: CI Status
+    if: always()
+    needs: [changes, infra, web, firmware, deploy-infra-sandbox, deploy-web-sandbox]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All jobs passed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key)=\(.value.result)"'
+          # Skipped is fine: nothing of that part changed, or it isn't a merge to main.
+          echo "$RESULTS" | jq -e 'to_entries | all(.value.result == "success" or .value.result == "skipped")' > /dev/null

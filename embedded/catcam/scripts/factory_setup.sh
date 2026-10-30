@@ -119,6 +119,7 @@ echo -e "${BLUE}[2/5] Building catcam application...${NC}"
 cd "$CATCAM_DIR"
 if ! pio run -e esp32s3cam; then
     echo -e "${RED}✗ Catcam build failed${NC}"
+    exit 1
 fi
 
 CATCAM_BIN="$CATCAM_DIR/.pio/build/esp32s3cam/firmware.bin"
@@ -135,7 +136,7 @@ if ! python3 "$ESPTOOL" \
     --port "$SERIAL_PORT" \
     --baud "$BAUD_RATE" \
     --before default_reset \
-    --after hard_reset \
+    --after watchdog_reset \
     write_flash -z --flash_mode dout --flash_freq 80m --flash_size 16MB \
     0x0 "$BOOTLOADER_2ND" \
     0x8000 "$BOOTLOADER_PARTITIONS" \
@@ -156,7 +157,7 @@ if ! python3 "$ESPTOOL" \
     --port "$SERIAL_PORT" \
     --baud "$BAUD_RATE" \
     --before default_reset \
-    --after hard_reset \
+    --after watchdog_reset \
     write_flash -z --flash_mode dout --flash_freq 80m --flash_size 16MB \
     0x110000 "$CATCAM_BIN"; then
     echo -e "${RED}✗ Catcam flash failed${NC}"
@@ -185,10 +186,13 @@ echo -e "${GREEN}============================================================${N
 echo
 echo -e "${GREEN}Partition Layout:${NC}"
 echo "  Factory (1MB @ 0x10000):    Bootloader"
-echo "  OTA0 (7MB @ 0x110000):      Catcam App v$(grep 'FIRMWARE_VERSION' "$CATCAM_DIR/include/version.h" | cut -d'"' -f2)"
-echo "  SPIFFS (@ 0x810000):        File storage"
+echo "  OTA0 (7MB @ 0x110000):      Catcam App v${FIRMWARE_VERSION:-0.0.0-dev}"
+echo "  prov (64KB @ 0x810000):     Provisioning data (scripts/provision.sh)"
+echo "  SPIFFS (@ 0x820000):        Unused"
 echo
 echo -e "${GREEN}Next Steps:${NC}"
+echo "  0. Provision it (Thing, Wi-Fi, certificate; nothing secret is in the image):"
+echo "       scripts/provision.sh <thing> $SERIAL_PORT [env]"
 echo "  1. Monitor serial output to verify boot sequence"
 echo "  2. Test OTA update via web interface"
 echo "  3. Verify bootloader runs on every reboot"

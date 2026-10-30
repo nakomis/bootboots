@@ -1,0 +1,7 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Local dev config: cp config.example.json public/config.json
+public/config.json

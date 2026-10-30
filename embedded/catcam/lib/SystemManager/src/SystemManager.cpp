@@ -23,7 +23,7 @@
 #include "CommandDispatcher.h"
 #include "MqttService.h"
 #include "MqttOTA.h"
-#include "secrets.h"
+#include "Provisioning.h"
 
 SystemManager::SystemManager()
     : _wifiConnect(nullptr)
@@ -122,16 +122,26 @@ bool SystemManager::initComponents(const Config& config, SystemState& state,
                                        config.i2cSDA, config.i2cSCL);
     }
 
+    // Networking needs this device's provisioning data (prov partition, BOOT-10). Without it the
+    // device stays offline but BLE still starts below, so it can be diagnosed.
+    Provisioning& provisioning = Provisioning::getInstance();
+    const ProvisioningData& prov = provisioning.data();
+
     // Initialize WiFi
     _wifiConnect = new WifiConnect();
-    if (_wifiConnect->connect() == 0) {
+    if (!provisioning.isProvisioned()) {
+        SDLogger::getInstance().errorf("NOT PROVISIONED: %s - no Wi-Fi, AWS or MQTT; BLE only",
+                                       provisioning.problem().c_str());
+        state.wifiConnected = false;
+    } else if (_wifiConnect->connect(prov.wifiSsid.c_str(), prov.wifiPassword.c_str()) == 0) {
         state.wifiConnected = true;
         SDLogger::getInstance().infof("WiFi connected successfully");
         SDLogger::getInstance().infof("IP Address: %s", WiFi.localIP().toString().c_str());
 
         // Initialize AWS Auth
-        _awsAuth = new AWSAuth(config.awsRegion);
-        if (_awsAuth->initialize(AWS_CERT_CA, AWS_CERT_CRT, AWS_CERT_PRIVATE, AWS_IOT_CREDENTIALS_ENDPOINT)) {
+        _awsAuth = new AWSAuth(prov.region.c_str());
+        if (_awsAuth->initialize(prov.rootCa.c_str(), prov.deviceCert.c_str(), prov.deviceKey.c_str(),
+                                 prov.credentialsEndpoint.c_str(), prov.thingName.c_str())) {
             SDLogger::getInstance().infof("AWS Auth initialized successfully");
 
             // Create camera and video recorder instances
@@ -141,7 +151,7 @@ bool SystemManager::initComponents(const Config& config, SystemState& state,
             // Initialize CaptureController with all dependencies
             _captureController = new CaptureController(_camera, _videoRecorder, &ledController,
                                                         _imageStorage, _awsAuth);
-            _captureController->setAWSConfig(config.awsRoleAlias, config.apiHost, config.apiPath);
+            _captureController->setAWSConfig(prov.roleAlias.c_str(), prov.apiHost.c_str(), config.apiPath);
             _captureController->init(state.cameraSettings);
             state.cameraReady = _camera->isReady();
 
@@ -226,7 +236,8 @@ bool SystemManager::initComponents(const Config& config, SystemState& state,
     // Initialize MQTT Service (requires WiFi)
     if (state.wifiConnected) {
         _mqttService = new MqttService();
-        if (_mqttService->init(AWS_IOT_ENDPOINT, AWS_CERT_CA, AWS_CERT_CRT, AWS_CERT_PRIVATE, "BootBootsThing")) {
+        if (_mqttService->init(prov.iotEndpoint.c_str(), prov.rootCa.c_str(), prov.deviceCert.c_str(),
+                               prov.deviceKey.c_str(), prov.thingName.c_str())) {
             _mqttService->setCommandDispatcher(_commandDispatcher);
             _mqttService->setSystemState(&state);
             // Link to BluetoothOTA so it can pause MQTT before OTA updates
@@ -265,10 +276,10 @@ bool SystemManager::initComponents(const Config& config, SystemState& state,
     // Initialize Deterrent Controller (requires PCF8574Manager, CaptureController, and AWSAuth)
     if (_pcfManager && state.pcf8574Ready && _captureController && _awsAuth) {
         _deterrentController = new DeterrentController(_pcfManager, _captureController, _awsAuth);
-        _deterrentController->setUploadConfig("api.bootboots.sandbox.nakomis.com");
+        _deterrentController->setUploadConfig(prov.apiHost.c_str(), prov.roleAlias.c_str());
         SDLogger::getInstance().infof("Deterrent Controller initialized (duration: %lu ms, threshold configurable via MQTT)",
                                        DeterrentController::DETERRENT_DURATION_MS);
-        SDLogger::getInstance().infof("Video upload enabled to api.bootboots.sandbox.nakomis.com");
+        SDLogger::getInstance().infof("Video upload enabled to %s", prov.apiHost.c_str());
     } else {
         SDLogger::getInstance().warnf("Deterrent Controller not initialized - PCF8574, CaptureController, or AWSAuth unavailable");
     }

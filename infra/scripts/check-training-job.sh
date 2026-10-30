@@ -79,9 +79,9 @@ if [ "$STATUS" = "Completed" ]; then
     echo ""
     echo "Model artifacts: $ARTIFACTS"
     echo ""
-    echo "To deploy, run:"
-    echo "  cd infra && AWS_PROFILE=nakom.is-sandbox npx cdk deploy BootBootsAiTrainingStack \\"
-    echo "    --context modelDataUrl=$ARTIFACTS"
+    echo "To serve it (BOOT-9): set infra/model.json's sandbox entry to"
+    echo "  {\"artefact\": \"${ARTIFACTS#s3://*/}\", \"label\": \"<the training job name>\"}"
+    echo "then commit and deploy: cd infra && pnpm diff-sandbox BootBootsAiTrainingStack && pnpm deploy-stack-sandbox BootBootsAiTrainingStack"
 fi
 
 echo "======================================================"
